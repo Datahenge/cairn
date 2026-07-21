@@ -1,7 +1,5 @@
-# Vendored upstream — TEMPORARY ignore.
-# Currently a raw shallow clone. Once ventwig manages it (D-007), this tree becomes
-# plain committed content pinned by .ventwig.lock, and this entry gets removed.
-/frappe_docker/
+# NOTE: frappe_docker/ is intentionally NOT ignored — it is the ventwig-managed,
+# pinned, drift-checked vendored copy of upstream, committed as plain files (D-007).
 
 # Build/deploy artifacts
 apps.json

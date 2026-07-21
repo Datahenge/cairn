@@ -1,0 +1,20 @@
+services:
+  frontend:
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.frontend.loadbalancer.server.port=8080
+      - traefik.http.routers.frontend-http.entrypoints=web
+      - traefik.http.routers.frontend-http.rule=HostRegexp(`^.+$`)
+
+  proxy:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - ${HTTP_PUBLISH_PORT:-80}:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    userns_mode: host

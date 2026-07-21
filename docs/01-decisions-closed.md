@@ -68,11 +68,18 @@ verb is idempotent, adding a webhook receiver later just calls the same verb.
 ---
 
 ### D-007 — Vendoring via `ventwig`, committed + drift-checked
-**Decided:** 2026-07-21
+**Decided:** 2026-07-21 · **Implemented:** 2026-07-21 (pinned to `v3.2.1`)
 Vendor `frappe_docker` using [`ventwig`](https://github.com/brian-pond/ventwig)
-(Brian's own tool): pin an exact upstream commit in `pyproject.toml`, sync into the
-repo as **plain committed files**, with `.ventwig.lock` (commit hash + content-tree
-hash) enabling **drift detection**.
+(Brian's own tool): pin an upstream **release tag** in `pyproject.toml`
+(`ref = "v3.2.1"`), sync into the repo as **plain committed files**, with
+`.ventwig.lock` (synced commit hash + content-tree hash) enabling **drift detection**.
+
+**Pinning nuance:** ventwig 0.2.0 clones via `git clone --depth 1 --branch <ref>`,
+which accepts a branch or **tag** but not a raw commit SHA. We therefore track the
+release **tag** `v3.2.1` (immutable, deterministic re-sync) rather than a moving
+branch. The true immutability anchor is the **committed tree + `.ventwig.lock`**
+(pinned commit `d4a310089f5d`), which holds even if GitHub is unreachable or the tag
+were ever moved.
 
 **Rationale:** Committing the pinned tree makes builds reproducible even if GitHub is
 down or the SHA is later GC'd — the immutable input lives *in our repo*. Drift

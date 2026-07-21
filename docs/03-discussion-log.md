@@ -89,6 +89,23 @@ columns/tables behind rather than losing data — image-only rollback is safe by
 default. We still snapshot *before* a forward migration so a manual restore is
 available, but never auto-applied. → **D-012** (closed).
 
+## 2026-07-21 — ventwig wired up (D-007 implemented)
+
+Made `docker-cairn` a Python project (`pyproject.toml`) and configured ventwig to
+vendor `frappe_docker`. Findings that shaped it:
+- ventwig 0.2.0's `clone()` uses `git clone --depth 1 --branch <ref>` — accepts a
+  branch or **tag**, not a raw commit SHA.
+- Upstream publishes **release tags**; latest is **`v3.2.1`** (`d4a310089f5d`).
+  Chose to pin the tag rather than the moving `main` (deterministic re-sync,
+  deliberate upgrades). This supersedes the earlier assumption of pinning
+  main-HEAD `c004361`.
+
+Synced successfully: `.ventwig.lock` records commit `d4a310089f5d` + tree hash;
+`ventwig status` = clean; no nested `.git` in the vendored tree; build files
+(`images/custom/Containerfile`, `docker-bake.hcl`, `compose.yaml`) present.
+The vendored tree is now committed plain content. Removed the temporary
+`.gitignore` entry for it.
+
 ## 2026-07-21 — Scaffolding
 
 Created `docs/` scaffolding: project scope, closed decisions, open decisions, and this

@@ -27,6 +27,15 @@ Early design. No code yet — scaffolding and decisions are being recorded first
 
 ## Vendored upstream
 
-`frappe_docker/` is a pinned, read-only copy of upstream (currently a plain clone;
-to be managed via [`ventwig`](https://github.com/brian-pond/ventwig)). It is never
-edited by hand — see `D-001` / `D-007`.
+`frappe_docker/` is a pinned, read-only copy of upstream, vendored as plain committed
+files via [`ventwig`](https://github.com/brian-pond/ventwig) and never edited by hand
+(`D-001` / `D-007`). It is pinned to upstream release tag **`v3.2.1`**; the exact
+synced commit + content-tree hash are recorded in `.ventwig.lock`.
+
+```
+.venv/bin/ventwig status   # verify the vendored tree is clean / unmodified
+.venv/bin/ventwig sync      # re-materialize from the pinned ref
+```
+
+To upgrade upstream: bump `ref` in `pyproject.toml`, `ventwig sync`, review the diff,
+test-build, then commit.
