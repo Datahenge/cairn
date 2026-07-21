@@ -1,0 +1,96 @@
+# Discussion Log
+
+Chronological summaries of the design conversation — the reasoning behind the
+decisions, so future readers (and future sessions) don't have to re-derive it.
+
+_Last updated: 2026-07-21_
+
+---
+
+## 2026-07-21 — Kickoff & direction
+
+Brian framed the project: wrap `frappe_docker` to make three things frictionless —
+(1) rebuild a custom ERPNext image (Frappe + ERPNext + N custom apps), (2) handle
+CI/CD, image rebuilding, restarting/re-pointing containers at the correct image for a
+commit/tag/branch, and (3) easy backup/restore/rollback of SQL databases. Explicit
+constraint: **do not modify `frappe_docker`; bolt on around it** (→ D-001).
+
+## 2026-07-21 — Grounding in real upstream
+
+Downloaded a fresh copy of upstream to reference actual (not remembered) capabilities.
+Gotcha discovered: the official repo is **`frappe/frappe_docker` (underscore)**, not
+`frappe-docker` (hyphen) — the hyphen path 404s. Cloned to `./frappe_docker`
+(HEAD `c004361`, 2026-07-15).
+
+**What upstream actually provides (the surface we wrap):**
+- *Build:* hand-written root `apps.json` (`[{url, branch}]`) passed to
+  `images/layered/Containerfile` or `images/custom/Containerfile` as a **BuildKit
+  secret** (`--secret=id=apps_json,src=apps.json`) — not the old base64 build-arg.
+  Requires Docker v23+. Cache invalidation is a manual `CACHE_BUST` build-arg.
+- *Deploy:* mostly documentation. Hand-compose override files
+  (`docker compose -f compose.yaml -f overrides/... config > compose.custom.yaml`);
+  image pointer is three env vars (`CUSTOM_IMAGE`, `CUSTOM_TAG`, `PULL_POLICY=missing`);
+  migrations are the operator's problem (a `compose.migrator.yaml` override exists).
+- *Backup:* a sample `backup-job.yml` + a suggested crontab calling
+  `bench --site all backup --with-files`. **No restore, no rollback, no retention.**
+
+Conclusion: every one of the three pillars maps to a genuine upstream gap — the
+project is not redundant with anything upstream ships.
+
+## 2026-07-21 — layered vs custom (reproducibility)
+
+Explained the two custom-app Containerfiles. `layered` builds `FROM frappe/base:*` /
+`frappe/build:*` (fast, but **mutable** published tags). `custom` builds the base from
+`python:*-slim` itself (self-contained, deterministic; pins Python/Node ourselves).
+Initially defaulted to `layered` for speed, then **reversed**: Brian's requirement for
+"absolutely reproducible and immutable state" is incompatible with layered's mutable
+base — a rollback could rebuild against a changed base. `custom`'s slower first build
+is absorbed by the buildx cache (base stage only rebuilds on base-arg changes).
+Brian agreed. → **D-004**.
+
+## 2026-07-21 — Vendoring strategy
+
+Concern raised: we will never own `frappe_docker` and must stay synchronized as it
+evolves. Recommended treating it as a **pinned, regenerable, read-only dependency**
+(SHA pin + sync command + drift status), not a fork/submodule/subtree.
+
+Brian revealed he owns **`ventwig`** (https://github.com/brian-pond/ventwig) — a
+dev-time tool that vendors an upstream repo/subdir into a project as **plain committed
+files**, pins the commit in `pyproject.toml`, writes `.ventwig.lock` (commit +
+content-tree hash), and does **drift detection**. This is the same model, already
+built, and Brian's own. Adopted it, with committing the tree (stronger for
+immutability: the pinned input lives in our repo, independent of GitHub uptime).
+Notes: `create_parent_package_markers = false`; consumer must be a git repo.
+→ **D-007**, **D-008**.
+
+## 2026-07-21 — Trigger architecture (daemon vs SSH)
+
+Brian raised: do we need an agent daemon on the VPS reacting to GitHub events, or must
+we SSH in every time to say "update yourself"? Reframed as a false binary. Key moves:
+1. Trigger on **image-ready**, not on raw commit (no image exists at commit time).
+2. Build one **idempotent, state-driven verb** (`reconcile`) — then every trigger
+   (human SSH, CI push, cron poll, future webhook) is just a poke at the same
+   converging function; the daemon question becomes a *latency preference*, deferrable.
+3. Prefer **pull over push**: CI-over-SSH hands GitHub a key *into* the box (rejected,
+   → D-005). A systemd-timer pull loop reaches only outward, needs no inbound port,
+   and self-heals across missed events.
+
+Recommendation adopted: pull-loop spine + deferred webhook daemon. The desired-state
+pointer *is a cairn* — the newest stone the VPS walks to. → **D-006**.
+
+## 2026-07-21 — Rollback semantics (D-012 closed)
+
+Brian ruled that **rollback does not restore the database**. Production data is
+fast-moving; auto-restoring SQL on rollback would discard live transactions. SQL
+restore must stay a deliberate, manual last resort. Added domain rationale: a normal
+Frappe/ERPNext `bench migrate` does **not** drop tables or columns, so a rolled-back
+image whose DocType/DocField JSON no longer matches the live schema just leaves unused
+columns/tables behind rather than losing data — image-only rollback is safe by
+default. We still snapshot *before* a forward migration so a manual restore is
+available, but never auto-applied. → **D-012** (closed).
+
+## 2026-07-21 — Scaffolding
+
+Created `docs/` scaffolding: project scope, closed decisions, open decisions, and this
+discussion log. Confirmed: layered rejected in favor of immutable `custom`; GitHub
+must not be able to SSH the VPS; ventwig recommended for vendoring.

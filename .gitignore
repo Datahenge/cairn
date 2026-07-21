@@ -1,0 +1,26 @@
+# Vendored upstream — TEMPORARY ignore.
+# Currently a raw shallow clone. Once ventwig manages it (D-007), this tree becomes
+# plain committed content pinned by .ventwig.lock, and this entry gets removed.
+/frappe_docker/
+
+# Build/deploy artifacts
+apps.json
+compose.custom.yaml
+*.env
+!example.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+*.swp
