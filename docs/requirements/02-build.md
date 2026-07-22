@@ -1,6 +1,6 @@
 # BR-BUILD — Image Build Requirements
 
-_Status: living · Pass 2 (drafted) · Last updated: 2026-07-21_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-21_
 
 Requirements for building a custom ERPNext image from a manifest, using the vendored
 `frappe_docker` `custom/Containerfile`. Conventions: see `/CLAUDE.md`. Decisions cited:
@@ -49,10 +49,13 @@ ADR-020, ADR-021)*
 so the app layer rebuilds exactly when app pins change; a correct build MUST NOT require
 `--no-cache`. *(reproducibility; upstream cache technique)*
 
-**`BR-BUILD-008`** — cairn MUST tag the image with an **immutable primary tag** = a short
-hash of all resolved inputs (Frappe + app commits + effective build args), plus a moving
-convenience tag (`<image_name>-latest`). Image base defaults to `cairn/<image_name>` and
-MUST be registry-agnostic (`ADR-009` deferred). *(ADR-011)*
+**`BR-BUILD-008`** — cairn MUST tag the image with an **immutable primary tag** of the
+form `<legible>-<inputhash>`, where `<legible>` is a human-readable slug derived from the
+resolved Frappe version/ref (e.g. `version-16` → `v16`) and `<inputhash>` is a short hash
+of *all* resolved inputs (Frappe + app commits + effective build args) that **alone**
+guarantees uniqueness and immutability — e.g. `cairn/erpnext-btu-v16:v16-a1b2c3d4`. cairn
+MUST also apply a moving convenience tag `latest`. The image base defaults to
+`cairn/<image_name>` and MUST be registry-agnostic (`ADR-009` deferred). *(ADR-011)*
 
 ## Build invocation & knobs
 
@@ -88,12 +91,6 @@ same declared image), explicitly *not* bit-for-bit hermetic; the Debian base ima
 ADR-007)*
 
 ---
-
-## Open within BUILD (Pass 2)
-
-- **`BR-BUILD-008` tag composition** — confirm the primary tag is a pure input-hash, or
-  whether it should carry a human-legible component (e.g. `<image_name>-<frappe-short>-
-  <hash>`). *Awaiting decision.*
 
 ## Cross-references
 

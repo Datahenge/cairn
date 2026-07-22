@@ -11,6 +11,9 @@ code changes live in git history.
 
 ## 2026-07-21
 
+- **`BUILD` requirements approved.** `BR-BUILD-008` tag composition settled as option (b)
+  — human-legible slug + input-hash (`v16-a1b2c3d4`) + moving `latest`. Marked the
+  `BUILD` row **approved**.
 - **`BUILD` drafted (Pass 2).** `BR-BUILD-001`…`013` in `docs/requirements/02-build.md`.
   Verified bench pins by branch/tag only (no raw-SHA); adopted **Option A**
   (resolve-and-record commits, pin tags, warn on branch) — correcting the earlier

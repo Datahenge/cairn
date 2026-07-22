@@ -33,7 +33,7 @@ added below as they are drafted.
 | --- | --- | --- | --- | --- |
 | 00 | — | `00-overview.md` | This index + conventions | living |
 | 01 | `VEND` | `01-vendoring.md` | Vendoring upstream frappe_docker (ventwig, pin, drift) | **approved** |
-| 02 | `BUILD` | `02-build.md` | Custom image build: manifest → apps.json → tagged image + marker | drafted (Pass 2) |
+| 02 | `BUILD` | `02-build.md` | Custom image build: manifest → apps.json → tagged image + marker | **approved** |
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | pending |
 | 04 | `DATA` | `04-data.md` | Backup / restore / rollback of the database | pending |
 | 05 | `CFG` | `05-config.md` | Environment-specific config on the sites volume (site config, local secrets, local policy files — e.g. cofferdam) | pending |
