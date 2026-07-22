@@ -22,3 +22,6 @@ build/
 # OS / editor
 .DS_Store
 *.swp
+
+# Claude Code local session/plan state
+.claude/
