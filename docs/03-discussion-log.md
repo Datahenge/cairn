@@ -7,6 +7,20 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-21 — Build PoC = ERPNext + BTU
+
+With cofferdam ruled out as a PoC (using it would contradict `ADR-019`), Brian proposed
+his **BTU** app ([`Datahenge/btu`](https://github.com/Datahenge/btu)). Assessment
+confirmed it fits: `version-16` is the default branch (branches back to v12);
+`requires-python >=3.14,<3.15` exactly matches the `custom` Containerfile defaults; it is
+a released, MIT, long-maintained pure-Frappe app with light pip deps (`cron-descriptor`,
+`schema`, `temporal-lib`) and needs no ERPNext. Its companion scheduler
+(`btu_scheduler_py`) + RQ workers are runtime-only and out of scope for a *build* PoC;
+Brian clarified BTU **degrades gracefully** without the scheduler (DocTypes/buttons fully
+usable, only cron firing lost), so an optional runtime smoke-test needs no extra infra.
+Chose composition **A: Frappe v16 + ERPNext + BTU** — on-mission (custom ERPNext image +
+custom app) and exercises the N>1 apps path. Supersedes the earlier ERPNext-only PoC.
+
 ## 2026-07-21 — Strict decoupling from cofferdam (ADR-019)
 
 Brian ruled that docker-cairn must **not** rely on, leverage, or be aware of cofferdam /

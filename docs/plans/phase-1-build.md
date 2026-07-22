@@ -25,18 +25,26 @@ push.
 
 ## Verification target
 
-Frappe `version-16` + **ERPNext only** (no custom app), Python 3.14.2 (matches the
-`custom` Containerfile defaults). Shipped as `cairn.toml.example`. ERPNext is itself
-an `apps.json` entry, so this still exercises the full resolve → apps.json → build →
-tag → marker path; a trivial throwaway scaffold app can be added later to exercise the
-N>1 apps case.
+Frappe `version-16` + **ERPNext + BTU** ([`Datahenge/btu`](https://github.com/Datahenge/btu)
+`@ version-16`), Python 3.14.2 (matches the `custom` Containerfile defaults). Shipped as
+`cairn.toml.example`. With ERPNext **and** a custom app, this exercises the full
+resolve → apps.json → build → tag → marker path **including the N>1 apps case** — which
+is docker-cairn's actual mission (a custom ERPNext image with custom apps).
 
-> **Why not `cofferdam-app` as the build PoC?** It was initially proposed for
-> version-alignment reasons, but that under-read its function. `cofferdam-app` is
-> restore-safety infrastructure (see the Pillar-3 note below), not a neutral build
-> payload — using it here would be circular (baking a restore guard before the restore
-> feature exists) and would couple the tool's first build to an alpha, in-flight app.
-> It is relocated to a **Pillar-3 design input**.
+> **Why BTU is a good PoC payload:** it supports `version-16` (default branch) and
+> `requires-python >=3.14,<3.15` (exact match to the Containerfile defaults); it is a
+> released, long-maintained, MIT Frappe app (not alpha/in-flight); its deps are light,
+> pure-Python pip packages (`cron-descriptor`, `schema`, `temporal-lib`); and it needs
+> no ERPNext. Its companion scheduler (`btu_scheduler_py`) + RQ workers are **runtime**
+> concerns, entirely out of scope for the build PoC — installing the `btu` app is
+> self-sufficient. BTU **degrades gracefully** without the scheduler (DocTypes/buttons
+> fully usable; only automatic cron firing is lost), so an optional runtime smoke-test
+> needs zero extra infrastructure.
+
+> **Why not `cofferdam-app` as the build PoC?** It was proposed for version-alignment
+> reasons, but that under-read its function. `cofferdam-app` is restore-safety
+> infrastructure, not a neutral build payload; using it here would be circular and, since
+> docker-cairn is now explicitly cofferdam-unaware (`ADR-019`), self-contradictory.
 
 ---
 
@@ -47,7 +55,7 @@ Human-friendly declaration of *what image to build*. Read with stdlib `tomllib`.
 
 ```toml
 [cairn]
-name = "erpnext-v16"             # logical image/deployment name
+name = "erpnext-btu-v16"         # logical image/deployment name
 
 [cairn.frappe]
 branch = "version-16"            # -> build-arg FRAPPE_BRANCH/FRAPPE_PATH
@@ -58,7 +66,10 @@ name = "erpnext"
 url  = "https://github.com/frappe/erpnext"
 ref  = "version-16"              # branch/tag; resolved to a commit at build time
 
-# Later, custom apps are added as further [[cairn.apps]] entries, e.g. cofferdam-app.
+[[cairn.apps]]                   # custom app (the N>1 case)
+name = "btu"
+url  = "https://github.com/Datahenge/btu"
+ref  = "version-16"
 
 [cairn.build]
 python_version   = "3.14.2"
@@ -141,7 +152,7 @@ src/cairn/marker.py            # .cairn/ marker read/write + index
 src/cairn/vendor.py            # thin ventwig wrapper (status/sync)
 src/cairn/doctor.py            # preflight checks
 src/cairn/errors.py
-cairn.toml.example             # v16 + ERPNext-only build PoC target
+cairn.toml.example             # v16 + ERPNext + BTU build PoC target
 tests/                         # config, appsjson, marker round-trip, inputhash determinism
 docs/01-decisions-closed.md    # MODIFY: close/annotate ADR-011, ADR-015, ADR-016, ADR-018
 docs/02-decisions-open.md      # MODIFY: mark ADR-009 deferred (local-only Phase 1)
@@ -161,7 +172,7 @@ and delegate all vendored-tree management to **ventwig** (already installed in `
    full `docker build` command, computed tags, and the intended marker — no Docker
    needed, CI-safe.
 4. **Real build** (manual, needs Docker; heavy): `cairn build` on the example →
-   `docker images` shows `cairn/erpnext-v16:<tag>`; a marker exists with resolved
+   `docker images` shows `cairn/erpnext-btu-v16:<tag>`; a marker exists with resolved
    commits + digest; re-running unchanged reuses cache and yields the **same tag**
    (reproducibility check).
 

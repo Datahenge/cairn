@@ -22,6 +22,11 @@ code changes live in git history.
 - **Renamed the decision-record prefix `D-NNN` → `ADR-NNN`** across all docs
   (`ADR-001`…`ADR-018`), for an explicit, self-describing identifier that matches
   `cofferdam-app`'s ADR convention. No IDs or numbering changed — prefix only.
+- **Set the build PoC target to Frappe v16 + ERPNext + BTU** (`Datahenge/btu@version-16`),
+  superseding the earlier ERPNext-only PoC now that a suitable, non-contradictory custom
+  app exists. Updated the Phase-1 plan's verification target and illustrative
+  `cairn.toml` manifest (the actual `cairn.toml.example` file is deferred to BUILD
+  implementation, after Phase-2 `BUILD` requirements exist).
 - **Added `ADR-019` — strict decoupling from cofferdam** (docker-cairn and cofferdam are
   mutually unaware). Reframed the Phase-1 plan's Pillar-3 note around a *generic*
   restore-scoping rule (never overwrite local env config on the sites volume) instead of
