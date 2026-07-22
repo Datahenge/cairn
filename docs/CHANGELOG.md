@@ -22,6 +22,12 @@ code changes live in git history.
 - **Renamed the decision-record prefix `D-NNN` → `ADR-NNN`** across all docs
   (`ADR-001`…`ADR-018`), for an explicit, self-describing identifier that matches
   `cofferdam-app`'s ADR convention. No IDs or numbering changed — prefix only.
+- **Added `ADR-019` — strict decoupling from cofferdam** (docker-cairn and cofferdam are
+  mutually unaware). Reframed the Phase-1 plan's Pillar-3 note around a *generic*
+  restore-scoping rule (never overwrite local env config on the sites volume) instead of
+  cofferdam-specific enforcement; retracted the earlier `cofferdam validate` deploy
+  invariant. Genericized the `CFG` area description in `CLAUDE.md` and the requirements
+  overview (cofferdam now only a non-normative example).
 
 ### Predating this changelog (context)
 

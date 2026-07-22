@@ -29,8 +29,13 @@ ground rules for how the human and the AI collaborate here. They bind the AI.
 Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside ADRs).
 
 **BR areas:** `VEND` vendoring · `BUILD` image build · `DEPLOY` reconcile/lifecycle ·
-`DATA` backup/restore/rollback · `CFG` environment config (incl. cofferdam policy) ·
+`DATA` backup/restore/rollback · `CFG` environment-specific config on the sites volume
+(site config, local secrets, local policy files — e.g. a cofferdam policy file) ·
 `CLI` command surface.
+
+> docker-cairn is **cofferdam-unaware** (`ADR-019`). cofferdam is only ever a
+> non-normative example of a local config file; the tool never depends on or special-
+> cases it.
 
 ## Artifacts and where they live
 

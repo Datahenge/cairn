@@ -7,6 +7,21 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-21 — Strict decoupling from cofferdam (ADR-019)
+
+Brian ruled that docker-cairn must **not** rely on, leverage, or be aware of cofferdam /
+cofferdam-app — and cofferdam should stay unaware of Docker. His intent: cofferdam stands
+on its own and quietly does its job; if installed + configured it works, otherwise it
+doesn't. Agreed, with a strengthening: the one scenario that appeared to need
+cofferdam-awareness (restoring a Production DB into non-prod) is met correct-by-
+construction via a **generic** rule — *restore replaces the DB (+ optional attachments)
+and never overwrites local environment config on the sites volume* — which protects
+`site_config.json`, local secrets, and any local policy file (e.g. cofferdam's) as a side
+effect, naming no app. This also **retracted** an earlier proposal that docker-cairn
+enforce cofferdam policy presence / run `cofferdam validate` as a deploy invariant — that
+was exactly the coupling being rejected. cofferdam may still appear as a *non-normative
+illustrative example* in docs. → **ADR-019** (closed).
+
 ## 2026-07-21 — Adopted Scribe Coding methodology
 
 Brian directed the project to follow **Scribe Coding** (Document-Driven AI Development,

@@ -141,7 +141,7 @@ src/cairn/marker.py            # .cairn/ marker read/write + index
 src/cairn/vendor.py            # thin ventwig wrapper (status/sync)
 src/cairn/doctor.py            # preflight checks
 src/cairn/errors.py
-cairn.toml.example             # v16 + ERPNext + cofferdam-app target
+cairn.toml.example             # v16 + ERPNext-only build PoC target
 tests/                         # config, appsjson, marker round-trip, inputhash determinism
 docs/01-decisions-closed.md    # MODIFY: close/annotate ADR-011, ADR-015, ADR-016, ADR-018
 docs/02-decisions-open.md      # MODIFY: mark ADR-009 deferred (local-only Phase 1)
@@ -170,27 +170,28 @@ Deploy/reconcile pull-loop (ADR-006), migration orchestration (ADR-014), backup/
 (ADR-013) with rollback = image-only (ADR-012), desired-state pointer (ADR-010), registry
 push/GHCR (ADR-009), secrets on VPS (ADR-017), multi-site (ADR-016).
 
-## Pillar-3 design input: cofferdam outbound guard (informs later phases)
+## Pillar-3 design principle: generic restore scoping (not cofferdam-aware)
 
-`cofferdam-app` is the outbound guard (email + Frappe webhooks) that makes
-**Prod→non-prod database restore safe**, and is intended to become a required guard on
-any such restore docker-cairn performs. Facts from the source that constrain Pillars 2–3:
+docker-cairn and cofferdam are **mutually unaware** (`ADR-019`). cofferdam-app, if used,
+is just an ordinary `[[cairn.apps]]` entry — no special-casing anywhere in the tool.
 
-- **Config is a local `environment_policy.toml`** (TOML, *not* YAML), at the fixed path
-  `sites/<site>/environment_policy.toml` — no env-var override. That path is inside the
-  persistent `sites` **VOLUME** the `custom` Containerfile declares, so the policy is
-  **environment-specific runtime config, never baked into the image.**
-- **Fails closed:** a missing/invalid policy blocks all outbound and logs. So policy
-  *presence + validity* must become a deploy invariant (assert file exists and
-  `cofferdam validate` passes before a site is called healthy).
-- **Never in DB backups by design** ("restored data owns business intent; local config
-  owns outbound"). Therefore Pillar-3 restore must stay DB(+files)-only and **explicitly
-  never overwrite** `environment_policy.toml`, so the target env's own guard survives.
-- **Per-worker cache:** live policy edits need `cofferdam_app.policy.reload_policy()`;
-  a normal deploy restart picks it up automatically.
+The one restore scenario that *seemed* to demand cofferdam-awareness — restoring a
+Production DB into a non-prod stack — is instead handled by a **generic** rule that
+names no app:
 
-**Proposed new open decision `ADR-019` — environment-specific config management in Docker
-(starting with the cofferdam policy file):** how docker-cairn provisions/versions each
-environment's `environment_policy.toml` onto the sites volume, enforces presence as a
-deploy invariant, and guarantees restore never clobbers it. To be opened in
-`docs/02-decisions-open.md`.
+> A restore replaces the **database** (and optionally file attachments) and **MUST NOT
+> overwrite local environment configuration** on the sites volume.
+
+This protects every local, environment-specific file the operator placed on the volume
+— `site_config.json`, local secrets, and any local policy files (for example, a
+cofferdam `environment_policy.toml`) — **as a side effect**, without docker-cairn
+knowing those files' meaning. cofferdam's guarantee thus becomes correct-by-construction:
+a docker-cairn restore leaves the target environment's own config untouched, and
+cofferdam does its quiet job independently. This becomes a normative `BR-DATA-###` /
+`BR-CFG-###` requirement in Phase-2 co-creation.
+
+**Retracted:** an earlier draft proposed docker-cairn enforce cofferdam policy presence
+and run `cofferdam validate` as a deploy invariant. That coupling is withdrawn — it made
+the tool cofferdam-aware, which `ADR-019` forbids. docker-cairn's restore-safety
+contribution stays generic (narrow restore scope, environment labeling, a confirmation on
+prod→non-prod); guarding outbound calls is cofferdam's job, in an independent layer.
