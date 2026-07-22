@@ -32,7 +32,7 @@ added below as they are drafted.
 | # | Area | File | Scope | Status |
 | --- | --- | --- | --- | --- |
 | 00 | — | `00-overview.md` | This index + conventions | living |
-| 01 | `VEND` | `01-vendoring.md` | Vendoring upstream frappe_docker (ventwig, pin, drift) | pending |
+| 01 | `VEND` | `01-vendoring.md` | Vendoring upstream frappe_docker (ventwig, pin, drift) | drafted (Pass 2) |
 | 02 | `BUILD` | `02-build.md` | Custom image build: manifest → apps.json → tagged image + marker | pending |
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | pending |
 | 04 | `DATA` | `04-data.md` | Backup / restore / rollback of the database | pending |

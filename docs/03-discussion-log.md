@@ -7,6 +7,23 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-21 — Phase 2 begins: VEND requirements (Pass 2)
+
+Started requirements co-creation with `VEND`. Drafted `BR-VEND-001`…`010` from the
+settled decisions. Resolutions from Brian's Pass-1 critique:
+- **Drift = hard stop, no override** (`BR-VEND-005`). No scenario justifies an override:
+  experimenting means editing the vendored tree (forbidden by `ADR-001`), benign drift is
+  fixed by `ventwig sync`, and an emergency edit-and-override just discards the
+  reproducibility trail. An override's only real effect is silently shipping an
+  unreproducible image.
+- **Pin immutability** — SHA pinning is the more-correct pin in principle but not required
+  (committed tree + lock is the anchor); the cheap high-value guard is *sync-time commit
+  verification*. Captured as **`ADR-020`** (open, a ventwig enhancement, non-blocking);
+  `BR-VEND-002` written pin-mechanism-agnostic.
+- Single vendored source (`frappe_docker`) — no multi-source machinery (YAGNI).
+- `BR-VEND-005`/`006` stay in `VEND`, `BUILD` cites them; `cairn vendor` commands are
+  `BR-CLI`.
+
 ## 2026-07-21 — Build PoC = ERPNext + BTU
 
 With cofferdam ruled out as a PoC (using it would contradict `ADR-019`), Brian proposed
