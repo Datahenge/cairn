@@ -16,6 +16,20 @@ database.
 
 Early design. No code yet — scaffolding and decisions are being recorded first.
 
+## Deployment manifest (`cairn.toml`) — design in progress
+
+An image is declared by a standalone `cairn.toml` (one file = one image; an image is
+**not** an environment — it's Frappe + app code + prerequisites). It names the Frappe
+branch, an **ordered list** of apps (ERPNext + custom apps), and version knobs.
+
+> ⚠️ **`[[cairn.apps]]` is an ORDERED LIST.** The order is significant: it is the app
+> **install order** (App A before App B before App C). List every app *after* the apps
+> it depends on. cairn does not reorder or resolve dependencies for you. Every shipped
+> `cairn.toml` template/example repeats this warning inline.
+
+Schema and rules: see `docs/requirements/02-build.md` (in progress) and the
+[Phase-1 build plan](docs/plans/phase-1-build.md).
+
 ## Design docs
 
 | Doc | Contents |

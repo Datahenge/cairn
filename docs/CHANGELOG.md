@@ -11,6 +11,14 @@ code changes live in git history.
 
 ## 2026-07-21
 
+- **Manifest schema talk-through (pre-`BUILD`).** Settled: standalone `cairn.toml`
+  (one file = one image, env-agnostic); `image_name`; special `[cairn.frappe]` section;
+  **ordered** `[[cairn.apps]]` list = positional install order (no dependency solver);
+  `[cairn.build]` knobs (`python_version`, `node_version`, `install_chromium`) +
+  passthrough; no separate lockfile (marker is the record); input-deterministic (not
+  hermetic) reproducibility bar. Redis/MariaDB versions are a DEPLOY concern (compose
+  image tags), not image/manifest inputs. Documented the ordered-list rule prominently in
+  `README.md` (required inline in every shipped template).
 - **`VEND` requirements approved.** Brian signed off `BR-VEND-001`…`010` (hard-stop drift
   reasoning accepted; `ADR-020` parked open). Marked the `VEND` row **approved** in the
   requirements overview.
