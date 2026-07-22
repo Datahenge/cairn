@@ -7,13 +7,27 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-21 — Adopted Scribe Coding methodology
+
+Brian directed the project to follow **Scribe Coding** (Document-Driven AI Development,
+<https://datahenge.com/blog/document-driven-ai-development/>) — his own methodology:
+documentation is a living contract that precedes and governs code (docs-first, single
+source of truth, Never Assume, small modules; requirements co-created via dialogue and
+tagged with business-rule IDs; a CHANGELOG keeps docs living; code and tests cite the
+BR IDs). Confirmed: the six BR areas (`VEND`, `BUILD`, `DEPLOY`, `DATA`, `CFG`, `CLI`)
+match his mental model; keep the **dual `BR` (requirements) + `ADR` (decisions/ADRs)**
+system, as `cofferdam-app` already does (`BR-API-001` alongside ADRs). Ground-rules
+home = root `CLAUDE.md` (auto-loads each session, so it actually binds the workflow).
+Implication: **no Phase-1 build code until requirements are solid.** Established the
+living-doc infrastructure (`docs/requirements/00-overview.md`, `docs/CHANGELOG.md`).
+
 ## 2026-07-21 — Kickoff & direction
 
 Brian framed the project: wrap `frappe_docker` to make three things frictionless —
 (1) rebuild a custom ERPNext image (Frappe + ERPNext + N custom apps), (2) handle
 CI/CD, image rebuilding, restarting/re-pointing containers at the correct image for a
 commit/tag/branch, and (3) easy backup/restore/rollback of SQL databases. Explicit
-constraint: **do not modify `frappe_docker`; bolt on around it** (→ D-001).
+constraint: **do not modify `frappe_docker`; bolt on around it** (→ ADR-001).
 
 ## 2026-07-21 — Grounding in real upstream
 
@@ -46,7 +60,7 @@ Initially defaulted to `layered` for speed, then **reversed**: Brian's requireme
 "absolutely reproducible and immutable state" is incompatible with layered's mutable
 base — a rollback could rebuild against a changed base. `custom`'s slower first build
 is absorbed by the buildx cache (base stage only rebuilds on base-arg changes).
-Brian agreed. → **D-004**.
+Brian agreed. → **ADR-004**.
 
 ## 2026-07-21 — Vendoring strategy
 
@@ -61,7 +75,7 @@ content-tree hash), and does **drift detection**. This is the same model, alread
 built, and Brian's own. Adopted it, with committing the tree (stronger for
 immutability: the pinned input lives in our repo, independent of GitHub uptime).
 Notes: `create_parent_package_markers = false`; consumer must be a git repo.
-→ **D-007**, **D-008**.
+→ **ADR-007**, **ADR-008**.
 
 ## 2026-07-21 — Trigger architecture (daemon vs SSH)
 
@@ -72,13 +86,13 @@ we SSH in every time to say "update yourself"? Reframed as a false binary. Key m
    (human SSH, CI push, cron poll, future webhook) is just a poke at the same
    converging function; the daemon question becomes a *latency preference*, deferrable.
 3. Prefer **pull over push**: CI-over-SSH hands GitHub a key *into* the box (rejected,
-   → D-005). A systemd-timer pull loop reaches only outward, needs no inbound port,
+   → ADR-005). A systemd-timer pull loop reaches only outward, needs no inbound port,
    and self-heals across missed events.
 
 Recommendation adopted: pull-loop spine + deferred webhook daemon. The desired-state
-pointer *is a cairn* — the newest stone the VPS walks to. → **D-006**.
+pointer *is a cairn* — the newest stone the VPS walks to. → **ADR-006**.
 
-## 2026-07-21 — Rollback semantics (D-012 closed)
+## 2026-07-21 — Rollback semantics (ADR-012 closed)
 
 Brian ruled that **rollback does not restore the database**. Production data is
 fast-moving; auto-restoring SQL on rollback would discard live transactions. SQL
@@ -87,9 +101,9 @@ Frappe/ERPNext `bench migrate` does **not** drop tables or columns, so a rolled-
 image whose DocType/DocField JSON no longer matches the live schema just leaves unused
 columns/tables behind rather than losing data — image-only rollback is safe by
 default. We still snapshot *before* a forward migration so a manual restore is
-available, but never auto-applied. → **D-012** (closed).
+available, but never auto-applied. → **ADR-012** (closed).
 
-## 2026-07-21 — ventwig wired up (D-007 implemented)
+## 2026-07-21 — ventwig wired up (ADR-007 implemented)
 
 Made `docker-cairn` a Python project (`pyproject.toml`) and configured ventwig to
 vendor `frappe_docker`. Findings that shaped it:

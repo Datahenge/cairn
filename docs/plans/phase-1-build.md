@@ -3,7 +3,7 @@
 ## Context
 
 `docker-cairn` wraps the vendored, pinned `frappe_docker` (v3.2.1, managed by
-ventwig — see `docs/01-decisions-closed.md` D-007) to make a custom ERPNext
+ventwig — see `docs/01-decisions-closed.md` ADR-007) to make a custom ERPNext
 deployment reproducible and low-thought. The three pillars are build, deploy, and
 data lifecycle. Deploy and backup both stand on a **reproducible, immutably-tagged
 image**, so Phase 1 delivers exactly that — end to end, on the workstation, with no
@@ -17,9 +17,9 @@ the **cairn marker** (a durable record binding resolved inputs → image) a firs
 artifact that later deploy/rollback phases will consume.
 
 **Scope decisions this phase assumes** (to be reflected in the decision docs):
-`custom` Containerfile (D-004); single site per bench (D-016); registry deferred /
-local-only, GHCR as eventual default (D-009); CLI command is `cairn` (D-018);
-apps pinned to commit for immutability (D-015); input-hash immutable tag (D-011).
+`custom` Containerfile (ADR-004); single site per bench (ADR-016); registry deferred /
+local-only, GHCR as eventual default (ADR-009); CLI command is `cairn` (ADR-018);
+apps pinned to commit for immutability (ADR-015); input-hash immutable tag (ADR-011).
 Out of scope this phase: deploy/reconcile, migration, backup/restore, VPS, registry
 push.
 
@@ -98,14 +98,14 @@ docker build \
 - **`CACHE_BUST` = hash of the resolved app commits** (upstream technique #5, adapted):
   the app layer rebuilds exactly when app pins change — deterministic, no `--no-cache`.
 
-### 5. Tagging (registry-agnostic, registry-ready) — D-011
+### 5. Tagging (registry-agnostic, registry-ready) — ADR-011
 - `image_base` defaults to `cairn/<name>` locally; a later `registry` setting makes it
   `ghcr.io/<owner>/<name>` with no other change.
 - Immutable primary tag = `<name>-<inputhash>` where `inputhash` is a short digest of
   {frappe commit, each app commit, build args}. Same inputs ⇒ same tag ⇒ reproducible.
 - Moving convenience tag = `<name>-latest`.
 
-### 6. Cairn marker (first-class) — D-011 concept
+### 6. Cairn marker (first-class) — ADR-011 concept
 `marker.py`: after a successful build, write `.cairn/markers/<tag>.toml` (and append an
 index) recording: manifest name, resolved frappe + app commits, build args,
 `image_base`, both tags, the image **digest** (`docker inspect`), the `frappe_docker`
@@ -143,8 +143,8 @@ src/cairn/doctor.py            # preflight checks
 src/cairn/errors.py
 cairn.toml.example             # v16 + ERPNext + cofferdam-app target
 tests/                         # config, appsjson, marker round-trip, inputhash determinism
-docs/01-decisions-closed.md    # MODIFY: close/annotate D-011, D-015, D-016, D-018
-docs/02-decisions-open.md      # MODIFY: mark D-009 deferred (local-only Phase 1)
+docs/01-decisions-closed.md    # MODIFY: close/annotate ADR-011, ADR-015, ADR-016, ADR-018
+docs/02-decisions-open.md      # MODIFY: mark ADR-009 deferred (local-only Phase 1)
 docs/03-discussion-log.md      # MODIFY: Phase 1 scope decisions
 ```
 
@@ -166,9 +166,9 @@ and delegate all vendored-tree management to **ventwig** (already installed in `
    (reproducibility check).
 
 ## Not in this phase (later phases, already scoped in docs)
-Deploy/reconcile pull-loop (D-006), migration orchestration (D-014), backup/restore
-(D-013) with rollback = image-only (D-012), desired-state pointer (D-010), registry
-push/GHCR (D-009), secrets on VPS (D-017), multi-site (D-016).
+Deploy/reconcile pull-loop (ADR-006), migration orchestration (ADR-014), backup/restore
+(ADR-013) with rollback = image-only (ADR-012), desired-state pointer (ADR-010), registry
+push/GHCR (ADR-009), secrets on VPS (ADR-017), multi-site (ADR-016).
 
 ## Pillar-3 design input: cofferdam outbound guard (informs later phases)
 
@@ -189,7 +189,7 @@ any such restore docker-cairn performs. Facts from the source that constrain Pil
 - **Per-worker cache:** live policy edits need `cofferdam_app.policy.reload_policy()`;
   a normal deploy restart picks it up automatically.
 
-**Proposed new open decision `D-019` — environment-specific config management in Docker
+**Proposed new open decision `ADR-019` — environment-specific config management in Docker
 (starting with the cofferdam policy file):** how docker-cairn provisions/versions each
 environment's `environment_policy.toml` onto the sites volume, enforces presence as a
 deploy invariant, and guarantees restore never clobbers it. To be opened in

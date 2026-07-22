@@ -21,7 +21,7 @@ Early design. No code yet — scaffolding and decisions are being recorded first
 | Doc | Contents |
 | --- | --- |
 | [docs/00-project-scope.md](docs/00-project-scope.md) | Purpose, pillars, what it is/isn't, principles |
-| [docs/01-decisions-closed.md](docs/01-decisions-closed.md) | Settled decisions (`D-001`…) with rationale |
+| [docs/01-decisions-closed.md](docs/01-decisions-closed.md) | Settled decisions (`ADR-001`…) with rationale |
 | [docs/02-decisions-open.md](docs/02-decisions-open.md) | Unresolved questions + current leans |
 | [docs/03-discussion-log.md](docs/03-discussion-log.md) | Chronological design reasoning |
 
@@ -29,7 +29,7 @@ Early design. No code yet — scaffolding and decisions are being recorded first
 
 `frappe_docker/` is a pinned, read-only copy of upstream, vendored as plain committed
 files via [`ventwig`](https://github.com/brian-pond/ventwig) and never edited by hand
-(`D-001` / `D-007`). It is pinned to upstream release tag **`v3.2.1`**; the exact
+(`ADR-001` / `ADR-007`). It is pinned to upstream release tag **`v3.2.1`**; the exact
 synced commit + content-tree hash are recorded in `.ventwig.lock`.
 
 ```

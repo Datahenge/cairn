@@ -1,27 +1,27 @@
 # Closed Decisions
 
-Stable IDs (`D-00N`) persist even if a decision reopens. When an open decision
+Stable IDs (`ADR-00N`) persist even if a decision reopens. When an open decision
 closes, it moves here keeping its ID and gains a **Decided** date.
 
 _Last updated: 2026-07-21_
 
 ---
 
-### D-001 — Wrap `frappe_docker`, never modify it
+### ADR-001 — Wrap `frappe_docker`, never modify it
 **Decided:** 2026-07-21
 Treat upstream `frappe/frappe_docker` as an untouched dependency. All new
 capability is bolted on *around* it; we never fork or patch upstream files.
 
 ---
 
-### D-002 — Target: single-host VPS with Docker Compose
+### ADR-002 — Target: single-host VPS with Docker Compose
 **Decided:** 2026-07-21
 One Docker host, `docker compose` v2. **Kubernetes and Docker Swarm are out of
 scope** — no interest in that operational complexity.
 
 ---
 
-### D-003 — CLI substrate: Python (Click/Typer)
+### ADR-003 — CLI substrate: Python (Click/Typer)
 **Decided:** 2026-07-21
 Phase 1 is a Python CLI using Click or Typer, shelling out to `docker`/`buildx`/
 `compose`/`bench`. Thin bash only where unavoidable. A TUI may come much later;
@@ -29,7 +29,7 @@ not Phase 1.
 
 ---
 
-### D-004 — Image build strategy: `custom`, not `layered`
+### ADR-004 — Image build strategy: `custom`, not `layered`
 **Decided:** 2026-07-21
 Use `images/custom/Containerfile` (self-contained, `FROM python:*-slim`, builds
 the entire base itself), **not** `images/layered/Containerfile`.
@@ -44,14 +44,14 @@ rebuilds when base args change, not when apps change.
 
 ---
 
-### D-005 — No GitHub → VPS SSH access
+### ADR-005 — No GitHub → VPS SSH access
 **Decided:** 2026-07-21
 We will **not** give GitHub Actions an SSH key that can reach the VPS. Too risky:
 it is an inbound credential into the box, and a CI compromise would reach the server.
 
 ---
 
-### D-006 — Deploy trigger model: idempotent reconcile + pull loop
+### ADR-006 — Deploy trigger model: idempotent reconcile + pull loop
 **Decided:** 2026-07-21
 The deploy unit is a single **idempotent, state-driven verb** (`cairn reconcile` /
 `cairn deploy`): read desired ref → compare to running → converge only if different;
@@ -63,11 +63,11 @@ heals across missed events.
 
 **Deferred:** a bespoke webhook daemon is a later luxury, not Phase 1. Because the
 verb is idempotent, adding a webhook receiver later just calls the same verb.
-(CI-over-SSH push is rejected per D-005.)
+(CI-over-SSH push is rejected per ADR-005.)
 
 ---
 
-### D-007 — Vendoring via `ventwig`, committed + drift-checked
+### ADR-007 — Vendoring via `ventwig`, committed + drift-checked
 **Decided:** 2026-07-21 · **Implemented:** 2026-07-21 (pinned to `v3.2.1`)
 Vendor `frappe_docker` using [`ventwig`](https://github.com/brian-pond/ventwig)
 (Brian's own tool): pin an upstream **release tag** in `pyproject.toml`
@@ -83,23 +83,23 @@ were ever moved.
 
 **Rationale:** Committing the pinned tree makes builds reproducible even if GitHub is
 down or the SHA is later GC'd — the immutable input lives *in our repo*. Drift
-detection enforces "never modify it" (D-001) without gitignore-and-regenerate.
+detection enforces "never modify it" (ADR-001) without gitignore-and-regenerate.
 Upgrades become deliberate, reviewable acts (`ventwig sync` → diff → test).
 
 **Config notes:** set `create_parent_package_markers = false` (we vendor the whole
 `frappe_docker` root, not a Python `src/` subdir — no `__init__.py` in the Docker
-build context). ventwig requires the consumer to be a git working tree → see D-008.
+build context). ventwig requires the consumer to be a git working tree → see ADR-008.
 
 ---
 
-### D-008 — `docker-cairn` is itself a git repository
+### ADR-008 — `docker-cairn` is itself a git repository
 **Decided:** 2026-07-21
 The project is version-controlled (required by ventwig, and desirable regardless).
 Our scaffolding, CLI, config, and the vendored `frappe_docker` tree are all tracked.
 
 ---
 
-### D-012 — Rollback does NOT restore the database
+### ADR-012 — Rollback does NOT restore the database
 **Decided:** 2026-07-21
 `cairn rollback` reverts the **image** (and restarts/re-points the stack) only. It
 does **not** restore a DB snapshot. Image rollback and DB restore are separate,
@@ -115,7 +115,7 @@ image's DocType/DocField JSON no longer matches the live MariaDB schema, the ext
 columns/tables simply sit unused rather than causing data loss — making image-only
 rollback safe by default.
 
-**Consequence:** we still snapshot **before** a forward deploy's migration (D-014) so
+**Consequence:** we still snapshot **before** a forward deploy's migration (ADR-014) so
 a manual restore is *available* if an operator chooses it — but the snapshot is never
 applied automatically.
 

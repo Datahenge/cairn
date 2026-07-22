@@ -23,8 +23,8 @@ ground rules for how the human and the AI collaborate here. They bind the AI.
 
 - **`BR-<AREA>-NNN` = requirements** — "the system MUST…". The authoritative statement
   of *what* the system does. Referenced by code docstrings and tests.
-- **`D-NNN` = decisions (ADRs)** — "we chose X because…". The rationale/architecture
-  record. Requirements cite the decisions that shaped them.
+- **`ADR-NNN` = decisions** (Architecture Decision Records) — "we chose X because…".
+  The rationale/architecture record. Requirements cite the decisions that shaped them.
 
 Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside ADRs).
 
@@ -37,11 +37,11 @@ Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside 
 | Path | Purpose | IDs |
 | --- | --- | --- |
 | `docs/requirements/` | Numbered requirement docs + ToC (`00-overview.md`, then per-area) | `BR-<AREA>-NNN` |
-| `docs/01-decisions-closed.md`, `docs/02-decisions-open.md` | Decision register (ADRs) | `D-NNN` |
+| `docs/01-decisions-closed.md`, `docs/02-decisions-open.md` | Decision register (ADRs) | `ADR-NNN` |
 | `docs/03-discussion-log.md` | Narrative design record | — |
 | `docs/CHANGELOG.md` | Living-documentation revisions | — |
 | `docs/plans/` | Implementation plans, downstream of requirements | — |
-| `frappe_docker/` | Vendored upstream, **read-only** (ventwig, `D-007`) — never edit | — |
+| `frappe_docker/` | Vendored upstream, **read-only** (ventwig, `ADR-007`) — never edit | — |
 
 ## Workflow (Scribe Coding phases)
 
