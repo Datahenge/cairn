@@ -7,6 +7,31 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-21 — BUILD Pass 2: manifest, Option A pinning, provenance-as-labels, fork stance
+
+Verified from bench source (`bench/app.py`) that both `FRAPPE_BRANCH` and `apps.json`
+clone via `git clone --branch <ref>` with no post-clone checkout, and the Containerfile
+strips `.git` in the same `RUN` — so **raw commit SHAs are unsupported** (correcting an
+earlier claim that `apps.json` accepts commits). Evaluated Brian's two workarounds
+(local-path; mid-build checkout): both are valid for a local bench but require editing
+the vendored Containerfile (`ADR-001` forbids) — app repos aren't in the build container,
+and `.git` is already stripped. Chose **Option A**: resolve every ref to its commit at
+build time and *record* it (drives `CACHE_BUST`, tag, labels); pin by tag for
+reproducibility; warn on branch. Rejected Option C (build-time synthetic-ref git mirror)
+as too heavy and Option B (own the build) as thesis-defeating.
+
+Markers: Brian rejected storing markers in the cairn tool repo (cairn is a distributable
+tool; markers are *deployment* artifacts). Resolved: **provenance is stamped onto the
+image as OCI labels** (via `docker build --label`, no Containerfile edit) — travels with
+the artifact; optional sidecar in the *deployment* dir; never in cairn's own tree.
+
+Fork question: agreed frappe_docker (MIT) adds no capability — it's a maintenance-heavy
+convenience recipe — so a fork is legally harmless and defensible by transparency. Framed
+it as the **sanctioned escape hatch** for control we can't get while vendoring unmodified
+(e.g. hard commit-pinning), deferred and recorded as **`ADR-021`** (open). Closed
+**`ADR-015`** (manifest schema + Option A pinning). BUILD drafted to
+`docs/requirements/02-build.md` (`BR-BUILD-001`…`013`).
+
 ## 2026-07-21 — Phase 2 begins: VEND requirements (Pass 2)
 
 Started requirements co-creation with `VEND`. Drafted `BR-VEND-001`…`010` from the

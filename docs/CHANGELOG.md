@@ -11,6 +11,17 @@ code changes live in git history.
 
 ## 2026-07-21
 
+- **`BUILD` drafted (Pass 2).** `BR-BUILD-001`…`013` in `docs/requirements/02-build.md`.
+  Verified bench pins by branch/tag only (no raw-SHA); adopted **Option A**
+  (resolve-and-record commits, pin tags, warn on branch) — correcting the earlier
+  "apps.json accepts commits" claim. Provenance is stamped as **OCI image labels**
+  (not stored in the cairn tool repo); optional sidecar lives in the deployment dir.
+  One item still open: `BR-BUILD-008` tag composition (pure hash vs. human-legible).
+- **Closed `ADR-015`** (manifest `cairn.toml` schema + Option A app-pinning), moved to
+  the closed register.
+- **Added `ADR-021` (open)** — a deliberate fork of frappe_docker (MIT) as the sanctioned
+  escape hatch for control unattainable while vendoring unmodified; deferred, not a
+  default.
 - **Manifest schema talk-through (pre-`BUILD`).** Settled: standalone `cairn.toml`
   (one file = one image, env-agnostic); `image_name`; special `[cairn.frappe]` section;
   **ordered** `[[cairn.apps]]` list = positional install order (no dependency solver);

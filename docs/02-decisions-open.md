@@ -49,14 +49,6 @@ flip — so failures are catchable and rollback-able. _Open._
 
 ---
 
-### ADR-015 — Custom-apps specification (our manifest → apps.json)
-cairn should own a human-friendly apps manifest (name, repo, ref/pin per app) that it
-compiles into the `apps.json` BuildKit secret. Pinning apps by **commit** (not branch)
-is required for true immutability. Format/location TBD (likely a `[tool.cairn]` /
-`cairn.toml` block). _Open._
-
----
-
 ### ADR-016 — Multi-site scope
 Single site per bench assumed for Phase 1, or must backup/restore/deploy handle
 multiple sites on one bench from day one? Affects backup granularity and
@@ -94,3 +86,25 @@ pull a moved tag. Options:
 by tag or SHA — ideally (b)+(c). This is a ventwig enhancement (Brian owns ventwig),
 tracked here; **not a docker-cairn blocker**. `BR-VEND-002` is written pin-mechanism-
 agnostic so nothing here changes when this lands. _Open._
+
+---
+
+### ADR-021 — Deliberate fork of frappe_docker as the sanctioned escape hatch
+frappe_docker is **MIT-licensed** and adds *no capability* to Frappe/ERPNext — it merely
+codifies the documented manual install into a repeatable recipe. So forking it into our
+own spinoff is legally permitted (retain the notice) and defensible by transparency
+(publish the Dockerfile + build commands).
+
+**Stance:** a fork is the **sanctioned escape hatch** for control we cannot get while
+vendoring unmodified (`ADR-001`) — e.g. hard commit-pinning (see `ADR-020`, and the
+build immutability model in `docs/requirements/02-build.md`), which is impossible via
+bench's `git clone --branch` without editing the vendored tree. If such a need becomes
+essential, the honest move is a *deliberate, eyes-open fork recorded as its own decision*
+— not silent local edits (which `BR-VEND-004` forbids) nor Option C's build-time git-
+mirror machinery.
+
+**Cost to weigh when the time comes:** a fork transfers frappe_docker's real value — the
+*continuous maintenance* of a correct recipe as Python/Node/wkhtmltopdf/Debian/Frappe
+churn — onto us, and forfeits the deliberate drift-checked sync we built with ventwig
+(`ADR-007`). Therefore: **deferred, not a default.** Revisit only against a concrete,
+essential need. _Open._
