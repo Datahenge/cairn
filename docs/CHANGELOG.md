@@ -11,10 +11,12 @@ code changes live in git history.
 
 ## 2026-07-21
 
+- **`VEND` requirements approved.** Brian signed off `BR-VEND-001`…`010` (hard-stop drift
+  reasoning accepted; `ADR-020` parked open). Marked the `VEND` row **approved** in the
+  requirements overview.
 - **Began Phase 2 (requirements co-creation) with `VEND`.** Drafted `BR-VEND-001`…`010`
   in `docs/requirements/01-vendoring.md` (Pass 2): drift is a hard stop with no override;
-  pin is immutable-intent and mechanism-agnostic; single vendored source. Marked the
-  `VEND` row `drafted (Pass 2)` in the requirements overview.
+  pin is immutable-intent and mechanism-agnostic; single vendored source.
 - **Added `ADR-020` (open)** — strengthen upstream-pin immutability via a ventwig
   enhancement (SHA pinning and/or sync-time commit verification); non-blocking.
 - **Adopted Scribe Coding** (Document-Driven AI Development) as the project methodology;

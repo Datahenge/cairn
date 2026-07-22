@@ -1,6 +1,6 @@
 # BR-VEND — Vendoring Requirements
 
-_Status: living · Pass 2 · Last updated: 2026-07-21_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-21_
 
 Requirements for how docker-cairn vendors the upstream `frappe_docker` tooling.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-001`, `ADR-004`, `ADR-007`,
