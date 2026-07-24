@@ -67,12 +67,27 @@ writes a DB + config, which `ADR-022` forbids cairn from doing. *(ADR-022)*
 `docker`/`docker compose`, the registry manifest API, and `systemd` — it does NOT adopt
 Watchtower, Flux, or ArgoCD. *(ADR-024)*
 
+## Environment model (two halves, joined by the tag)
+
+**`BR-DEPLOY-009`** — An environment is defined in **two disconnected halves joined only by
+the env tag name**: a thin **control-side** (laptop) mapping of environment → registry tag
+(mostly convention, e.g. `test` → `:test`), and a substantial **target-side environment
+descriptor** on each target host. cairn's control-side commands operate on the **registry
+only** and MUST NOT require the target host's address or any inbound access — the laptop
+never talks to the environments. *(ADR-005, ADR-006, ADR-010)*
+
+**`BR-DEPLOY-010`** — The target-side **environment descriptor** declares high-level intent:
+image + watched tag; which frappe_docker **overrides** to compose (db, redis, proxy, TLS);
+domain/host and ports; site name; and a **reference** to secrets (not the secrets
+themselves). `cairn reconcile` MUST **render** the final compose stack from it — composing
+frappe_docker's base + selected overrides and setting the env vars
+(`CUSTOM_IMAGE`/`CUSTOM_TAG`/`PULL_POLICY`, …) — so the operator declares intent, not
+compose YAML. The descriptor lives on the target (operator's initial setup) and MUST NOT
+contain secrets (`ADR-017`). *(ADR-017)*
+
 ---
 
 ## Open within DEPLOY (to work through before approval)
-- **Environment model** — how `TEST`/`STAGING`/`PROD` are defined and where their deploy
-  descriptors live (host, watched pointer, compose overrides) — distinct from build config
-  (local) and target config (on the volume). 
 - **Sequencing/health detail** — health-gating, failure handling, migrate on rollback.
 - **Prod safeguards** — confirmation on prod pointer moves; `install-app`-to-prod gate.
 - **Secrets/env on the target** (`ADR-017`).

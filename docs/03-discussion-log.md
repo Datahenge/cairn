@@ -31,8 +31,15 @@ Worked through the deploy model. Settled and drafted `BR-DEPLOY-001`…`008`:
   keep-last-N for rollback headroom; **MUST NEVER touch volumes** (`ADR-022`). GHCR-side
   cleanup deferred as a separate opt-in command (destructive — erases rollback targets).
 
-Still open in DEPLOY: environment model, sequencing/health, prod safeguards, secrets
-(`ADR-017`), multi-site (`ADR-016`).
+**Environment model** (`BR-DEPLOY-009`/`010`): an environment is two disconnected halves
+joined only by the env tag — a thin control-side (laptop knows registry + env→tag names,
+never the target's address) and a substantial target-side **descriptor** on each host.
+Chose **(a)**: cairn **renders** the compose stack from the declarative descriptor
+(overrides, domain, ports, site, secrets *reference*), rather than the operator
+hand-writing compose YAML — the friction-removal cairn exists for.
+
+Still open in DEPLOY: sequencing/health, prod safeguards, secrets (`ADR-017`), multi-site
+(`ADR-016`).
 
 ## 2026-07-24 — TEST 2→5 apps scenario: install-app (opt-in) + volume-write accuracy
 
