@@ -204,8 +204,9 @@ domain, not cairn's.
 capability exists in cairn. This holds for **all** environments; Production is not
 special-cased because the capability simply does not exist.
 
-**The single sanctioned exception** is invoking Frappe's own `bench migrate` (see
-`ADR-014`) — cairn is a *caller*, not a mutator: "cairn doesn't alter SQL; Frappe does."
+**The sanctioned exceptions** are invoking Frappe's own `bench migrate` (automatic,
+`ADR-014`) and, **opt-in only**, `bench install-app` (`ADR-023`) — cairn is a *caller*,
+not a mutator: "cairn doesn't alter SQL; Frappe does."
 
 **Feature 3 corollary — volumes/configs untouched:** cairn is *aware* that persistent
 Docker volumes, `site_config.json`, and `encryption_key` exist, solely so it **never
@@ -234,8 +235,9 @@ remain available to operators independently of cairn.)
 ### ADR-014 — `bench migrate` is the sole sanctioned DB interaction
 **Decided:** 2026-07-24
 After enabling a new image + containers on a target environment, cairn **MUST** run
-`bench migrate` in a subprocess. This is the **only** way cairn touches the database, and
-only *indirectly* — Frappe performs the work.
+`bench migrate` in a subprocess. This is the sole **automatic** DB interaction; the only
+other sanctioned interaction is **opt-in** `bench install-app` (`ADR-023`). Both are
+*indirect* — Frappe performs the work.
 
 **Why it is required and safe:**
 1. **Required** — Frappe demands it after any app change; skipping it leaves code assuming
@@ -250,6 +252,30 @@ cairn treats `bench migrate` as opaque: it invokes it and observes success/failu
 never inspects or influences what it does. Sequencing (incl. on rollback) is a `DEPLOY`
 concern. Supersedes the earlier "orchestrate with pre-migrate snapshot" lean (no snapshot
 — that would be data handling, forbidden by `ADR-022`).
+
+---
+
+### ADR-023 — Opt-in `bench install-app`; never automatic
+**Decided:** 2026-07-24
+Adding an app that is present in the image but not yet installed on a target **site**
+requires `bench install-app` — which `bench migrate` does not do (migrate only patches
+already-installed apps). To let an operator activate such apps **without SSHing into the
+box**, cairn provides an **explicit opt-in** path to run `bench install-app <apps>` on the
+target.
+
+**Rules:**
+- It MUST **never** run automatically. A default deploy is code-swap + `migrate` only and
+  MUST NOT change a site's installed-app set (least surprise — Brian's directive).
+- Like `migrate`, `install-app` is a sanctioned Frappe command cairn invokes **opaquely**
+  (Frappe does the work; the "how" is none of cairn's business).
+- The opt-in is delivered through the target's own reconcile/one-shot tooling (not the
+  laptop reaching in), preserving the pull model (`ADR-005`/`ADR-006`). The exact delivery
+  mechanism and any prod-specific confirmation are `DEPLOY` concerns.
+
+**Motivating case:** deploying a 5-app image (frappe, erpnext, btu, life_scientific,
+life_scientific_migration) to a TEST site that currently has only frappe + erpnext
+installed — the three new apps' *code* ships in the image and `apps.txt` updates, but they
+remain inert until `install-app` runs.
 
 ---
 

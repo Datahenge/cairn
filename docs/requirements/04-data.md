@@ -26,23 +26,39 @@ and this MUST be **impossible by construction**: no code path, SQL client, or
 data-manipulation capability exists in cairn. This applies to **all** environments;
 Production is not special-cased because the capability does not exist. *(ADR-022)*
 
-**`BR-DATA-005`** *(the sole sanctioned exception)* — Immediately after enabling a new
+**`BR-DATA-005`** *(sanctioned exception — automatic)* — Immediately after enabling a new
 image + containers on a target environment, cairn MUST run `bench migrate` in a
-subprocess. This is the only DB interaction cairn performs, and only *indirectly* — Frappe
-does the work. cairn treats it as **opaque** (invokes it, observes success/failure, never
+subprocess. cairn treats it as **opaque** (invokes it, observes success/failure, never
 inspects or influences what it does). `bench migrate` is non-destructive (never drops
-columns/tables/indexes), hence safe in Production. *(ADR-014)*
+columns/tables/indexes), hence safe in Production. It does **not** install new apps (see
+`BR-DATA-008`). *(ADR-014)*
 
-**`BR-DATA-006`** *(Feature 3 — volumes/configs untouched)* — cairn MUST NOT read, write,
-seed, provision, or modify persistent Docker volumes, `site_config.json`,
-`common_site_config.json`, or `encryption_key`. It is *aware* these exist solely to leave
-them intact; an image/container swap MUST leave the data-plane volume entirely untouched.
-*(ADR-022; supersedes the seeding allowance formerly in `BR-CFG-006`)*
+**`BR-DATA-006`** *(Feature 3 — cairn does not itself touch volumes)* — cairn MUST NOT
+**itself** read, write, seed, provision, or modify persistent Docker volumes,
+`site_config.json`, `common_site_config.json`, or `encryption_key`.
+
+Note (accuracy): bringing up the stack **does** cause the volume to change — but by
+**frappe_docker's own containers**, not by cairn. At every `compose up` the `configurator`
+service runs `ls -1 apps > sites/apps.txt` (regenerating the bench app list from the
+image), `bench set-config -g …` (refreshing `common_site_config.json`), and the backend
+entrypoint relinks `sites/assets` to the image's baked assets. This is Frappe's machinery
+reconciling the volume to the new image — the same "cairn invokes, Frappe acts" principle
+as `bench migrate`. cairn performs **no volume writes of its own** and never hand-edits
+these files. *(ADR-022; supersedes the seeding allowance formerly in `BR-CFG-006`)*
 
 **`BR-DATA-007`** *(rollback is image-only)* — cairn's rollback reverts the **image**
 (and re-points containers) only; it MUST NOT restore or roll back the database. Image
 rollback and any data recovery are separate concerns, the latter outside cairn entirely.
 *(ADR-012, ADR-022)*
+
+**`BR-DATA-008`** *(sanctioned exception — opt-in only)* — Activating an app that is present
+in the image but not yet installed on the target site requires `bench install-app`, which
+`bench migrate` does **not** perform. cairn MAY run `bench install-app <apps>` on a target,
+but **only via explicit opt-in — never by default**. A default deploy is code-swap +
+`migrate` only and MUST NOT change a site's installed-app set (least surprise). Like
+`migrate`, `install-app` is invoked **opaquely** (Frappe does the work). The opt-in
+delivery mechanism (so the operator need not SSH in) is a `DEPLOY` concern, consistent with
+the pull model (`ADR-005`/`ADR-006`). *(ADR-023)*
 
 ---
 

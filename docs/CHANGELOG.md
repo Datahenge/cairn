@@ -11,6 +11,16 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **Opt-in `bench install-app` (`ADR-023`).** A concrete case (deploying a 5-app image to
+  a 2-app TEST site) showed `bench migrate` does *not* install newly-added apps. Decision:
+  a default deploy is code-swap + `migrate` only (never changes a site's app set — least
+  surprise); `bench install-app` is a second sanctioned Frappe command, **opt-in only**,
+  delivered via the target's reconcile (no SSH). Added `BR-DATA-008`; amended `ADR-014`
+  ("sole automatic" + install-app) and `ADR-022`.
+- **Refined `BR-DATA-006` for accuracy:** cairn does not *itself* write to volumes, but the
+  stack's own `configurator`/entrypoint reconcile the volume at every `compose up`
+  (`ls -1 apps > sites/apps.txt`, `bench set-config -g …`, relink `sites/assets`) — Frappe's
+  machinery, not cairn.
 - **Established the data-plane boundary (`ADR-022`).** cairn ships code, not data: no SQL
   connection, no `bench execute`/`frappe` code, no DB movement; altering a target DB
   directly is impossible by construction. Sole exception: `bench migrate` after an image

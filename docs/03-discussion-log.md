@@ -7,6 +7,23 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-24 — TEST 2→5 apps scenario: install-app (opt-in) + volume-write accuracy
+
+Brian posed a concrete case: build a 5-app image locally (frappe, erpnext, btu,
+life_scientific, life_scientific_migration) and deploy it to a TEST VPS currently running
+a 2-app image. Two findings from the vendored startup scripts:
+- **Volume writes are frappe_docker's, not cairn's.** The `configurator` service runs
+  `ls -1 apps > sites/apps.txt` + `bench set-config -g …`, and `main-entrypoint.sh`
+  relinks `sites/assets`, at every `compose up`. So the volume *does* change on deploy, but
+  Frappe's own containers do it — not a violation of "cairn doesn't write volumes." Refined
+  `BR-DATA-006` to say so explicitly (Brian: "explicit and accurate is always my
+  preference").
+- **`migrate` ≠ installing new apps.** The 3 new apps' code ships and `apps.txt` updates,
+  but they stay inert until `bench install-app` runs (a DB mutation `migrate` won't do).
+  Brian's ruling: least surprise — never auto-install; provide an **opt-in** path so he
+  needn't SSH. Captured as **`ADR-023`** + `BR-DATA-008`; delivery via the target's
+  reconcile (pull model), a `DEPLOY` detail.
+
 ## 2026-07-24 — Data-plane boundary: cairn ships code, not data (ADR-022)
 
 Grounded first: verified `bench backup` emits `site_config_backup.json` **including the
