@@ -37,7 +37,7 @@ added below as they are drafted.
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | **approved** |
 | 04 | `DATA` | `04-data.md` | Data-plane **boundary** (off-limits; `migrate` auto, `install-app` opt-in) | **approved** |
 | 05 | `CFG` | `05-config.md` | Configuration: target (on the sites volume) + build (local: registry, buildx) | **approved** |
-| 06 | `CLI` | `06-cli.md` | Command surface and UX | drafted (Pass 1) |
+| 06 | `CLI` | `06-cli.md` | Command surface and UX | **approved** |
 
 ## Related documents
 

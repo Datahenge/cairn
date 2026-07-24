@@ -11,6 +11,9 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`CLI` approved (`BR-CLI-001`…`015`). ALL SIX requirement areas now approved**
+  (`VEND`, `BUILD`, `DEPLOY`, `DATA`, `CFG`, `CLI`) — the Scribe Coding requirements phase
+  is complete. Next: Phase 4 (modular code), one small module at a time.
 - **`CLI` drafted (Pass 1)** — `docs/requirements/06-cli.md`, `BR-CLI-001`…`015`. Verb set:
   `build [--push]`, `push`, `new-tag`/`retag`/`retire` (create/move/decommission, with
   `--latest|--previous|--id|--from` selectors + typo-guards), `images`, `vendor`, `doctor`,

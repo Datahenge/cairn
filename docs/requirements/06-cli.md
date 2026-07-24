@@ -1,6 +1,6 @@
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: living · drafted (Pass 1) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
 
 The `cairn` command surface. Mostly *cites* verbs defined in other areas; adds the
 create/move/retire guards, global flags, and output/exit conventions. Conventions: see
