@@ -9,6 +9,20 @@ code changes live in git history.
 
 ---
 
+## 2026-07-23
+
+- **`CFG` target config approved; build config drafted (Pass 1).** Added
+  `docs/requirements/05-config.md`. Target (`BR-CFG-001`…`007`): env config lives on the
+  sites volume and is never clobbered; opacity line (Frappe framework config understood,
+  app config opaque); never overwrite Frappe-managed `site_config.json`; two config
+  classes (data-bound `encryption_key` must travel vs env-authority must not);
+  preserve-first + additive-seed provisioning. Build config (`BR-CFG-008`…`011`, drafted):
+  build-time settings live in a local file separate from the portable `cairn.toml`;
+  registry-agnostic; auth delegated to `docker login`; provenance labels ride with the
+  pushed image (registry = image-and-metadata store).
+- **Narrowed `ADR-009`** to "recommended default registry only" (cairn is now
+  registry-agnostic via build config).
+
 ## 2026-07-21
 
 - **`BUILD` requirements approved.** `BR-BUILD-008` tag composition settled as option (b)

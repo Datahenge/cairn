@@ -36,7 +36,7 @@ added below as they are drafted.
 | 02 | `BUILD` | `02-build.md` | Custom image build: manifest → apps.json → tagged image + marker | **approved** |
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | pending |
 | 04 | `DATA` | `04-data.md` | Backup / restore / rollback of the database | pending |
-| 05 | `CFG` | `05-config.md` | Environment-specific config on the sites volume (site config, local secrets, local policy files — e.g. cofferdam) | pending |
+| 05 | `CFG` | `05-config.md` | Configuration: target (on the sites volume) + build (local: registry, buildx) | target **approved** · build drafted (Pass 1) |
 | 06 | `CLI` | `06-cli.md` | Command surface and UX | pending |
 
 ## Related documents

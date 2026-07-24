@@ -7,6 +7,29 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-23 — CFG: target config (approved) + build config (drafted)
+
+Grounded in real demo benches: the sites volume holds `common_site_config.json`
+(bench-wide, derived from compose env by the `configurator` service),
+`site_config.json` (per-site — db creds + **`encryption_key`**), and arbitrary local
+config/policy files. Approved concepts → `BR-CFG-001`…`007`:
+- image is env-agnostic; env config lives on the volume, never clobbered (`ADR-019`);
+- **opacity line:** cairn understands *Frappe framework* config (`site_config.json`,
+  `encryption_key`) but treats *app* config files opaquely;
+- never overwrite Frappe-managed `site_config.json` (data-safety);
+- **two config classes** with opposite restore behavior: *data-bound must travel*
+  (`encryption_key`) vs *env-authority must not* (policy files) — drives `DATA`;
+- provisioning is preserve-first + additive-seed;
+- boundary: `common_site_config`/`.env`/secrets belong to `DEPLOY`/`ADR-017`.
+
+Brian added a second config axis: **build configuration** (build-time, local to the
+build machine), distinct from target config. Designed `BR-CFG-008`…`011` (drafted):
+build config (registry namespace, buildx, cache) lives in a local file *separate from
+the portable `cairn.toml`*; cairn is **registry-agnostic** (any OCI registry, not
+hardcoded to Docker Hub); **auth delegated to `docker login`** (cairn never stores
+registry creds); provenance labels ride with the pushed image, so the registry is the
+image-and-metadata store. This narrows `ADR-009` to "recommended default only."
+
 ## 2026-07-21 — BUILD Pass 2: manifest, Option A pinning, provenance-as-labels, fork stance
 
 Verified from bench source (`bench/app.py`) that both `FRAPPE_BRANCH` and `apps.json`

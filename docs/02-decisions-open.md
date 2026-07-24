@@ -11,8 +11,13 @@ _Last updated: 2026-07-21_
 ### ADR-009 — Container registry for built images
 Where do immutable images live so the VPS can pull them? Candidates: GHCR
 (GitHub Container Registry), Docker Hub, or self-hosted registry on/near the VPS.
-**Lean:** GHCR — co-located with source, good auth story, read-only pull token for
-the VPS fits the pull-only model (ADR-005/ADR-006). _Open._
+
+**Narrowed (2026-07-23):** `CFG` build config makes cairn **registry-agnostic** — the
+registry+namespace is a local build-config value (`BR-CFG-009`), auth delegated to
+`docker login` (`BR-CFG-010`), so *any* OCI registry works and nothing is hardcoded. The
+only residual question is a **recommended default** to document.
+**Lean:** GHCR — co-located with source, good auth story, read-only pull token for the
+VPS fits the pull-only model (`ADR-005`/`ADR-006`). _Open (recommended-default only)._
 
 ---
 
