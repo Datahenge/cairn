@@ -11,6 +11,12 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`DEPLOY` sequencing / health / failure / observability** (`BR-DEPLOY-016`…`020`).
+  Single-flight reconcile; in-place recreate; `migrate` after every image enable (incl.
+  rollback); health-gated success. **`ADR-025`**: deploy failure = **halt + report**, no
+  auto-rollback (rollback stays manual). **`ADR-026`**: log to stdout/stderr only (host owns
+  monitoring); optional best-effort **failure webhook** (transport-agnostic). Closed
+  **`ADR-011`** (tagging settled by `BR-BUILD-008`).
 - **`DEPLOY` secrets, single-site, prod gate** (`BR-DEPLOY-009`…`015`). Environment model:
   two halves joined by the tag; cairn **renders** the compose from the descriptor.
   **Closed `ADR-017`** (secret-agnostic: cairn references/wires but never handles secret

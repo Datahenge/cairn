@@ -114,9 +114,39 @@ require an **explicit confirmation** — an interactive "are you sure?" or an ex
 argument/flag — never a silent action. Triggering `install-app` against Production MUST be
 **doubly** explicit. Non-prod environments do not require this gate. *(ADR-022)*
 
+## Sequencing, health & failure
+
+**`BR-DEPLOY-016`** — `cairn reconcile` MUST be **single-flight** (locked) so overlapping
+timer ticks cannot run concurrently. On a single host the stack is recreated **in place**
+(`compose up`), accepting a brief downtime window (true blue-green isn't feasible with one
+shared `sites` volume + DB). `bench migrate` runs after **every** image enable, **including
+rollback** — safe/idempotent (already-run patches are skipped; the older code runs no newer
+patches; newer schema objects sit unused per no-drop). *(ADR-014)*
+
+**`BR-DEPLOY-017`** — cairn MUST verify the stack reaches a **healthy** state (frappe_docker
+health + the site responds) within a configurable **timeout** before recording success.
+*(—)*
+
+**`BR-DEPLOY-018`** *(failure = halt + report)* — On a failed deploy (`migrate` error, or
+health failure/timeout after the swap), cairn MUST **halt and report**; it MUST NOT
+auto-rollback. Rollback stays a deliberate one-command pointer move. *(ADR-025, ADR-012)*
+
+## Observability
+
+**`BR-DEPLOY-019`** — cairn MUST log **only to stdout/stderr** and MUST NOT write custom log
+files. On a target, the systemd timer routes output to the journal; the **host's owners**
+own professional monitoring/alerting/logging. cairn does not reinvent logging. *(ADR-026)*
+
+**`BR-DEPLOY-020`** *(optional failure webhook)* — On any failure, cairn MAY POST to an
+**operator-configured** webhook — a **best-effort, outbound** POST with a structured payload
+(environment, failed step, image tag/digest, timestamp, error summary). cairn is
+**transport-agnostic** (the endpoint/relay decides SMTP/Slack/PagerDuty/…). It is **opt-in**;
+the URL may be a referenced secret; a webhook error MUST NOT crash cairn or alter deploy
+behavior. *(ADR-026)*
+
 ---
 
-## Open within DEPLOY (to work through before approval)
-- **Sequencing/health detail** — health-gating, failure handling, migrate on rollback.
+## Open within DEPLOY
 - **GHCR-side cleanup** — deleting old package versions is destructive (erases rollback
-  targets); a *separate, opt-in* command later, never part of automatic VPS GC.
+  targets); a *separate, opt-in* command later, never part of automatic VPS GC. (Deferred,
+  not blocking approval.)

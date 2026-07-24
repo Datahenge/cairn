@@ -340,6 +340,39 @@ Production), with plain **`.env`** supported for simple/dev setups. Site-level s
 
 ---
 
+### ADR-011 — Image tagging scheme (settled by `BR-BUILD-008`)
+**Decided:** 2026-07-24
+Settled by `BR-BUILD-008`: an immutable primary tag `<legible>-<inputhash>` (legible Frappe
+slug + input hash) plus the moving environment tags (`:dev`/`:test`/`:staging`/
+`:production`) that serve as desired-state pointers (`ADR-010`). No separate decision
+remains. *(BR-BUILD-008, ADR-010)*
+
+---
+
+### ADR-025 — Deploy failure = halt + report; rollback stays manual
+**Decided:** 2026-07-24
+On a failed deploy (`migrate` error, or health failure/timeout after the swap), cairn
+**halts and reports**; it does **not** auto-rollback. Rollback remains a deliberate,
+one-command pointer move (`ADR-012`).
+**Rationale:** least surprise — cairn never autonomously changes what's deployed; an
+auto-rollback would be cairn making a deploy decision on its own and could mask/flap over a
+real fault. Cost: a failed environment may be degraded until the operator acts, but rollback
+is fast. *(BR-DEPLOY-018)*
+
+---
+
+### ADR-026 — Observability: stdout/stderr + optional failure webhook; host owns monitoring
+**Decided:** 2026-07-24
+cairn (especially the remote reconcile) logs **only to stdout/stderr** — never custom log
+files. On a target the systemd timer routes output to journald; the **host's owners** own
+professional monitoring/alerting/logging. cairn does not reinvent logging. Additionally,
+cairn MAY POST to an **optional, operator-configured failure webhook** — a best-effort,
+outbound, transport-agnostic POST with a structured payload — so a tech team learns of
+failures without writing a journald-parsing cron, while cairn owns none of the delivery
+(SMTP/Slack/PagerDuty is the endpoint's job). *(BR-DEPLOY-019/020)*
+
+---
+
 ## First-class concepts established (design vocabulary)
 
 These aren't standalone decisions but are settled framing the design depends on:

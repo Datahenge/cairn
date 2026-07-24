@@ -8,13 +8,6 @@ _Last updated: 2026-07-21_
 
 ---
 
-### ADR-011 — Image tagging scheme (ref → tag mapping)
-Exact tag convention. e.g. immutable `:git-<shortsha>` (and/or `:v<semver>` for tags)
-+ moving `:branch-<name>` / `:env-<name>`. Needs to encode enough to reconstruct the
-cairn marker. _Open — depends on ADR-009/ADR-010._
-
----
-
 ### ADR-018 — Package / distribution name & CLI command
 Confirm the CLI command is `cairn`, the Python package name, and PyPI/distribution
 name. Working directory is `docker-cairn`; the command may differ from the repo name.
