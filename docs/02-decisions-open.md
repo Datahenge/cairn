@@ -26,21 +26,6 @@ cairn marker. _Open — depends on ADR-009/ADR-010._
 
 ---
 
-### ADR-013 — Backup storage, retention, and restic
-Where do DB (and files?) backups live — local disk, S3-compatible bucket, both? Do we
-adopt the `restic` path already present in the upstream image, or keep it simpler
-first? Retention policy (keep-last-N, GFS)? Encryption? _Open._
-
----
-
-### ADR-014 — Migration orchestration
-Use upstream's `overrides/compose.migrator.yaml` service, or have `cairn deploy` run
-`bench migrate` as an explicit, observable deploy phase (with pre-migrate snapshot)?
-**Lean:** cairn orchestrates it as a phase — snapshot → migrate → healthcheck →
-flip — so failures are catchable and rollback-able. _Open._
-
----
-
 ### ADR-016 — Multi-site scope
 Single site per bench assumed for Phase 1, or must backup/restore/deploy handle
 multiple sites on one bench from day one? Affects backup granularity and

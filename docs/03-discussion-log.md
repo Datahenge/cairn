@@ -7,6 +7,31 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-24 — Data-plane boundary: cairn ships code, not data (ADR-022)
+
+Grounded first: verified `bench backup` emits `site_config_backup.json` **including the
+data `encryption_key`** (real v15 backup), and that `bench restore` does *not* auto-apply
+it; also clarified two distinct keys (site data `encryption_key` vs backup-file GPG key).
+I had begun designing a selective encryption_key merge for cross-env restore — Brian then
+**ruled that entire domain out of cairn.** New feature boundaries:
+- **Feature 1** = build image + deploy (code only; no SQL export/import/awareness).
+- **Feature 2 (Prime Directive)** = cairn **cannot** directly alter any DB — impossible by
+  construction; DB movement between environments is cofferdam's/operator's domain.
+- **Feature 3** = volumes, site configs, `encryption_key` are *aware-but-untouched*.
+
+**`bench migrate` ruling:** the sole sanctioned DB interaction. cairn MUST run it in a
+subprocess right after an image/container swap (all envs incl. Prod). It's required
+(else code assumes a missing schema — worse), sanctioned (a normal Frappe command; the
+"how" is Frappe's business), and non-destructive (never drops columns/tables/indexes).
+"cairn doesn't alter SQL; Frappe does."
+
+Captured: **`ADR-022`** (code/data-plane boundary), closed **`ADR-014`** (bench migrate =
+sole DB interaction) and **`ADR-013`** (backup/restore/DB-movement out of scope). Wrote
+`DATA` as a boundary area (`BR-DATA-001`…`007`, drafted). Reconciled the ripples:
+reframed Pillar 3 in the project scope; revised approved `BR-CFG-005`/`006` (no
+two-classes action; no volume seeding); removed "DB snapshot" from the cairn-marker
+concept.
+
 ## 2026-07-23 — CFG build config approved; ADR-009 closed (GHCR)
 
 Brian signed off build config: cairn never stores registry credentials, but MAY read a

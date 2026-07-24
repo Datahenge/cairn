@@ -1,6 +1,6 @@
 # BR-CFG — Configuration Requirements
 
-_Status: **approved** 2026-07-23 (living — may be revised via CHANGELOG) · Last updated: 2026-07-23_
+_Status: **approved** 2026-07-23 (living) · **revised 2026-07-24** (`BR-CFG-005`/`006` per `ADR-022`) · Last updated: 2026-07-24_
 
 Requirements for configuration. Two orthogonal sub-domains:
 - **Target configuration** — runtime, per-environment, lives on the sites volume.
@@ -28,20 +28,17 @@ or validating them. `ADR-019`'s "not app-aware" applies to apps, not to Frappe i
 **`BR-CFG-004`** — cairn MUST NOT overwrite Frappe-managed `site_config.json`, preserving
 `encryption_key` and db credentials. *(data-safety)*
 
-**`BR-CFG-005`** — Two classes of on-volume config are recognized, with opposite restore
-behavior:
-- **data-bound** config that MUST travel with its data — e.g. `encryption_key`; a restore
-  is useless (encrypted fields unrecoverable) without the matching key;
-- **env-authority** config that MUST NOT travel with restored data — e.g. an app policy
-  file whose *target* copy stays authoritative (`ADR-019`).
+**`BR-CFG-005`** — Two classes of on-volume config are *recognized as a concept*
+(data-bound like `encryption_key` vs env-authority like an app policy file), but **cairn
+acts on neither** — it performs no restore, no data movement, and no key handling
+(`ADR-022`). The distinction is retained only as rationale for why the data plane is
+off-limits. *(ADR-019, ADR-022)*
 
-This distinction drives the `DATA` restore requirements (esp. carrying `encryption_key`
-with a backup). *(ADR-019; forward to `DATA`)*
-
-**`BR-CFG-006`** *(provisioning — preserve-first + additive-seed)* — cairn MUST never
-clobber volume config; it MAY **additively** seed *additional* local config files onto a
-**fresh** volume from a deployment-owned source; it MUST NOT overwrite Frappe-managed
-files. *(ADR-019)*
+**`BR-CFG-006`** *(no volume writes — revised)* — cairn MUST NOT write to, seed,
+provision, or modify persistent data-plane volumes or their config; provisioning
+environment config is the operator's responsibility. This **supersedes** the earlier
+"preserve-first + additive-seed" allowance — Feature 3 (`ADR-022`) forbids touching the
+volumes at all. See `BR-DATA-006`. *(ADR-022)*
 
 **`BR-CFG-007`** *(boundary)* — `common_site_config.json` lives on the volume but
 **derives from the compose environment** (the `configurator` service) — its source of
@@ -80,8 +77,8 @@ cites BUILD)*
 ---
 
 ## Cross-references
-- `DATA` restore cites `BR-CFG-002`/`004`/`005` (never clobber config; carry
-  `encryption_key`).
+- `DATA` is a boundary area (`ADR-022`): cairn touches no volume/config (`BR-DATA-006`)
+  and performs no restore or `encryption_key` handling.
 - `DEPLOY`/`ADR-017` owns `common_site_config.json`, `.env`, and secrets.
 - `BUILD` (`BR-BUILD-008`/`011`) consumes the registry/namespace from build config.
 - **Follow-up (user docs):** a **GHCR setup runbook** is needed (`ADR-009`) — PAT

@@ -25,9 +25,14 @@ We never modify `frappe_docker`. We vendor it read-only and build *on top* of it
    **git ref → image tag → running stack** consistent so you always know exactly
    what is deployed.
 
-3. **Data lifecycle**
-   Frictionless **backup, restore, and rollback** of the MariaDB databases,
-   coupled to the deploy step so a bad deploy can be reverted *with its data*.
+3. **Data-plane safety by non-participation** *(reframed 2026-07-24, `ADR-022`)*
+   cairn ships **code, not data**. The data plane — SQL, persistent volumes, site
+   configs, `encryption_key` — is **off-limits**: cairn cannot connect to SQL, run
+   `bench execute`/`frappe` code, or move databases between environments; altering a
+   target DB directly is impossible by construction. The **only** DB interaction is
+   invoking Frappe's own non-destructive `bench migrate` after an image swap (cairn is a
+   caller, not a mutator). Rollback is **image-only**. Backup/restore/DB-movement are out
+   of scope — the operator's / cofferdam's domain.
 
 The through-line: **minimal typing, minimal thinking** — a small, opinionated CLI
 over the tedious, error-prone parts.
@@ -38,8 +43,8 @@ over the tedious, error-prone parts.
 - A Python CLI (`cairn`) that orchestrates `docker`, `buildx`, `docker compose`,
   and `bench` against a vendored, pinned copy of `frappe_docker`.
 - Opinionated toward one common case: a single Docker host, done well.
-- A place where the *connective tissue* upstream omits (ref↔image↔snapshot
-  records, desired-state, drift detection) becomes first-class.
+- A place where the *connective tissue* upstream omits (ref↔image records,
+  desired-state, drift detection) becomes first-class.
 
 **Is not:**
 - A fork or patch of `frappe_docker`. Upstream stays pristine and pinned.

@@ -190,12 +190,76 @@ to Phase-6 user documentation.
 
 ---
 
+### ADR-022 — cairn operates on the code/image plane; the data plane is off-limits
+**Decided:** 2026-07-24
+cairn's responsibility is **shipping code** — building immutable images (apps + commits)
+and deploying them to environments. The **data plane is off-limits**: cairn MUST NOT
+connect to any SQL database, MUST NOT run `bench execute` or any `frappe` library code,
+and MUST NOT export, import, restore, or move SQL data between environments. **Moving a
+database between environments is out of scope** — that is cofferdam's / the operator's
+domain, not cairn's.
+
+**Prime Directive:** cairn MUST NOT *directly* alter any target database, and this must be
+**impossible by construction** — no code path, no SQL client, no data-manipulation
+capability exists in cairn. This holds for **all** environments; Production is not
+special-cased because the capability simply does not exist.
+
+**The single sanctioned exception** is invoking Frappe's own `bench migrate` (see
+`ADR-014`) — cairn is a *caller*, not a mutator: "cairn doesn't alter SQL; Frappe does."
+
+**Feature 3 corollary — volumes/configs untouched:** cairn is *aware* that persistent
+Docker volumes, `site_config.json`, and `encryption_key` exist, solely so it **never
+touches them**. It MUST NOT read, write, seed, provision, or migrate them; an image swap
+leaves the data-plane volume entirely intact.
+
+**Rationale:** the safest data-handling code is no data-handling code. A tool that
+*cannot* touch data can't be misused, social-engineered, or bugged into touching it —
+defense by architecture, not by prompt. This also sharpens cairn's identity (a build +
+deploy tool) and is `ADR-019` taken to its logical end (the whole data domain is
+cofferdam's/the operator's).
+
+Requirements: `docs/requirements/04-data.md`.
+
+---
+
+### ADR-013 — Backup / restore / DB movement: OUT OF SCOPE
+**Decided:** 2026-07-24 (was: backup storage/retention/restic)
+Backup, restore, and database movement are **out of scope** for cairn per `ADR-022`.
+cairn does not create, store, retain, encrypt, restore, or relocate SQL backups. Any such
+work belongs to the operator or to cofferdam. (Frappe's own `bench backup`/`restore`
+remain available to operators independently of cairn.)
+
+---
+
+### ADR-014 — `bench migrate` is the sole sanctioned DB interaction
+**Decided:** 2026-07-24
+After enabling a new image + containers on a target environment, cairn **MUST** run
+`bench migrate` in a subprocess. This is the **only** way cairn touches the database, and
+only *indirectly* — Frappe performs the work.
+
+**Why it is required and safe:**
+1. **Required** — Frappe demands it after any app change; skipping it leaves code assuming
+   a schema that doesn't exist (a *worse*, broken state).
+2. **Sanctioned** — it is a normal Frappe command runnable anytime from a terminal; *what*
+   it does and *how* are Frappe's business, not cairn's. cairn's only job is to call it.
+3. **Non-destructive** — `bench migrate` never drops columns, tables, or indexes (dropping
+   requires explicit opt-in). It creates new SQL objects and leaves the rest intact, so it
+   is safe to run in Production. Patches run because Frappe says they should.
+
+cairn treats `bench migrate` as opaque: it invokes it and observes success/failure, but
+never inspects or influences what it does. Sequencing (incl. on rollback) is a `DEPLOY`
+concern. Supersedes the earlier "orchestrate with pre-migrate snapshot" lean (no snapshot
+— that would be data handling, forbidden by `ADR-022`).
+
+---
+
 ## First-class concepts established (design vocabulary)
 
 These aren't standalone decisions but are settled framing the design depends on:
 
-- **Cairn marker** — a durable deploy record binding **git ref → image tag → DB
-  snapshot**, so any deployed state can be navigated back to.
+- **Cairn marker** — a durable record binding **git ref → resolved commits → image tag
+  → digest** (provenance), so any built/deployed image can be identified and navigated
+  back to. *(No DB snapshot — the data plane is off-limits, `ADR-022`.)*
 - **Desired-state pointer** — the "newest stone": a small artifact CI advances that
   says which ref the VPS should converge to. CI's job ends at *build image + advance
   pointer*; the VPS's job is *converge to pointer*.

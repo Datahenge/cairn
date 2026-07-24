@@ -35,7 +35,7 @@ added below as they are drafted.
 | 01 | `VEND` | `01-vendoring.md` | Vendoring upstream frappe_docker (ventwig, pin, drift) | **approved** |
 | 02 | `BUILD` | `02-build.md` | Custom image build: manifest → apps.json → tagged image + marker | **approved** |
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | pending |
-| 04 | `DATA` | `04-data.md` | Backup / restore / rollback of the database | pending |
+| 04 | `DATA` | `04-data.md` | Data-plane **boundary** (off-limits; sole exception `bench migrate`) | drafted (Pass 1) |
 | 05 | `CFG` | `05-config.md` | Configuration: target (on the sites volume) + build (local: registry, buildx) | **approved** |
 | 06 | `CLI` | `06-cli.md` | Command surface and UX | pending |
 

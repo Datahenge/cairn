@@ -9,6 +9,20 @@ code changes live in git history.
 
 ---
 
+## 2026-07-24
+
+- **Established the data-plane boundary (`ADR-022`).** cairn ships code, not data: no SQL
+  connection, no `bench execute`/`frappe` code, no DB movement; altering a target DB
+  directly is impossible by construction. Sole exception: `bench migrate` after an image
+  swap. Volumes/site-configs/`encryption_key` are aware-but-untouched.
+- **Closed `ADR-014`** — `bench migrate` is the sole sanctioned (indirect) DB interaction;
+  mandatory post-deploy, opaque, non-destructive. **Closed `ADR-013`** — backup / restore
+  / DB-movement are out of scope.
+- **Wrote `DATA` as a boundary area** (`docs/requirements/04-data.md`, `BR-DATA-001`…`007`,
+  drafted). Reframed **Pillar 3** in the project scope; **revised approved `BR-CFG-005`/
+  `006`** (no two-classes action; no volume seeding — `BR-DATA-006` supersedes); dropped
+  "DB snapshot" from the cairn-marker concept.
+
 ## 2026-07-23
 
 - **`CFG` fully approved** (build config signed off). `BR-CFG-010` refined: cairn may read
