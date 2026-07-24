@@ -11,6 +11,15 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`DEPLOY` opened, drafted (Pass 1, partial)** — `docs/requirements/03-deploy.md`,
+  `BR-DEPLOY-001`…`008`: pull-based reconcile (target polls the env tag's digest);
+  deploy/promote/rollback are one primitive (server-side retag, no rebuild); registry
+  introspection reads provenance labels remotely; timer-driven GC keeps last N images and
+  **never touches volumes**; cairn deploys to existing environments only.
+- **Closed `ADR-010`** — desired-state pointer = the environment's moving registry tag
+  (target polls; laptop advances by retag).
+- **Added `ADR-024`** — reconcile is a thin orchestrator over docker/compose + registry
+  API + systemd; Watchtower/Flux/ArgoCD evaluated and rejected (with reasons).
 - **`DATA` approved** (`BR-DATA-001`…`008`) — the data-plane boundary area is settled.
 - **Opt-in `bench install-app` (`ADR-023`).** A concrete case (deploying a 5-app image to
   a 2-app TEST site) showed `bench migrate` does *not* install newly-added apps. Decision:

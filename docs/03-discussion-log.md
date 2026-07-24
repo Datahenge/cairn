@@ -7,6 +7,33 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-24 — DEPLOY opened: pull model, pointer ops, introspection, GC (ADR-010, ADR-024)
+
+Worked through the deploy model. Settled and drafted `BR-DEPLOY-001`…`008`:
+- **Pull model mechanics** — the registry is a passive bulletin board; the **target polls**
+  the env tag's digest (outbound, cheap); GHCR never contacts the box. Explained why (no
+  inbound, self-healing). Closed **`ADR-010`**: desired-state pointer = the environment's
+  **moving registry tag**; laptop advances it by server-side retag.
+- **Tags** — clarified: many immutable images coexist; each env tag (`:dev/:test/:staging/
+  :production`) points at exactly one image at a time; moving a tag doesn't delete the old
+  image → rollback = repoint.
+- **Don't-reinvent-wheels check** → **`ADR-024`**: reconcile is a thin orchestrator over
+  docker/compose + registry API + systemd. Flux/Argo rejected (k8s, `ADR-002`); Watchtower
+  rejected (per-container not per-stack; would run migrate 5×; recreates outside compose;
+  no env/migrate/install-app/health concept). Polling is trivial to implement; the
+  single-host Frappe orchestration is the actual value and has no off-the-shelf tool.
+- **Pointer ops** (`BR-DEPLOY-004`) — deploy/promote/rollback are one primitive (repoint a
+  tag to an existing image, no rebuild), done as a server-side retag (`docker buildx
+  imagetools`/crane/skopeo).
+- **Introspection** (`BR-DEPLOY-005`) — `cairn images`/`tags` reads provenance **labels
+  remotely without pulling**; the registry is the marker store.
+- **GC** (`BR-DEPLOY-006`) — timer-driven prune of old images + stopped containers,
+  keep-last-N for rollback headroom; **MUST NEVER touch volumes** (`ADR-022`). GHCR-side
+  cleanup deferred as a separate opt-in command (destructive — erases rollback targets).
+
+Still open in DEPLOY: environment model, sequencing/health, prod safeguards, secrets
+(`ADR-017`), multi-site (`ADR-016`).
+
 ## 2026-07-24 — TEST 2→5 apps scenario: install-app (opt-in) + volume-write accuracy
 
 Brian posed a concrete case: build a 5-app image locally (frappe, erpnext, btu,

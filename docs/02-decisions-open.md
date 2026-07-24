@@ -8,17 +8,6 @@ _Last updated: 2026-07-21_
 
 ---
 
-### ADR-010 — Desired-state pointer mechanism
-How does CI tell the VPS "converge to ref X"? Options:
-- a **moving registry tag** (e.g. `:env-prod` → digest), VPS resolves digest;
-- a **git "state" ref/repo** the VPS pulls;
-- a small **object in a bucket**;
-- a one-line file served somewhere the VPS reads.
-**Lean:** immutable per-commit tag **plus** a moving per-environment tag; the moving
-tag *is* the pointer, and the cairn marker records the resolved digest. _Open._
-
----
-
 ### ADR-011 — Image tagging scheme (ref → tag mapping)
 Exact tag convention. e.g. immutable `:git-<shortsha>` (and/or `:v<semver>` for tags)
 + moving `:branch-<name>` / `:env-<name>`. Needs to encode enough to reconstruct the
