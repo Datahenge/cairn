@@ -319,6 +319,27 @@ solution — it is precisely the connective tissue cairn exists to provide.
 
 ---
 
+### ADR-016 — Single site per environment; multi-site deferred
+**Decided:** 2026-07-24
+Each environment runs **one site** (the environment descriptor names one site;
+`FRAPPE_SITE_NAME_HEADER` resolves to it). Multi-site on one bench is **deferred** — not a
+Phase-1 concern; revisit if a real need arises. *(BR-DEPLOY-014)*
+
+---
+
+### ADR-017 — Secrets are operator-provisioned; cairn is secret-agnostic
+**Decided:** 2026-07-24
+cairn MUST NOT store, generate, persist, prompt for, or handle secret **values** — it only
+**references and wires** secrets the operator provisions. Registry pull auth on a target is
+delegated to Docker's credential store (`docker login ghcr.io` / read-only pull token, set
+at provisioning), mirroring the build side (`BR-CFG-010`). DB/app secrets are
+operator-provisioned and wired by cairn via the mechanism the environment descriptor
+names: **Docker secrets** (`overrides/compose.mariadb-secrets.yaml`) **recommended** (esp.
+Production), with plain **`.env`** supported for simple/dev setups. Site-level secrets
+(`site_config.json`) remain off-limits (`ADR-022`/`BR-DATA-006`). *(BR-DEPLOY-011..013)*
+
+---
+
 ## First-class concepts established (design vocabulary)
 
 These aren't standalone decisions but are settled framing the design depends on:

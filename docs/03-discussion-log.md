@@ -38,8 +38,16 @@ Chose **(a)**: cairn **renders** the compose stack from the declarative descript
 (overrides, domain, ports, site, secrets *reference*), rather than the operator
 hand-writing compose YAML — the friction-removal cairn exists for.
 
-Still open in DEPLOY: sequencing/health, prod safeguards, secrets (`ADR-017`), multi-site
-(`ADR-016`).
+**Secrets (`ADR-017`, closed):** cairn is **secret-agnostic** — references/wires but never
+stores, generates, or handles secret values. Registry pull auth on a target = `docker
+login` (Docker's cred store); DB/app secrets via **Docker secrets**
+(`compose.mariadb-secrets.yaml`) recommended, `.env` supported; site secrets off-limits.
+**Multi-site (`ADR-016`, closed):** single site per environment; multi-site deferred.
+**Prod safeguards (`BR-DEPLOY-015`):** moving a `:production` pointer requires explicit
+"are you sure?"/flag; `install-app` to prod doubly explicit.
+
+Only **sequencing/health detail** remains open in DEPLOY (plus the deferred GHCR-side
+cleanup command).
 
 ## 2026-07-24 — TEST 2→5 apps scenario: install-app (opt-in) + volume-write accuracy
 

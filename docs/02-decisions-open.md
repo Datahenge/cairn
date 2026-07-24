@@ -15,20 +15,6 @@ cairn marker. _Open — depends on ADR-009/ADR-010._
 
 ---
 
-### ADR-016 — Multi-site scope
-Single site per bench assumed for Phase 1, or must backup/restore/deploy handle
-multiple sites on one bench from day one? Affects backup granularity and
-`FRAPPE_SITE_NAME_HEADER` handling. _Open — need Brian's intended usage._
-
----
-
-### ADR-017 — Secrets & env management on the VPS
-How `.env`, DB passwords, and registry pull credentials are stored/rotated on the
-host (plain `.env`, Docker secrets per `compose.mariadb-secrets.yaml`, or an external
-store). _Open._
-
----
-
 ### ADR-018 — Package / distribution name & CLI command
 Confirm the CLI command is `cairn`, the Python package name, and PyPI/distribution
 name. Working directory is `docker-cairn`; the command may differ from the repo name.

@@ -85,12 +85,38 @@ frappe_docker's base + selected overrides and setting the env vars
 compose YAML. The descriptor lives on the target (operator's initial setup) and MUST NOT
 contain secrets (`ADR-017`). *(ADR-017)*
 
+## Secrets (cairn is secret-agnostic)
+
+**`BR-DEPLOY-011`** — cairn MUST NOT store, generate, persist, prompt for, or handle secret
+**values**. It only **references and wires** secrets the operator provisions on the target.
+*(ADR-017)*
+
+**`BR-DEPLOY-012`** — A target authenticates to the registry via **Docker's credential
+store**: the operator runs `docker login ghcr.io` (a read-only pull token) at provisioning;
+`cairn reconcile` pulls and delegates auth to Docker, and MUST NOT store registry
+credentials. Mirrors the build side (`BR-CFG-010`). *(ADR-017)*
+
+**`BR-DEPLOY-013`** — DB/app secrets are operator-provisioned; cairn renders the compose to
+wire them via the mechanism the environment descriptor names — **Docker secrets**
+(frappe_docker `overrides/compose.mariadb-secrets.yaml`) **recommended** (esp. Production),
+with plain **`.env`** supported for simple/dev setups. cairn never sees or persists the
+value. Site-level secrets (`site_config.json` — `db_password`, `encryption_key`) remain
+off-limits (`BR-DATA-006`). *(ADR-017)*
+
+## Single-site & Production safeguards
+
+**`BR-DEPLOY-014`** — Each environment runs **one site** (the descriptor names a single
+site; `FRAPPE_SITE_NAME_HEADER` resolves to it). Multi-site is **deferred** (`ADR-016`).
+*(ADR-016)*
+
+**`BR-DEPLOY-015`** — Moving a **`:production`** pointer (deploy / promote / rollback) MUST
+require an **explicit confirmation** — an interactive "are you sure?" or an explicit
+argument/flag — never a silent action. Triggering `install-app` against Production MUST be
+**doubly** explicit. Non-prod environments do not require this gate. *(ADR-022)*
+
 ---
 
 ## Open within DEPLOY (to work through before approval)
 - **Sequencing/health detail** — health-gating, failure handling, migrate on rollback.
-- **Prod safeguards** — confirmation on prod pointer moves; `install-app`-to-prod gate.
-- **Secrets/env on the target** (`ADR-017`).
-- **Multi-site** (`ADR-016` — single-site assumed for now).
 - **GHCR-side cleanup** — deleting old package versions is destructive (erases rollback
   targets); a *separate, opt-in* command later, never part of automatic VPS GC.

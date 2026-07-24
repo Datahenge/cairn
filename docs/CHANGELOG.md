@@ -11,6 +11,13 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`DEPLOY` secrets, single-site, prod gate** (`BR-DEPLOY-009`…`015`). Environment model:
+  two halves joined by the tag; cairn **renders** the compose from the descriptor.
+  **Closed `ADR-017`** (secret-agnostic: cairn references/wires but never handles secret
+  values; registry pull via `docker login`; DB secrets via `compose.mariadb-secrets.yaml`
+  recommended, `.env` supported). **Closed `ADR-016`** (single site per environment;
+  multi-site deferred). Prod pointer moves require explicit confirmation; `install-app`
+  to prod doubly explicit. Only sequencing/health remains open in DEPLOY.
 - **`DEPLOY` opened, drafted (Pass 1, partial)** — `docs/requirements/03-deploy.md`,
   `BR-DEPLOY-001`…`008`: pull-based reconcile (target polls the env tag's digest);
   deploy/promote/rollback are one primitive (server-side retag, no rebuild); registry
