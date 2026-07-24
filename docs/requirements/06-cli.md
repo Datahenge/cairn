@@ -11,9 +11,8 @@ create/move/retire guards, global flags, and output/exit conventions. Convention
 ## Substrate
 
 **`BR-CLI-001`** — cairn is a **single Python CLI** (Click/Typer, `ADR-003`), invoked as
-`cairn` (distribution `datahenge-cairn` + `datahenge-cairn` alias, `ADR-018`), with
-subcommands. One package; the build/control vs. reconcile roles are gated by **credentials
-and context**, not by separate binaries (`ADR-018`). *(ADR-003, ADR-018)*
+`cairn` (distribution `datahenge-cairn` + `datahenge-cairn` alias), with subcommands. One
+package. *(ADR-003, ADR-018)*
 
 ## Command surface
 
@@ -51,11 +50,10 @@ pull-loop verb, run under systemd. *(BR-DEPLOY-001/003/016)*
 determined by cairn's **declared environment list** (control-side, `BR-DEPLOY-009`).
 - `new-tag <env>` MUST **error if `<env>` already exists**.
 - `retag <env>` / `retire <env>` MUST **error if `<env>` does not exist**
-  (`No such environment '<env>'`) — a typo never creates or mis-targets infrastructure.
+  (`No such environment '<env>'`).
 
-`retire <env>` removes `<env>` from the declared list and touches **no images**; because
-GHCR has no per-tag delete (deletion is by version ID; a version's tags are shared — see
-`03-deploy.md`), cairn MUST warn plainly that the **registry tag name persists** (inert).
+`retire <env>` removes `<env>` from the declared list, touches **no images**, and MUST warn
+that the **registry tag name persists** (GHCR has no per-tag delete — see `03-deploy.md`).
 *(BR-DEPLOY-009)*
 
 **`BR-CLI-010`** *(prod gate)* — Any command that moves or retires a **`:production`**

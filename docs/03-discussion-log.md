@@ -7,6 +7,21 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-24 — Requirements clarity audit
+
+Audited all six requirement docs to be crisp normative statements — migrated inline
+rationale, mechanism, verification, and justification into the cited ADRs / this log,
+keeping IDs and citations stable (approvals stand; this is a clarity revision). Rationale
+trimmed from BRs and retained in ADRs/here includes: the bench `git clone --branch`
+mechanism (→ `ADR-015`); provenance "labels travel with the image / registry is the store"
+(→ `ADR-011`, `BR-CFG-011`); the configurator/entrypoint volume-reconcile specifics (→ the
+2026-07-24 TEST 2→5 entry below); "`migrate` is non-destructive, hence safe" (→ `ADR-014`);
+and the sequencing details — **in-place recreate accepts brief downtime** (true blue-green
+isn't feasible on one shared `sites` volume + DB, single-host `ADR-002`), and **`bench
+migrate` on rollback is safe/idempotent** (already-run patches are recorded and skipped;
+older code runs no newer patches; newer schema objects sit unused per no-drop —
+`ADR-014`/`ADR-012`).
+
 ## 2026-07-24 — CLI drafted; verb model + GHCR delete reality
 
 Designed the `CLI` verb set with Brian's refinements: **`build` just builds** (`--push`

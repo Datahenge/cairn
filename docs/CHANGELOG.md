@@ -11,6 +11,11 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **Requirements clarity audit.** Tightened all six requirement docs
+  (`BR-VEND/BUILD/DEPLOY/DATA/CFG/CLI`) to crisp normative statements; migrated inline
+  rationale/mechanism/verification into the cited ADRs and the discussion log. IDs and
+  citations unchanged; approvals stand (clarity revision, not a design change).
+
 - **`CLI` approved (`BR-CLI-001`…`015`). ALL SIX requirement areas now approved**
   (`VEND`, `BUILD`, `DEPLOY`, `DATA`, `CFG`, `CLI`) — the Scribe Coding requirements phase
   is complete. Next: Phase 4 (modular code), one small module at a time.
