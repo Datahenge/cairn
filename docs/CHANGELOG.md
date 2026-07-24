@@ -11,6 +11,7 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`DATA` approved** (`BR-DATA-001`…`008`) — the data-plane boundary area is settled.
 - **Opt-in `bench install-app` (`ADR-023`).** A concrete case (deploying a 5-app image to
   a 2-app TEST site) showed `bench migrate` does *not* install newly-added apps. Decision:
   a default deploy is code-swap + `migrate` only (never changes a site's app set — least

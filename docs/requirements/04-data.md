@@ -1,6 +1,6 @@
 # BR-DATA — Data-Plane Boundary Requirements
 
-_Status: living · drafted (Pass 1) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
 
 `DATA` is a **boundary area**, not a feature area. cairn ships **code**, not data. The
 data plane (SQL, persistent volumes, site configs, encryption keys) is **off-limits**;
