@@ -1,8 +1,8 @@
-# docker-cairn — Phase 1: the Build pillar (`cairn build`)
+# cairn — Phase 1: the Build pillar (`cairn build`)
 
 ## Context
 
-`docker-cairn` wraps the vendored, pinned `frappe_docker` (v3.2.1, managed by
+`cairn` wraps the vendored, pinned `frappe_docker` (v3.2.1, managed by
 ventwig — see `docs/01-decisions-closed.md` ADR-007) to make a custom ERPNext
 deployment reproducible and low-thought. The three pillars are build, deploy, and
 data lifecycle. Deploy and backup both stand on a **reproducible, immutably-tagged
@@ -29,7 +29,7 @@ Frappe `version-16` + **ERPNext + BTU** ([`Datahenge/btu`](https://github.com/Da
 `@ version-16`), Python 3.14.2 (matches the `custom` Containerfile defaults). Shipped as
 `cairn.toml.example`. With ERPNext **and** a custom app, this exercises the full
 resolve → apps.json → build → tag → marker path **including the N>1 apps case** — which
-is docker-cairn's actual mission (a custom ERPNext image with custom apps).
+is cairn's actual mission (a custom ERPNext image with custom apps).
 
 > **Why BTU is a good PoC payload:** it supports `version-16` (default branch) and
 > `requires-python >=3.14,<3.15` (exact match to the Containerfile defaults); it is a
@@ -44,7 +44,7 @@ is docker-cairn's actual mission (a custom ERPNext image with custom apps).
 > **Why not `cofferdam-app` as the build PoC?** It was proposed for version-alignment
 > reasons, but that under-read its function. `cofferdam-app` is restore-safety
 > infrastructure, not a neutral build payload; using it here would be circular and, since
-> docker-cairn is now explicitly cofferdam-unaware (`ADR-019`), self-contradictory.
+> cairn is now explicitly cofferdam-unaware (`ADR-019`), self-contradictory.
 
 ---
 
@@ -183,7 +183,7 @@ push/GHCR (ADR-009), secrets on VPS (ADR-017), multi-site (ADR-016).
 
 ## Pillar-3 design principle: generic restore scoping (not cofferdam-aware)
 
-docker-cairn and cofferdam are **mutually unaware** (`ADR-019`). cofferdam-app, if used,
+cairn and cofferdam are **mutually unaware** (`ADR-019`). cofferdam-app, if used,
 is just an ordinary `[[cairn.apps]]` entry — no special-casing anywhere in the tool.
 
 The one restore scenario that *seemed* to demand cofferdam-awareness — restoring a
@@ -195,14 +195,14 @@ names no app:
 
 This protects every local, environment-specific file the operator placed on the volume
 — `site_config.json`, local secrets, and any local policy files (for example, a
-cofferdam `environment_policy.toml`) — **as a side effect**, without docker-cairn
+cofferdam `environment_policy.toml`) — **as a side effect**, without cairn
 knowing those files' meaning. cofferdam's guarantee thus becomes correct-by-construction:
-a docker-cairn restore leaves the target environment's own config untouched, and
+a cairn restore leaves the target environment's own config untouched, and
 cofferdam does its quiet job independently. This becomes a normative `BR-DATA-###` /
 `BR-CFG-###` requirement in Phase-2 co-creation.
 
-**Retracted:** an earlier draft proposed docker-cairn enforce cofferdam policy presence
+**Retracted:** an earlier draft proposed cairn enforce cofferdam policy presence
 and run `cofferdam validate` as a deploy invariant. That coupling is withdrawn — it made
-the tool cofferdam-aware, which `ADR-019` forbids. docker-cairn's restore-safety
+the tool cofferdam-aware, which `ADR-019` forbids. cairn's restore-safety
 contribution stays generic (narrow restore scope, environment labeling, a confirmation on
 prod→non-prod); guarding outbound calls is cofferdam's job, in an independent layer.

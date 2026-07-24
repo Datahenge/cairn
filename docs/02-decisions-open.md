@@ -8,13 +8,6 @@ _Last updated: 2026-07-21_
 
 ---
 
-### ADR-018 — Package / distribution name & CLI command
-Confirm the CLI command is `cairn`, the Python package name, and PyPI/distribution
-name. Working directory is `docker-cairn`; the command may differ from the repo name.
-_Lean: repo `docker-cairn`, CLI `cairn`. Open (minor)._
-
----
-
 ### ADR-020 — Strengthen upstream-pin immutability (ventwig enhancement)
 The vendored pin currently uses a release **tag** (ventwig 0.2.0 clones via
 `git clone --depth 1 --branch <ref>`, which cannot take a raw SHA). Tags are mutable
@@ -29,7 +22,7 @@ pull a moved tag. Options:
 
 **Lean:** at minimum (c) — cheap, high-value guard against ref movement whether pinning
 by tag or SHA — ideally (b)+(c). This is a ventwig enhancement (Brian owns ventwig),
-tracked here; **not a docker-cairn blocker**. `BR-VEND-002` is written pin-mechanism-
+tracked here; **not a cairn blocker**. `BR-VEND-002` is written pin-mechanism-
 agnostic so nothing here changes when this lands. _Open._
 
 ---

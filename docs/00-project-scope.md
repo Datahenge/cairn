@@ -1,10 +1,10 @@
-# docker-cairn — Project Scope
+# cairn — Project Scope
 
 _Last updated: 2026-07-21_
 
 ## Purpose
 
-`docker-cairn` wraps the upstream [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)
+`cairn` wraps the upstream [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)
 tooling and bolts on the ergonomics it lacks, so that operating a custom ERPNext
 deployment (Frappe + ERPNext + one or more custom apps) on a single VPS is
 **frictionless, reproducible, and low-thought**.

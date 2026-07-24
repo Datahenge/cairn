@@ -11,6 +11,14 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **Naming & packaging (`ADR-018` closed).** Single package/repo, name **`datahenge-cairn`**
+  (`cairn` taken; `docker-cairn`/`frappe-cairn` falsely imply Docker/Frappe ownership;
+  `datahenge-cairn` signals Datahenge + doubles the stone motif). Import package `cairn`;
+  command **`cairn`** (+ `datahenge-cairn` alias). Split deferred behind an explicit
+  trigger. Renamed the project **`docker-cairn` → `cairn`** throughout the docs (prose) and
+  the local repo directory → `datahenge-cairn`; `pyproject` name → `datahenge-cairn`.
+  Remote left untouched (new one to be created later). Also corrected the README pillars to
+  match the current scope (two pillars + data-plane boundary; no DB backup/restore).
 - **`DEPLOY` sequencing / health / failure / observability** (`BR-DEPLOY-016`…`020`).
   Single-flight reconcile; in-place recreate; `migrate` after every image enable (incl.
   rollback); health-gated success. **`ADR-025`**: deploy failure = **halt + report**, no
@@ -124,7 +132,7 @@ code changes live in git history.
   app exists. Updated the Phase-1 plan's verification target and illustrative
   `cairn.toml` manifest (the actual `cairn.toml.example` file is deferred to BUILD
   implementation, after Phase-2 `BUILD` requirements exist).
-- **Added `ADR-019` — strict decoupling from cofferdam** (docker-cairn and cofferdam are
+- **Added `ADR-019` — strict decoupling from cofferdam** (cairn and cofferdam are
   mutually unaware). Reframed the Phase-1 plan's Pillar-3 note around a *generic*
   restore-scoping rule (never overwrite local env config on the sites volume) instead of
   cofferdam-specific enforcement; retracted the earlier `cofferdam validate` deploy

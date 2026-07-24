@@ -1,4 +1,4 @@
-# docker-cairn — Working Agreement (Scribe Coding)
+# cairn — Working Agreement (Scribe Coding)
 
 This project follows **Scribe Coding** — Document-Driven AI Development:
 <https://datahenge.com/blog/document-driven-ai-development/>
@@ -33,7 +33,7 @@ Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside 
 (site config, local secrets, local policy files — e.g. a cofferdam policy file) ·
 `CLI` command surface.
 
-> docker-cairn is **cofferdam-unaware** (`ADR-019`). cofferdam is only ever a
+> cairn is **cofferdam-unaware** (`ADR-019`). cofferdam is only ever a
 > non-normative example of a local config file; the tool never depends on or special-
 > cases it.
 

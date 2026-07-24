@@ -1,16 +1,19 @@
-# docker-cairn
+# cairn
 
 A thin, opinionated wrapper around [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)
 that makes running a custom ERPNext deployment (Frappe + ERPNext + custom apps) on a
 single VPS **reproducible, immutable, and low-thought** — without ever modifying
 upstream.
 
-Three pillars: **reproducible custom image builds**, **CI/CD + deploy lifecycle**
-(git ref → image tag → running stack), and **backup / restore / rollback** of the
-database.
+Distributed as **`datahenge-cairn`** on PyPI — installs the **`cairn`** command.
+
+Two pillars: **reproducible custom image builds** and a **pull-based deploy lifecycle**
+(git ref → image tag → running stack, with image-only rollback). A strict **data-plane
+boundary** keeps cairn out of your databases and volumes entirely — it ships code, not
+data (`ADR-022`).
 
 > _Cairn: a trail marker of stacked stones. Each deploy drops a durable marker
-> (ref → image tag → DB snapshot) you can navigate back to._
+> (ref → resolved commits → image tag → digest) you can navigate back to._
 
 ## Status
 

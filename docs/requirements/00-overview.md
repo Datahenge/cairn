@@ -1,8 +1,8 @@
-# docker-cairn — Requirements Overview
+# cairn — Requirements Overview
 
 _Status: living document · Last updated: 2026-07-21_
 
-This directory is the **authoritative requirements root** for docker-cairn, per the
+This directory is the **authoritative requirements root** for cairn, per the
 Scribe Coding working agreement (`/CLAUDE.md`). Code and tests reference the
 business-rule identifiers defined here; when a design changes, these documents are
 updated in the same change so they remain the single source of truth.
@@ -19,7 +19,7 @@ updated in the same change so they remain the single source of truth.
 
 ## System purpose (from `../00-project-scope.md`)
 
-docker-cairn wraps the vendored, read-only `frappe_docker` to make a single-VPS custom
+cairn wraps the vendored, read-only `frappe_docker` to make a single-VPS custom
 ERPNext deployment **reproducible, immutable, and low-thought**, across three pillars:
 reproducible image builds, deploy lifecycle (git ref → image tag → running stack), and
 data lifecycle (backup / restore / rollback).

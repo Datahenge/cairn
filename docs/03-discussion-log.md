@@ -7,6 +7,18 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-24 — Single package; naming = datahenge-cairn (ADR-018 closed)
+
+Confirmed cairn stays **one package/repo** (two roles — build/control + reconcile — are
+modes of one tool; role separation is enforced by credentials, not code split; build
+heaviness is external binaries, not Python deps). Packaged as a pip wheel; `cairn reconcile`
+runs under systemd on targets. Split deferred behind an explicit trigger. Naming: `cairn`
+is taken on PyPI, and `docker-cairn`/`frappe-cairn` falsely imply Docker/Frappe ownership,
+so distribution + repo = **`datahenge-cairn`** (signals Datahenge; doubles the stone motif),
+import package `cairn`, command **`cairn`** (+ alias). Renamed prose `docker-cairn` → `cairn`
+and the local dir → `datahenge-cairn`; remote left for Brian to recreate later. Closed
+**`ADR-018`**.
+
 ## 2026-07-24 — DEPLOY opened: pull model, pointer ops, introspection, GC (ADR-010, ADR-024)
 
 Worked through the deploy model. Settled and drafted `BR-DEPLOY-001`…`008`:
@@ -182,7 +194,7 @@ custom app) and exercises the N>1 apps path. Supersedes the earlier ERPNext-only
 
 ## 2026-07-21 — Strict decoupling from cofferdam (ADR-019)
 
-Brian ruled that docker-cairn must **not** rely on, leverage, or be aware of cofferdam /
+Brian ruled that cairn must **not** rely on, leverage, or be aware of cofferdam /
 cofferdam-app — and cofferdam should stay unaware of Docker. His intent: cofferdam stands
 on its own and quietly does its job; if installed + configured it works, otherwise it
 doesn't. Agreed, with a strengthening: the one scenario that appeared to need
@@ -190,7 +202,7 @@ cofferdam-awareness (restoring a Production DB into non-prod) is met correct-by-
 construction via a **generic** rule — *restore replaces the DB (+ optional attachments)
 and never overwrites local environment config on the sites volume* — which protects
 `site_config.json`, local secrets, and any local policy file (e.g. cofferdam's) as a side
-effect, naming no app. This also **retracted** an earlier proposal that docker-cairn
+effect, naming no app. This also **retracted** an earlier proposal that cairn
 enforce cofferdam policy presence / run `cofferdam validate` as a deploy invariant — that
 was exactly the coupling being rejected. cofferdam may still appear as a *non-normative
 illustrative example* in docs. → **ADR-019** (closed).
@@ -293,7 +305,7 @@ available, but never auto-applied. → **ADR-012** (closed).
 
 ## 2026-07-21 — ventwig wired up (ADR-007 implemented)
 
-Made `docker-cairn` a Python project (`pyproject.toml`) and configured ventwig to
+Made `cairn` a Python project (`pyproject.toml`) and configured ventwig to
 vendor `frappe_docker`. Findings that shaped it:
 - ventwig 0.2.0's `clone()` uses `git clone --depth 1 --branch <ref>` — accepts a
   branch or **tag**, not a raw commit SHA.

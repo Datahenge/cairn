@@ -2,7 +2,7 @@
 
 _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-21_
 
-Requirements for how docker-cairn vendors the upstream `frappe_docker` tooling.
+Requirements for how cairn vendors the upstream `frappe_docker` tooling.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-001`, `ADR-004`, `ADR-007`,
 `ADR-008`, `ADR-020`.
 
@@ -12,7 +12,7 @@ sources are not anticipated. If one is ever introduced, these requirements gener
 ---
 
 **`BR-VEND-001` — Vendoring mechanism.**
-The upstream `frappe_docker` tooling MUST be vendored into the docker-cairn repository as
+The upstream `frappe_docker` tooling MUST be vendored into the cairn repository as
 plain, committed files via `ventwig` — never as a git submodule, subtree, or runtime
 package dependency. *(ADR-007)*
 
@@ -29,18 +29,18 @@ immutability anchor, and MUST permit builds to reproduce **without network acces
 the upstream host. *(ADR-007)*
 
 **`BR-VEND-004` — Read-only.**
-No docker-cairn operation may create, modify, or delete any file within the vendored
+No cairn operation may create, modify, or delete any file within the vendored
 `frappe_docker/` tree. *(ADR-001)*
 
 **`BR-VEND-005` — Drift is a hard stop.**
-Before producing an image, docker-cairn MUST verify the vendored tree matches the
+Before producing an image, cairn MUST verify the vendored tree matches the
 content-tree hash in `.ventwig.lock`. On any drift the operation MUST abort. **There is
 no override.** The remedy is to restore the tree (`ventwig sync`) or to record a
 deliberate upgrade (`BR-VEND-009`); intentional edits to the vendored tree are prohibited
 by `BR-VEND-004`. *(ADR-001, ADR-007)*
 
 **`BR-VEND-006` — Build-input completeness.**
-Before producing an image, docker-cairn MUST verify the vendored tree contains the
+Before producing an image, cairn MUST verify the vendored tree contains the
 required build inputs — at minimum `images/custom/Containerfile` and the `resources/` it
 references — and MUST abort with a clear error if any are absent. *(ADR-004)*
 
@@ -54,13 +54,13 @@ ventwig MUST be configured with `create_parent_package_markers = false`, so that
 
 **`BR-VEND-009` — Deliberate upgrades only.**
 Upgrading the vendored upstream MUST be an explicit, reviewable act (bump `ref` →
-`ventwig sync` → review diff → commit the updated tree + lock). docker-cairn MUST NOT
+`ventwig sync` → review diff → commit the updated tree + lock). cairn MUST NOT
 upgrade or re-sync the pin automatically as a side effect of any other operation. Where
 ventwig supports it (`ADR-020`), sync SHOULD verify the ref still resolves to a reviewed
 commit. *(ADR-007, ADR-020)*
 
 **`BR-VEND-010` — Git working tree prerequisite.**
-The docker-cairn project MUST be a git working tree (required for ventwig-managed
+The cairn project MUST be a git working tree (required for ventwig-managed
 vendoring and drift detection). *(ADR-008)*
 
 ---

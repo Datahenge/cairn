@@ -35,7 +35,7 @@ Use `images/custom/Containerfile` (self-contained, `FROM python:*-slim`, builds
 the entire base itself), **not** `images/layered/Containerfile`.
 
 **Rationale:** `layered` builds `FROM frappe/base:version-16` / `frappe/build:*`,
-which are **mutable tags** Frappe re-pushes over time. The same docker-cairn commit
+which are **mutable tags** Frappe re-pushes over time. The same cairn commit
 could then produce a *different* image later, and a rollback could rebuild against a
 base that has changed underneath us — fatal to reproducibility/rollback. `custom`
 pins Python/Node/wkhtmltopdf ourselves and is deterministic. Its only cost (slower
@@ -92,7 +92,7 @@ build context). ventwig requires the consumer to be a git working tree → see A
 
 ---
 
-### ADR-008 — `docker-cairn` is itself a git repository
+### ADR-008 — `cairn` is itself a git repository
 **Decided:** 2026-07-21
 The project is version-controlled (required by ventwig, and desirable regardless).
 Our scaffolding, CLI, config, and the vendored `frappe_docker` tree are all tracked.
@@ -121,17 +121,17 @@ applied automatically.
 
 ---
 
-### ADR-019 — docker-cairn and cofferdam are mutually unaware (strict decoupling)
+### ADR-019 — cairn and cofferdam are mutually unaware (strict decoupling)
 **Decided:** 2026-07-21
-docker-cairn MUST NOT rely on, leverage, or have awareness of `cofferdam` /
+cairn MUST NOT rely on, leverage, or have awareness of `cofferdam` /
 `cofferdam-app`, and nothing in cofferdam should be aware of Docker. If cofferdam is
 installed and configured, it works; otherwise it does not — that is cofferdam's own
 self-contained, fail-closed contract, needing no external orchestrator. cofferdam-app,
 if used, is treated as an ordinary `[[cairn.apps]]` entry with zero special-casing.
 
-**Rationale:** Separation of concerns — docker-cairn is a build/deploy/data tool;
+**Rationale:** Separation of concerns — cairn is a build/deploy/data tool;
 cofferdam is a runtime outbound guard at the Frappe app layer. Coupling would bloat
-docker-cairn and amputate cofferdam's bare-metal / non-Docker audience. The tools
+cairn and amputate cofferdam's bare-metal / non-Docker audience. The tools
 compose as *independent* defense-in-depth layers, not as a dependency.
 
 **Consequence (correct-by-construction):** the one scenario that seemed to need
@@ -141,10 +141,10 @@ file attachments) and MUST NOT overwrite local environment configuration on the 
 volume.* That generic rule protects `site_config.json`, local secrets, and any local
 policy files (e.g. a cofferdam `environment_policy.toml`) as a side effect, without the
 tool knowing their meaning. It becomes a normative `BR-DATA-###` / `BR-CFG-###`
-requirement in Phase-2. docker-cairn's restore-safety contribution stays generic (narrow
+requirement in Phase-2. cairn's restore-safety contribution stays generic (narrow
 scope, environment labeling, prod→non-prod confirmation).
 
-**Retracts:** an earlier proposal that docker-cairn enforce cofferdam policy presence /
+**Retracts:** an earlier proposal that cairn enforce cofferdam policy presence /
 run `cofferdam validate` as a deploy invariant — that coupling is withdrawn.
 
 ---
@@ -370,6 +370,33 @@ cairn MAY POST to an **optional, operator-configured failure webhook** — a bes
 outbound, transport-agnostic POST with a structured payload — so a tech team learns of
 failures without writing a journald-parsing cron, while cairn owns none of the delivery
 (SMTP/Slack/PagerDuty is the endpoint's job). *(BR-DEPLOY-019/020)*
+
+---
+
+### ADR-018 — One package `datahenge-cairn`; command `cairn`; split deferred
+**Decided:** 2026-07-24
+**Single package, one repo.** cairn's two roles (build/control on the laptop; reconcile on
+targets) are modes of one cohesive tool that shares config models, registry logic, and
+compose rendering — not two programs. The role separation is enforced by **credentials** (a
+target holds only a read-only pull token, so even the full CLI there cannot build/push/
+retag), not by splitting code or dependencies (the Python footprint is tiny and identical;
+build heaviness lives in external `docker`/`buildx` binaries).
+
+**Names:**
+- **PyPI distribution + repo:** `datahenge-cairn`. `cairn` is taken; `docker-cairn` /
+  `frappe-cairn` would falsely imply Docker/Frappe ownership. `datahenge-cairn` truthfully
+  signals Datahenge and doubles the stone motif (Datahenge = stone circle, cairn = stacked
+  stones).
+- **Import package:** `cairn`. **Console command:** `cairn` (primary) + a `datahenge-cairn`
+  alias as a collision fallback.
+
+**Distribution:** a pip-installable wheel; on a target, `cairn reconcile` runs under a
+systemd service + timer (`BR-DEPLOY-001`).
+
+**Split deferred (trigger recorded):** revisit a separate minimal agent only if a genuinely
+heavy *build-only* dependency appears, or a hard requirement emerges that target code be
+*physically incapable* of build/push logic (beyond credential-gating). Neither holds today.
+*(BR-DEPLOY-001)*
 
 ---
 
