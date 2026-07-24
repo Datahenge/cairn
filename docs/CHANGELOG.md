@@ -11,6 +11,8 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`DEPLOY` approved** (`BR-DEPLOY-001`…`020`) — all decisions resolved; only the deferred
+  GHCR-side cleanup command remains (non-blocking). Five of six requirement areas approved.
 - **Naming & packaging (`ADR-018` closed).** Single package/repo, name **`datahenge-cairn`**
   (`cairn` taken; `docker-cairn`/`frappe-cairn` falsely imply Docker/Frappe ownership;
   `datahenge-cairn` signals Datahenge + doubles the stone motif). Import package `cairn`;

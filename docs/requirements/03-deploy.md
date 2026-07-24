@@ -1,6 +1,6 @@
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: living · drafted (Pass 1 — partial; open items listed) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-002`, `ADR-005`, `ADR-006`,
@@ -146,7 +146,6 @@ behavior. *(ADR-026)*
 
 ---
 
-## Open within DEPLOY
+## Deferred (not blocking; future work)
 - **GHCR-side cleanup** — deleting old package versions is destructive (erases rollback
-  targets); a *separate, opt-in* command later, never part of automatic VPS GC. (Deferred,
-  not blocking approval.)
+  targets); a *separate, opt-in* command later, never part of automatic VPS GC.
