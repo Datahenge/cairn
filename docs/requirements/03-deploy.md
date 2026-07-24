@@ -70,11 +70,13 @@ Watchtower, Flux, or ArgoCD. *(ADR-024)*
 ## Environment model (two halves, joined by the tag)
 
 **`BR-DEPLOY-009`** — An environment is defined in **two disconnected halves joined only by
-the env tag name**: a thin **control-side** (laptop) mapping of environment → registry tag
-(mostly convention, e.g. `test` → `:test`), and a substantial **target-side environment
-descriptor** on each target host. cairn's control-side commands operate on the **registry
-only** and MUST NOT require the target host's address or any inbound access — the laptop
-never talks to the environments. *(ADR-005, ADR-006, ADR-010)*
+the env tag name**: a thin **control-side** (laptop) **declared environment list** —
+environment → registry tag (e.g. `test` → `:test`) — and a substantial **target-side
+environment descriptor** on each target host. The declared list is the source of truth for
+"which environments exist" and gates `new-tag`/`retag`/`retire` (`BR-CLI-009`), cleanly
+separating *environment* tags from *immutable* image tags. cairn's control-side commands
+operate on the **registry only** and MUST NOT require the target host's address or any
+inbound access — the laptop never talks to the environments. *(ADR-005, ADR-006, ADR-010)*
 
 **`BR-DEPLOY-010`** — The target-side **environment descriptor** declares high-level intent:
 image + watched tag; which frappe_docker **overrides** to compose (db, redis, proxy, TLS);
@@ -149,3 +151,9 @@ behavior. *(ADR-026)*
 ## Deferred (not blocking; future work)
 - **GHCR-side cleanup** — deleting old package versions is destructive (erases rollback
   targets); a *separate, opt-in* command later, never part of automatic VPS GC.
+  **Verified GHCR facts (2026-07-24):** deletion is **version-based only** — the sole API is
+  `DELETE /…/packages/container/{package}/versions/{version_id}`; there is **no per-tag
+  delete**, and deleting a version removes all its tags *and* the image. Also: a **public**
+  version with **>5,000 downloads cannot be deleted at all**. Consequence: an environment
+  tag cannot be removed without destroying the shared image — hence `cairn retire`
+  decommissions at cairn's layer only and the GHCR tag name lingers (`BR-CLI-009`).

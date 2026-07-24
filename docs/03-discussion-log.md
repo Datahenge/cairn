@@ -7,6 +7,23 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-24 — CLI drafted; verb model + GHCR delete reality
+
+Designed the `CLI` verb set with Brian's refinements: **`build` just builds** (`--push`
+opt-in); **`deploy` → `push`** (GitHub-shared "push to cloud"); **`promote`+`rollback`
+collapse into `retag <env>`** with `--latest|--previous|--id|--from` selectors (`--from`
+= cross-env promotion). Added **typo-guards**: `new-tag` errors if the env exists; `retag`
+errors if it doesn't (no auto-vivification) — source of truth is a **declared environment
+list** (sharpened `BR-DEPLOY-009`).
+
+Deletion: Brian asked how tags are deleted. **Verified against GitHub's own docs** that GHCR
+deletion is **version-based only** (no per-tag delete; deleting a version removes the image
++ all its tags; public >5,000-download versions can't be deleted). Since an env tag shares
+its version with the immutable tag, you *cannot* remove just the env pointer. So a
+`delete-tag` would lie — reframed to **`cairn retire <env>`**: decommission from cairn's
+declared list, touch no images, and plainly warn the GHCR tag name lingers (inert). Wrote
+`BR-CLI-001`…`015` (drafted); recorded the GHCR facts in the deferred cleanup note.
+
 ## 2026-07-24 — Single package; naming = datahenge-cairn (ADR-018 closed)
 
 Confirmed cairn stays **one package/repo** (two roles — build/control + reconcile — are

@@ -11,6 +11,16 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`CLI` drafted (Pass 1)** — `docs/requirements/06-cli.md`, `BR-CLI-001`…`015`. Verb set:
+  `build [--push]`, `push`, `new-tag`/`retag`/`retire` (create/move/decommission, with
+  `--latest|--previous|--id|--from` selectors + typo-guards), `images`, `vendor`, `doctor`,
+  `reconcile`. Conventions: `--dry-run`, prod-gate `--yes`, `--json` on reads,
+  stdout/stderr logging + exit codes, config discovery. Sharpened `BR-DEPLOY-009` to a
+  **declared environment list** (not bare convention).
+- **Verified GHCR deletion is version-based** (no per-tag delete; deleting a version removes
+  its image + all tags; public >5,000-download versions are undeletable). So `cairn retire`
+  decommissions at cairn's layer only; the registry tag name lingers. Recorded in the
+  deferred GHCR-cleanup note.
 - **`DEPLOY` approved** (`BR-DEPLOY-001`…`020`) — all decisions resolved; only the deferred
   GHCR-side cleanup command remains (non-blocking). Five of six requirement areas approved.
 - **Naming & packaging (`ADR-018` closed).** Single package/repo, name **`datahenge-cairn`**

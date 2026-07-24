@@ -1,0 +1,85 @@
+# BR-CLI — Command Surface & UX Requirements
+
+_Status: living · drafted (Pass 1) · Last updated: 2026-07-24_
+
+The `cairn` command surface. Mostly *cites* verbs defined in other areas; adds the
+create/move/retire guards, global flags, and output/exit conventions. Conventions: see
+`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-018`, `ADR-023`.
+
+---
+
+## Substrate
+
+**`BR-CLI-001`** — cairn is a **single Python CLI** (Click/Typer, `ADR-003`), invoked as
+`cairn` (distribution `datahenge-cairn` + `datahenge-cairn` alias, `ADR-018`), with
+subcommands. One package; the build/control vs. reconcile roles are gated by **credentials
+and context**, not by separate binaries (`ADR-018`). *(ADR-003, ADR-018)*
+
+## Command surface
+
+**`BR-CLI-002`** *(build)* — `cairn build [--push] [--manifest <path>] [--no-cache]
+[--dry-run]` — build the image from `cairn.toml` (resolve refs → apps.json → tagged image +
+provenance labels). **Default is build-only**; `--push` also uploads. *(BR-BUILD-*)*
+
+**`BR-CLI-003`** *(push)* — `cairn push [--id <tag>]` — upload a built image to the registry
+(default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*
+
+**`BR-CLI-004`** *(pointer verbs — create / move / retire)* —
+- `cairn new-tag <env> <selector>` — **create** a new environment pointer.
+- `cairn retag <env> <selector>` — **move** an existing pointer (server-side retag, no
+  rebuild).
+- `cairn retire <env>` — **decommission** an environment from cairn (see `BR-CLI-009`).
+
+Selectors for `new-tag`/`retag`: `--latest | --previous | --id <ident> | --from <env>`
+(`--from` points at whatever another env currently runs → cross-env promotion). Both accept
+opt-in **`--install-app <apps>`** (`ADR-023`). *(BR-DEPLOY-004, ADR-023)*
+
+**`BR-CLI-005`** *(introspection)* — `cairn images [--tags] [--json]` — registry
+introspection: tags, digests, and provenance labels read **remotely** (no pull). *(BR-DEPLOY-005)*
+
+**`BR-CLI-006`** *(vendor)* — `cairn vendor status | sync` — thin ventwig wrappers. *(BR-VEND-*)*
+
+**`BR-CLI-007`** *(doctor)* — `cairn doctor` — preflight: Docker Engine v23+/buildx present,
+`ventwig status` clean, config valid. *(BR-VEND-005/006)*
+
+**`BR-CLI-008`** *(reconcile)* — `cairn reconcile` — the target-side, single-flight
+pull-loop verb, run under systemd. *(BR-DEPLOY-001/003/016)*
+
+## Guards & safety
+
+**`BR-CLI-009`** *(existence guards; no auto-vivification)* — Environment existence is
+determined by cairn's **declared environment list** (control-side, `BR-DEPLOY-009`).
+- `new-tag <env>` MUST **error if `<env>` already exists**.
+- `retag <env>` / `retire <env>` MUST **error if `<env>` does not exist**
+  (`No such environment '<env>'`) — a typo never creates or mis-targets infrastructure.
+
+`retire <env>` removes `<env>` from the declared list and touches **no images**; because
+GHCR has no per-tag delete (deletion is by version ID; a version's tags are shared — see
+`03-deploy.md`), cairn MUST warn plainly that the **registry tag name persists** (inert).
+*(BR-DEPLOY-009)*
+
+**`BR-CLI-010`** *(prod gate)* — Any command that moves or retires a **`:production`**
+pointer MUST require **explicit confirmation** — interactive prompt by default, `--yes` to
+skip for automation. `--install-app` against Production is **doubly** explicit. *(BR-DEPLOY-015)*
+
+**`BR-CLI-011`** *(least surprise)* — Nothing consequential is silent: no auto-rollback
+(`ADR-025`), no auto-install (`ADR-023`), no data/volume/DB writes of cairn's own
+(`ADR-022`). Consequential/destructive actions confirm; `--dry-run` is available on
+`build`/`push`/`new-tag`/`retag`/`reconcile`. *(ADR-022, ADR-023, ADR-025)*
+
+## Conventions
+
+**`BR-CLI-012`** *(logging & exit codes)* — cairn logs **only to stdout/stderr**
+(`BR-DEPLOY-019`) and MUST return **meaningful exit codes** (0 success, non-zero failure)
+so systemd and CI detect outcomes. *(BR-DEPLOY-019)*
+
+**`BR-CLI-013`** *(output)* — Human-readable by default; **`--json`** on read/introspection
+commands (`images`, status) for CI/scripting. *(—)*
+
+**`BR-CLI-014`** *(config discovery)* — cairn discovers the manifest (`cairn.toml`), build
+config (`~/.config/cairn/config.toml` + optional `cairn.local.toml`), and (on targets) the
+environment descriptor, with documented precedence; the common case needs **no flags**
+(minimal typing). *(BR-CFG-008)*
+
+**`BR-CLI-015`** *(help & errors)* — Every command has `--help`; errors are actionable and
+name the fix; convention over configuration. *(—)*
