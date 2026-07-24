@@ -11,6 +11,12 @@ code changes live in git history.
 
 ## 2026-07-23
 
+- **`CFG` fully approved** (build config signed off). `BR-CFG-010` refined: cairn may read
+  a registry token from env / a local env file to perform a *transient* `docker login`,
+  but still never stores credentials.
+- **Closed `ADR-009`** — cairn is registry-agnostic; **GHCR is the recommended default**
+  (ERPNext/GitHub ubiquity; fits the pull-only model). Follow-up: a GHCR setup runbook is
+  needed (deferred to Phase-6 user docs).
 - **`CFG` target config approved; build config drafted (Pass 1).** Added
   `docs/requirements/05-config.md`. Target (`BR-CFG-001`…`007`): env config lives on the
   sites volume and is never clobbered; opacity line (Frappe framework config understood,

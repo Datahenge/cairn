@@ -1,6 +1,6 @@
 # BR-CFG — Configuration Requirements
 
-_Status: living · **target config approved** 2026-07-23 · **build config drafted (Pass 1)** · Last updated: 2026-07-23_
+_Status: **approved** 2026-07-23 (living — may be revised via CHANGELOG) · Last updated: 2026-07-23_
 
 Requirements for configuration. Two orthogonal sub-domains:
 - **Target configuration** — runtime, per-environment, lives on the sites volume.
@@ -50,7 +50,7 @@ credentials, and Docker secrets are `ADR-017`/`DEPLOY`, not `CFG`. *(ADR-017)*
 
 ---
 
-## B. Build configuration (build-time, local to the build machine) — drafted (Pass 1)
+## B. Build configuration (build-time, local to the build machine) — approved
 
 **`BR-CFG-008`** — Build configuration (registry/namespace target, buildx builder, cache
 settings, local image base) is build-time-only and machine/user-specific. It MUST live in
@@ -63,10 +63,13 @@ free of local/build/registry settings so it stays portable. *(ADR-015, ADR-009)*
 a build-config value (any OCI registry — GHCR, self-hosted, GitLab, ECR, …), never
 hardcoded to Docker Hub. *(ADR-009)*
 
-**`BR-CFG-010`** — cairn MUST delegate registry **authentication** to Docker's credential
-store (`docker login` / `~/.docker/config.json`); it MUST NOT store, prompt for, or
-persist registry credentials. Build config carries only the non-secret registry namespace.
-*(security)*
+**`BR-CFG-010`** — cairn MUST NOT store, persist, or write registry credentials;
+authentication is Docker's responsibility (`docker login` / `~/.docker/config.json`). For
+convenience, cairn MAY read a registry token from an **environment variable or a local
+env file** at invocation and use it to perform a **transient** `docker login` (e.g.
+`printf %s "$TOKEN" | docker login ghcr.io -u <user> --password-stdin`), but MUST NOT
+persist it beyond the process. Build config itself carries only the non-secret registry
+namespace. *(security)*
 
 **`BR-CFG-011`** — With a registry configured, cairn pushes images to
 `<registry>/<namespace>/<image_name>:<tag>`, and the provenance **labels** (`BR-BUILD-011`)
@@ -81,3 +84,6 @@ cites BUILD)*
   `encryption_key`).
 - `DEPLOY`/`ADR-017` owns `common_site_config.json`, `.env`, and secrets.
 - `BUILD` (`BR-BUILD-008`/`011`) consumes the registry/namespace from build config.
+- **Follow-up (user docs):** a **GHCR setup runbook** is needed (`ADR-009`) — PAT
+  creation, `docker login ghcr.io`, package visibility, and a read-only VPS pull token.
+  Deferred to Phase-6 user documentation; can be drafted on request.

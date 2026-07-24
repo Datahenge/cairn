@@ -7,6 +7,16 @@ _Last updated: 2026-07-21_
 
 ---
 
+## 2026-07-23 — CFG build config approved; ADR-009 closed (GHCR)
+
+Brian signed off build config: cairn never stores registry credentials, but MAY read a
+token from env / a local env file to perform a *transient* `docker login` (`BR-CFG-010`
+refined). Config location (user-level `~/.config/cairn/config.toml` + optional
+`cairn.local.toml`) accepted. Closed **`ADR-009`**: registry-agnostic with **GHCR as the
+recommended default** (ERPNext clients/devs already live on GitHub; fits the pull-only
+model). Brian is only lightly familiar with GHCR → a GHCR setup runbook is a tracked
+Phase-6 user-doc deliverable. `CFG` fully approved.
+
 ## 2026-07-23 — CFG: target config (approved) + build config (drafted)
 
 Grounded in real demo benches: the sites volume holds `common_site_config.json`
