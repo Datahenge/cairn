@@ -11,28 +11,27 @@ deployment (Frappe + ERPNext + one or more custom apps) on a single VPS is
 
 We never modify `frappe_docker`. We vendor it read-only and build *on top* of it.
 
-## The three pillars
+## Two pillars, and a strict boundary
 
 1. **Reproducible custom image builds**
    Frappe + ERPNext + N custom apps → one deterministic, immutable image, from a
    single command — instead of hand-editing `apps.json`, remembering the BuildKit
    secret + `CACHE_BUST` incantation, and choosing a Containerfile.
 
-2. **CI/CD & deployment lifecycle**
+2. **Deployment lifecycle**
    Build an image for a given git commit/tag/branch, tag it coherently, and make
    the running stack converge to the *correct current image* for that ref —
-   including database migration and container restart. The hard part is keeping
+   including `bench migrate` and container restart. The hard part is keeping
    **git ref → image tag → running stack** consistent so you always know exactly
    what is deployed.
 
-3. **Data-plane safety by non-participation** *(reframed 2026-07-24, `ADR-022`)*
-   cairn ships **code, not data**. The data plane — SQL, persistent volumes, site
-   configs, `encryption_key` — is **off-limits**: cairn cannot connect to SQL, run
-   `bench execute`/`frappe` code, or move databases between environments; altering a
-   target DB directly is impossible by construction. The **only** DB interaction is
-   invoking Frappe's own non-destructive `bench migrate` after an image swap (cairn is a
-   caller, not a mutator). Rollback is **image-only**. Backup/restore/DB-movement are out
-   of scope — the operator's / cofferdam's domain.
+**The data-plane boundary** *(`ADR-022`).* cairn ships **code, not data**. The data plane —
+SQL, persistent volumes, site configs, `encryption_key` — is **off-limits**: cairn cannot
+connect to SQL, run `bench execute`/`frappe` code, or move databases between environments;
+altering a target DB directly is impossible by construction. The only DB interaction is
+invoking Frappe's own non-destructive `bench migrate` (plus opt-in `bench install-app`)
+after an image swap. Rollback is **image-only**. Backup/restore/DB-movement are out of scope
+— the operator's / cofferdam's domain.
 
 The through-line: **minimal typing, minimal thinking** — a small, opinionated CLI
 over the tedious, error-prone parts.
@@ -65,8 +64,8 @@ over the tedious, error-prone parts.
   vendored and drift-checked, never edited.
 - **Idempotent, state-driven deploys.** One converging verb; triggers are pluggable.
 - **Pull, don't push.** The VPS reaches outward; nothing gets a key *into* the box.
-- **The Cairn metaphor.** Each deploy drops a durable marker (ref → image tag →
-  DB snapshot) you can navigate back to. (Also: stones ↔ "Datahenge".)
+- **The Cairn metaphor.** Each build/deploy drops a durable marker (ref → resolved
+  commits → image tag → digest) you can navigate back to. (Also: stones ↔ "Datahenge".)
 
 ## Naming
 

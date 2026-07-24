@@ -11,6 +11,14 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **Non-requirement consistency sweep.** Aligned forward-looking docs with the approved
+  requirements: project scope + overview reframed to **two pillars + a data-plane boundary**
+  (was "three pillars"/"backup·restore·rollback"); `CLAUDE.md` `DATA` area updated; "DB
+  snapshot" removed from the cairn metaphor. Added **supersession notes** to `ADR-012`
+  (no pre-migrate snapshot) and `ADR-019` (cairn performs no restore), both pointing to
+  `ADR-022`. Banner-marked the Phase-1 build plan as **superseded-in-part** (markers are
+  labels not `.cairn/markers/`; no `cairn markers` command; `DATA` is a boundary). History
+  docs (discussion log, this CHANGELOG) left as append-only record.
 - **Requirements clarity audit.** Tightened all six requirement docs
   (`BR-VEND/BUILD/DEPLOY/DATA/CFG/CLI`) to crisp normative statements; migrated inline
   rationale/mechanism/verification into the cited ADRs and the discussion log. IDs and

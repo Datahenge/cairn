@@ -115,9 +115,10 @@ image's DocType/DocField JSON no longer matches the live MariaDB schema, the ext
 columns/tables simply sit unused rather than causing data loss — making image-only
 rollback safe by default.
 
-**Consequence:** we still snapshot **before** a forward deploy's migration (ADR-014) so
-a manual restore is *available* if an operator chooses it — but the snapshot is never
-applied automatically.
+**Superseded in part by `ADR-022`:** an earlier version of this consequence had cairn
+snapshot before a forward migration. `ADR-022` (data-plane boundary) removed that — cairn
+performs **no** snapshot or any data handling. The core decision (rollback reverts the image
+only, never the database) stands, and is stronger under `ADR-022`.
 
 ---
 
@@ -141,8 +142,12 @@ file attachments) and MUST NOT overwrite local environment configuration on the 
 volume.* That generic rule protects `site_config.json`, local secrets, and any local
 policy files (e.g. a cofferdam `environment_policy.toml`) as a side effect, without the
 tool knowing their meaning. It becomes a normative `BR-DATA-###` / `BR-CFG-###`
-requirement in Phase-2. cairn's restore-safety contribution stays generic (narrow
-scope, environment labeling, prod→non-prod confirmation).
+requirement in Phase-2.
+
+**Superseded in part by `ADR-022`:** this consequence assumed cairn might perform restores.
+Under `ADR-022`, cairn performs **no** restore or data movement at all, so the generic
+restore rule is moot as a cairn *feature* — its never-clobber-config principle survives only
+as `BR-CFG`/`BR-DATA` prohibitions. The decoupling decision itself stands unchanged.
 
 **Retracts:** an earlier proposal that cairn enforce cofferdam policy presence /
 run `cofferdam validate` as a deploy invariant — that coupling is withdrawn.

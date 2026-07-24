@@ -20,9 +20,9 @@ updated in the same change so they remain the single source of truth.
 ## System purpose (from `../00-project-scope.md`)
 
 cairn wraps the vendored, read-only `frappe_docker` to make a single-VPS custom
-ERPNext deployment **reproducible, immutable, and low-thought**, across three pillars:
-reproducible image builds, deploy lifecycle (git ref → image tag → running stack), and
-data lifecycle (backup / restore / rollback).
+ERPNext deployment **reproducible, immutable, and low-thought**, across two pillars —
+reproducible image builds and deploy lifecycle (git ref → image tag → running stack) —
+with a strict **data-plane boundary** (cairn ships code, not data).
 
 ## Table of contents (BR areas)
 

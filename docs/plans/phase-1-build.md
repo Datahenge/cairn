@@ -1,5 +1,14 @@
 # cairn — Phase 1: the Build pillar (`cairn build`)
 
+> **⚠️ Superseded in part (2026-07-24).** This early plan predates the data-plane boundary
+> (`ADR-022`), the naming (`datahenge-cairn` / command `cairn`), the deploy verb model
+> (`build` / `push` / `new-tag` / `retag` / `retire`), provenance-as-OCI-labels
+> (`BR-BUILD-011`), and the registry decisions. **The approved requirements in
+> `docs/requirements/` are authoritative wherever this differs** — notably: markers are
+> image **labels**, not `.cairn/markers/` files; there is **no** `cairn markers` command;
+> and `DATA` is a **boundary**, not backup/restore. To be refreshed into a focused
+> implementation plan at Phase-4 start.
+
 ## Context
 
 `cairn` wraps the vendored, pinned `frappe_docker` (v3.2.1, managed by
