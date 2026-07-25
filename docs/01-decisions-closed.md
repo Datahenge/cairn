@@ -434,6 +434,31 @@ minimal-typing goal. The target-role branch lands with `DEPLOY`.
 
 ---
 
+### ADR-029 — The manifest root and cairn's own project root are independent
+**Decided:** 2026-07-24
+`cairn.toml` describes a **deployment**; cairn's project root (the `pyproject.toml`
+carrying `[tool.ventwig]`, and the vendored `frappe_docker/` beside it) describes the
+**tool**. `BR-BUILD-011` already separates them — markers may go to the "deployment
+working directory" but never into cairn's "own installation or source tree".
+
+**Decision:** the two are resolved by independent searches. The manifest is `--manifest`
+if given, else the nearest `cairn.toml` walking **up from the working directory**. The
+vendored tree stays anchored to cairn's own root. They coincide today (development from
+the repo) and stop coinciding the moment cairn is `pip install`-ed and run against a
+deployment directory elsewhere — which requires no code change under this decision.
+
+**Build config layers** in the same spirit: `~/.config/cairn/config.toml` holds
+machine-wide defaults (e.g. `engine`, `ADR-027`), and an optional `cairn.local.toml`
+**beside the manifest** overrides it key-by-key, so per-deployment settings travel with
+the deployment while the portable `cairn.toml` stays free of them (`BR-CFG-008`).
+
+**Known gap, deferred:** the wheel currently packages only `src/cairn`, so a
+`pip install`-ed cairn has no vendored tree to build from. Packaging `frappe_docker/`
+into the distribution is a `BUILD`-phase concern, not blocked by this decision.
+*(BR-CFG-012, BR-CLI-014, BR-BUILD-011)*
+
+---
+
 ### ADR-018 — One package `datahenge-cairn`; command `cairn`; split deferred
 **Decided:** 2026-07-24
 **Single package, one repo.** cairn's two roles (build/control on the laptop; reconcile on

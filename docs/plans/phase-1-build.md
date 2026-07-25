@@ -64,12 +64,14 @@ Human-friendly declaration of *what image to build*. Read with stdlib `tomllib`.
 
 ```toml
 [cairn]
-name = "erpnext-btu-v16"         # logical image/deployment name
+image_name = "erpnext-btu-v16"   # logical image/deployment name (BR-BUILD-002)
 
-[cairn.frappe]
-branch = "version-16"            # -> build-arg FRAPPE_BRANCH/FRAPPE_PATH
-# url = "https://github.com/frappe/frappe"
+[cairn.frappe]                   # -> build-args FRAPPE_PATH / FRAPPE_BRANCH
+url = "https://github.com/frappe/frappe"
+ref = "version-16"
 
+# ORDERED — cairn preserves this order into apps.json and the install
+# sequence, and never reorders or resolves dependencies (BR-BUILD-003).
 [[cairn.apps]]                   # ERPNext and every custom app listed here
 name = "erpnext"
 url  = "https://github.com/frappe/erpnext"

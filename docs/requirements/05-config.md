@@ -59,6 +59,17 @@ Build config carries only the non-secret registry namespace. *(ADR-017, ADR-027)
 with the pushed image. Absent a registry, images remain local (`cairn/<image_name>`,
 `PULL_POLICY=missing`). *(ADR-009)*
 
+**`BR-CFG-012`** *(discovery & precedence)* — cairn MUST discover configuration by the
+following precedence, and the common case MUST require no flags:
+- **Manifest** — `--manifest <path>` when given; otherwise the nearest `cairn.toml`
+  searching **upward from the working directory**. The manifest root is resolved
+  independently of cairn's own project root (`ADR-029`).
+- **Build config** — `~/.config/cairn/config.toml` as the machine-wide base, then an
+  optional `cairn.local.toml` **beside the manifest**, overriding **key-by-key**. Both
+  files are optional; absent both, the documented defaults apply (`BR-CFG-011`).
+- Build settings MUST NOT be read from the manifest, and the manifest MUST remain free of
+  them (`BR-CFG-008`). *(ADR-029, BR-CLI-014)*
+
 ---
 
 ## Cross-references

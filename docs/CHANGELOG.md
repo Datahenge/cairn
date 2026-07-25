@@ -11,6 +11,23 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`ADR-029` + `BR-CFG-012` — config discovery and precedence, finally documented.**
+  `BR-CLI-014` promised "documented precedence" that was never written down; implementing
+  `config.py` forced the gap. **Decided:** the manifest root and cairn's own project root
+  are resolved by independent searches — `--manifest` if given, else the nearest
+  `cairn.toml` walking up from the working directory, while the vendored tree stays
+  anchored to cairn's root. They coincide in development and stop coinciding once cairn
+  is `pip install`-ed, with no code change required. Build config layers
+  `~/.config/cairn/config.toml` (machine-wide) under an optional `cairn.local.toml`
+  **beside the manifest**, overriding key-by-key. `BR-CLI-014` now cites `BR-CFG-012`
+  rather than promising documentation. `ADR-029` records one deferred gap: the wheel
+  packages only `src/cairn`, so a pip-installed cairn has no vendored tree to build from
+  — a `BUILD`-phase packaging concern.
+- **Corrected `docs/plans/phase-1-build.md`**, whose illustrative manifest still showed
+  the pre-approval `[cairn] name` and `[cairn.frappe] branch`. The approved
+  `BR-BUILD-002` mandates `image_name` and `url`/`ref`; the plan is downstream of the
+  requirements, so it was brought into line (and gained the `BR-BUILD-003` ordered-list
+  comment that every shipped template must carry).
 - **`ADR-027` — build engine is pluggable (`docker` | `podman`); deploy engine stays
   Docker.** Adopted after the measured buildah result. The unlock was recognizing that the
   build machine and the target are **different machines** whose only interchange is an OCI

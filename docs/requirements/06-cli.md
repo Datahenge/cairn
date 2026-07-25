@@ -79,8 +79,8 @@ commands (`images`, status) for CI/scripting. *(—)*
 
 **`BR-CLI-014`** *(config discovery)* — cairn discovers the manifest (`cairn.toml`), build
 config (`~/.config/cairn/config.toml` + optional `cairn.local.toml`), and (on targets) the
-environment descriptor, with documented precedence; the common case needs **no flags**
-(minimal typing). *(BR-CFG-008)*
+environment descriptor; the common case needs **no flags** (minimal typing). Precedence is
+specified by `BR-CFG-012`. *(BR-CFG-008, BR-CFG-012, ADR-029)*
 
 **`BR-CLI-015`** *(help & errors)* — Every command has `--help`; errors are actionable and
 name the fix; convention over configuration. *(—)*
