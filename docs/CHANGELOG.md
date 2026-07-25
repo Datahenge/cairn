@@ -9,6 +9,37 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (night)
+
+- **`cairn prune` verified on the real machine.** Brian confirmed it worked as intended,
+  closing the one item in `docs/plans/next-steps.md` §1 that no test could settle — the only
+  new code that had never been executed against real images, and cairn's only destructive
+  verb. `BR-CLI-018` is now implemented *and* exercised in the field.
+- **The CLI layer is now tested.** `tests/test_cli.py` added (45 tests, Typer `CliRunner`),
+  closing the one material coverage hole a suite review found the same day: `cli.py` was
+  simultaneously the largest module and the only surface a user touches, and it had never
+  been executed under test. `_run_in_project` — which *is* `BR-CLI-012`'s exit-code contract
+  (0 success, 2 for an expected failure, 130 for interrupt, the action's own code otherwise)
+  — was previously verified only by hand. `cli.py` and `__main__.py` go 0% → 100%; the
+  package total is 94%.
+- **The tests were checked for the failure they claim to detect.** 14 mutations were applied
+  to `cli.py` one at a time — wrong exit codes, ignored flags, a silenced warning, a skipped
+  confirmation, the registry check moved after the build — and every one was caught by a
+  named test. This is the same discipline as
+  `test_the_guard_actually_detects_a_violation` in `test_conventions.py`: a test that cannot
+  fail is not protection. Notably, `transcript.wanted` and `prune.select` were already
+  thoroughly tested at the module level while nothing verified the CLI passed them the right
+  arguments — tested logic behind untested wiring.
+- **Two tests repaired, not removed.** `test_build_args_do_not_affect_the_cache_bust` named a
+  guarantee its body never exercised (`cache_bust` accepts only a resolution, so build args
+  *cannot* be passed to it); it now pins the property actually worth holding — build args
+  change the input hash but must not change the cache bust. `test_sizes_are_not_binary_units`
+  was subsumed by the assertion above it and is folded into it, keeping the original bug in
+  the docstring.
+- **`pytest-cov` added to the `dev` extra**, and `.coverage` gitignored. No
+  `--cov-fail-under` floor is set yet — that is a separate decision, since putting `--cov` in
+  `addopts` makes every test run depend on the plugin being installed.
+
 ## 2026-07-25 (evening, later)
 
 - **`ADR-021` gains a fork-pressure register.** Brian observed that each pitfall makes an

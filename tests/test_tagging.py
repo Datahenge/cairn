@@ -60,8 +60,18 @@ def test_moved_frappe_changes_the_cache_bust():
     )
 
 
-def test_build_args_do_not_affect_the_cache_bust():
-    """Build args are ordinary build-args and already participate in the cache key."""
+def test_build_args_change_the_tag_but_not_the_cache_bust():
+    """The two hashes answer different questions and must not be conflated.
+
+    A different Python version is a different image, so it must change the tag. It is not
+    a reason to re-clone every app, so it must not change the cache bust — the engine's own
+    layer cache already accounts for a changed build-arg.
+    """
+    other_args = {**BUILD_ARGS, "PYTHON_VERSION": "3.13.1"}
+
+    assert tagging.input_hash(_resolution(), other_args) != tagging.input_hash(
+        _resolution(), BUILD_ARGS
+    )
     assert tagging.cache_bust(_resolution()) == tagging.cache_bust(_resolution())
 
 

@@ -1,6 +1,7 @@
 # Next Steps
 
-_Written 2026-07-25, at the end of the session that produced `ADR-031` and `ADR-032`._
+_Written 2026-07-25, at the end of the session that produced `ADR-031` and `ADR-032`.
+Revised later the same day: `cairn prune` verified on the machine, and the CLI layer tested._
 
 A resumption point for a fresh session. Read `/CLAUDE.md` first (the working agreement),
 then this. Everything below is downstream of requirements that are already written; where a
@@ -11,14 +12,15 @@ guess** — ask.
 
 ## Where things stand
 
-Phase 4 (modular code) is under way. Implemented and tested (238 tests, ruff clean):
+Phase 4 (modular code) is under way. Implemented and tested (282 tests, ruff clean, 94%
+statement coverage; `cli.py` at 100%):
 
 | Command | Requirements | State |
 | --- | --- | --- |
 | `cairn build` | `BR-CLI-002`, `BR-BUILD-*` | Working end-to-end against a real registry |
 | `cairn push` | `BR-CLI-003` | Working |
 | `cairn images --local` | `BR-CLI-005` | Working; **registry mode not implemented** |
-| `cairn prune` | `BR-CLI-018` | Written; **not yet run against a real machine** |
+| `cairn prune` | `BR-CLI-018` | Working; verified on the real machine 2026-07-25 |
 | `cairn doctor` | `BR-CLI-007` | Working |
 | `cairn vendor status\|sync` | `BR-CLI-006` | Working |
 | `new-tag` / `retag` / `retire` | `BR-CLI-004`, `BR-CLI-009/010` | Not started |
@@ -30,10 +32,12 @@ timing (`BR-CLI-017`), the input-hash short-circuit (`BR-BUILD-014`), and cache-
 
 ---
 
-## 1. Verify `cairn prune` on the real machine — do this first
+## 1. ~~Verify `cairn prune` on the real machine~~ — done 2026-07-25
 
-It is the only new code never executed against real images. The instrument to check it with
-already exists:
+Brian ran it and confirmed it behaved as intended. This was the only new code never executed
+against real images, and `cairn prune` remains cairn's only destructive verb — so if its
+scoping is ever changed, re-verify on the machine rather than trusting the suite. The
+instrument is:
 
 ```
 cairn images --local     # what cairn thinks is there
@@ -41,10 +45,10 @@ podman image list        # what is actually there
 cairn prune --dry-run    # what would be removed
 ```
 
-Expected on the machine as last observed: four superseded 2.75 GB images removed (~11 GB),
-the tagged image kept, and `e03e7719c39b` — the `builder` stage — untouched and reported
-among the images cairn did not build. If the dry run proposes anything else, **stop and
-investigate before letting it remove**; `cairn prune` is the only destructive verb cairn has.
+The selection logic is covered by `tests/test_prune.py`, and the CLI's plumbing of `--keep`,
+`--dry-run`, `--yes`, the confirmation gate, and the non-zero exit on a failed removal by
+`tests/test_cli.py`. What no test can settle is whether the engine's real listing looks the
+way cairn assumes, which is what the machine run answered.
 
 ---
 
@@ -113,6 +117,10 @@ In dependency order:
 - **Registry-backed cache** (`--cache-to` / `--cache-from`). No help for a warm local
   rebuild; large help for a cold CI runner. Weaker on podman, which `ADR-027` requires we
   keep supporting. Not yet a requirement.
+- **A coverage floor.** `pytest-cov` is now a declared dev dependency and the package sits at
+  94%. A `--cov-fail-under` floor was deliberately *not* added: putting `--cov` in
+  `addopts` makes every plain `pytest` run fail without the plugin installed. Decide the
+  trade before adding it.
 - **`ADR-020`** — ventwig pin immutability. Brian owns ventwig; not a cairn blocker.
 - **Phase 6** — `README.md` / `USAGE.md`. Note that the identifier rule binds from the first
   line of code, not from Phase 6, and `tests/test_conventions.py` enforces it.

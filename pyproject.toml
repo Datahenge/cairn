@@ -19,6 +19,7 @@ dev = [
   "ventwig>=0.2,<0.3",
   "ruff>=0.6",
   "pytest>=8",
+  "pytest-cov>=5",
 ]
 
 # `cairn` is the command; `datahenge-cairn` is an alias fallback (ADR-018).

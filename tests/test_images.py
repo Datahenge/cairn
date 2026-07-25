@@ -215,14 +215,12 @@ def test_engine_failure_is_reported_not_swallowed(monkeypatch):
 
 
 def test_sizes_render_in_the_units_the_engine_uses():
-    """Decimal, not binary: this listing is read next to `podman image list`."""
+    """Decimal, not binary: this listing is read next to `podman image list`.
+
+    The bug this pins: 2.75 GB of image reported as 2.56 GB, because the divisor was 1024.
+    """
     assert images.format_size(2_750_000_000) == "2.75 GB"
     assert images.format_size(4_630_000_000) == "4.63 GB"
     assert images.format_size(443_000_000) == "443 MB"
     assert images.format_size(4_700_000) == "4.7 MB"
     assert images.format_size(512) == "512 B"
-
-
-def test_sizes_are_not_binary_units():
-    """The bug this replaced: 2.75 GB of image reported as 2.57 GB."""
-    assert images.format_size(2_750_000_000) != "2.56 GB"
