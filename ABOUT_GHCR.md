@@ -1,14 +1,21 @@
 # About GHCR — GitHub Container Registry
 
 Written for someone who has used GitHub for years but has never pushed a container image to
-it. cairn needs *somewhere* to put the images it builds, and GHCR is the default choice
-because you already have the account. This explains what you are actually signing into, who
-ends up owning what, and the handful of sharp edges that are genuinely surprising.
+it. This explains what you are actually signing into, who ends up owning what, and the handful
+of sharp edges that are genuinely surprising.
 
-cairn is **registry-agnostic** — nothing here is required. If you would rather use Docker
-Hub, Amazon ECR, or a registry you host, set `registry` and `namespace` in your build config
-and the rest of cairn behaves identically. This document exists because GHCR is the path of
-least resistance, not because cairn prefers it.
+> ### Read [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md) first
+>
+> **GHCR is not cairn's recommended default.** It is one option, and it is the weakest of them
+> on cost: GitHub Packages prices multi-gigabyte artifacts poorly, and an ERPNext image is
+> roughly 2.75 GB with no cheap incremental layer (see §6).
+>
+> This document is most useful for **your own projects**, or for a client already committed to
+> GitHub. For client work generally, the ownership and least-privilege rules in
+> `ABOUT_REGISTRIES.md` come first, and a client-owned cloud registry usually wins.
+
+cairn is **registry-agnostic** — nothing here is required. Set `[cairn.registry]` in the
+deployment's `cairn.toml` and the rest of cairn behaves identically against any registry.
 
 > **Verify the pricing and token details against GitHub's own documentation before
 > committing money or credentials.** The mechanics below are stable; the numbers and the
@@ -26,6 +33,30 @@ It is one component of a larger feature called **GitHub Packages**, which also s
 NuGet, Maven, and RubyGems artifacts. Those share your account's storage quota with GHCR but
 are otherwise unrelated. When you read GitHub's docs, "Packages" is the umbrella and
 "Container registry" is the part you want.
+
+### "Package" — GitHub's word for a Docker concept
+
+GitHub's docs and UI say **package** where you would say *repository*, and **version** where you
+would say *image*. The vocabulary is generic because the same permissions, UI, and API cover npm
+tarballs and Maven jars too. Translated:
+
+| Docker / OCI | GHCR calls it | Example |
+| --- | --- | --- |
+| repository | a **package** (of type `container`) | `ghcr.io/acme-corp/erpnext-acme` |
+| image / manifest — one digest | a **package version** | `sha256:1b019793…` |
+| tag | a **tag** on a version | `:production`, `:v16-1b019793dc20` |
+
+So a "package" is not vague: for containers it is **exactly one image repository** — the name,
+plus every version and tag beneath it. Two things follow that matter later in this document:
+
+- **Permissions are per package, meaning per image repository.** "Write access to the
+  `erpnext-acme` package" grants exactly that one repository and nothing else in the account
+  (§3).
+- **Deletion operates on a version, not a tag.** That is *why* deleting takes every tag on that
+  image with it: `production`, `v16`, and `v16-1b019793dc20` are three tags on one version (§8).
+
+One side effect of the shared umbrella: the storage quota covers **all** package types in the
+account, so a client's npm packages and your container images draw from the same allowance.
 
 An image lives at a path with three parts:
 
@@ -117,6 +148,28 @@ detail. Until it is decided, link manually if you want the linkage.
 else's project grants you nothing on their packages, and your packages are invisible to them
 unless you make them public or grant access. Package permissions are their own system.
 
+### How narrow can access be? Narrower than it looks
+
+The question that matters if you are pushing into a *client's* organization: does write access
+mean you can overwrite all hundred of their packages? **No.**
+
+- `write:packages` on a token is a **ceiling on what the token may attempt**, not a grant of
+  what you may touch. Authorization is resolved per package, every time.
+- Each package has its own access list with **Read / Write / Admin** roles, granted to a user
+  or a team, **per package**.
+- A package **linked to a repository inherits that repository's permissions**. So the per-repo
+  model you are used to applies to images: link the ERPNext image to the repo you already have
+  write on, and your image access is exactly your repo access — nothing more.
+- **Plain org membership grants nothing** on existing private packages. They are invisible.
+- **A typo cannot clobber anything.** Pushing to a misspelled name either creates a *new*
+  package, or is denied if that name exists and you lack Write on it. There is no path where a
+  mistyped push overwrites a package you were never granted.
+
+The configuration that *would* be dangerous is being made an **organization owner**, or being
+put in a team with admin over all packages. Do not ask for that, and decline it if offered —
+see rule 2 in `ABOUT_REGISTRIES.md`. Ask for write on one package, or on the one repository it
+is linked to.
+
 ## 4. Who owns the images after deployment
 
 The GitHub account that pushed them — in your case the `datahenge` organization. Pulling an
@@ -132,10 +185,12 @@ a bad moment:
   registry.
 - **If the organization is deleted or renamed, every image path changes.** The registry path
   contains the owner name.
-- **Your client does not own the image.** If you are building for a client and the engagement
-  ends, an image sitting in *your* organization is a dependency they have on you. If that
-  matters, push to a registry they own — set `registry` and `namespace` in the build config on
-  the machine that builds for them, and nothing else about cairn changes.
+- **If you pushed to your own namespace, your client does not own their image.** An image
+  sitting in *your* organization is a dependency they have on you: end the relationship badly
+  and they cannot deploy or roll back software they own. This is a rule, not a caveat —
+  `ABOUT_REGISTRIES.md` rule 1, and a requirement in `docs/requirements/05-config.md`. Push to
+  an account **they** own: set `[cairn.registry]` in their deployment's `cairn.toml` and
+  nothing else about cairn changes.
 - **Anyone with `read:packages` on a private package can pull the whole image**, which
   contains your application code. Treat pull tokens as code access, because that is what they
   are.

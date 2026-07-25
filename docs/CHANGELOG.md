@@ -9,6 +9,78 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (night, image ownership — a requirement that should have existed first)
+
+Brian raised a problem with the registry design that **should have been addressed far earlier**,
+and he was right about that too. Every registry decision to date — `ADR-009` registry-agnosticism,
+`BR-CFG-011`'s image base, `ADR-036`'s client — was made without ever stating *whose account the
+image lands in*. The documented example throughout was `ghcr.io/datahenge/…`, and `ABOUT_GHCR.md`
+raised the ownership problem only as the fourth bullet of a subsection. That is a
+professional-liability constraint on the whole deploy architecture, not a caveat.
+
+His statement of it: he builds **clients'** private customizations and apps, and must never be the
+sole owner of a client's image — if the relationship ends badly the client cannot deploy or roll
+back software they own, "the equivalent of holding a client's business hostage." He also will not
+maintain one GitHub account per client: browsers cache logins, and "which account am I in right
+now" is costly and genuinely dangerous.
+
+- **`ADR-038` — the image belongs in the account that owns the source.** Recorded as
+  `BR-CFG-013`: cairn MUST support publishing to a namespace the operator does not own, MUST NOT
+  assume the operator's own, and MUST NOT infer one from anything. The operator's own namespace was
+  never wrong — it was wrong as a *default*.
+- **One of the three objections did not survive the mechanism.** A GHCR namespace can be an
+  organization the operator does not own: the client adds the operator's *single* account, the
+  package belongs to their org, billing accrues to them, and revoking membership leaves them whole.
+  One account, N clients. The objection was to one-account-per-client, which was never the only
+  pattern — only the only one documented.
+- **The cost objection stands and is decisive.** GitHub Packages prices multi-gigabyte artifacts
+  badly regardless of who pays, and Brian's point about `frappe_docker` having no per-app layer
+  seam compounds it exactly as it compounds build time (`ADR-021`, entry 1): every build is a fresh
+  full-size layer, so layer sharing saves almost nothing and each retained rollback version costs
+  close to a whole image. GHCR is therefore documented as **one option, not the default**.
+- **A fourth objection, raised in follow-up, turned out to be the most useful.** Brian asked
+  whether write access to a client's registry is *boundless* — "not because I would be malicious,
+  but because I can make mistakes. I'm a few typos away from destroying their non-ERPNext images."
+  Factually GHCR is better than feared: `write:packages` is a ceiling on what the *token* may
+  attempt, not a grant; packages carry per-package Read/Write/Admin roles; a package linked to a
+  repository **inherits that repository's permissions**, so the per-repo model he prefers is
+  available for images; and a mistyped push either creates a new package or is denied — it cannot
+  overwrite one he was never granted. But the principle was unstated, so it is now `BR-CFG-013`'s
+  second half: **the operator's credential MUST be scopeable to the engagement's images and nothing
+  else.** Framed as *liability containment for the operator* rather than as a security control — a
+  credential that can write one repository cannot cause a catastrophe — and as a registry
+  **selection criterion**, which is why per-repository IAM scoping ranks above account-wide
+  credentials.
+- **`ADR-039` — registry coordinates move into the manifest.** `BR-CFG-008` had put them in
+  machine-local config and stated the manifest must stay free of registry settings. Under
+  `ADR-038` that is a defect: the fact that Acme's images belong in `ghcr.io/acme-corp` would live
+  only on Brian's laptop — undocumented, lost with the laptop, invisible to the client who is meant
+  to be able to take over. Now `[cairn.registry]` with a required `host` and optional `namespace`,
+  committed. The original reasoning inverted: it assumed one manifest might target many registries,
+  but with client-owned registries one manifest means one owner means one registry. Recorded as
+  `BR-CFG-014`; `BR-CFG-008` and `BR-CFG-012` amended.
+- **Precedence, with the load-bearing half named:** machine config → the manifest's registry →
+  `cairn.local.toml`. The manifest overriding machine-wide config is what prevents a machine-wide
+  `namespace = "datahenge"` from silently publishing a client's image into the operator's account.
+  Keeping the local file *above* the manifest preserves the escape hatch: publish elsewhere for a
+  test without editing, and committing, a client's file. `engine`, `image_base`, and
+  `transcript_dir` stay machine-local, and `[cairn.registry]` rejects anything but its two keys so
+  the boundary cannot erode.
+
+**Docs.** New `ABOUT_REGISTRIES.md` leads with the three rules (ownership, least privilege,
+credentials are never cairn's), compares client-owned cloud registries / client-owned GitHub org /
+a registry on the client's VPS / the operator's own namespace, and ends with **what to ask a client
+for** in plain language. `ABOUT_GHCR.md` is demoted to a detail reference, gains an accurate
+account of how narrow package access can be, and gains a terminology section — Brian pointed out
+that "package" is GitHub's generic noun and undefined in Docker terms, so the mapping is now
+explicit: package = repository, package version = image, and that is *why* deleting a version takes
+every tag on it.
+
+**A regression caught by the existing suite while implementing this:** making the
+`cairn.local.toml` layer conditional on the manifest file existing broke the case where a local
+config sits beside a manifest that does not exist yet. Only the registry layer needs the manifest;
+the local file needs only its directory.
+
 ## 2026-07-25 (night, two decisions closed)
 
 Both Brian's, both closing questions that had been deliberately left open.

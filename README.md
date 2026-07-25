@@ -26,12 +26,20 @@ infrastructure.
 ## Where your images live
 
 cairn builds an image and puts it in a container registry; your deployment targets pull from
-there. cairn is registry-agnostic and assumes nothing — but if you are using GitHub's registry
-and have not before, start here:
+there. cairn is registry-agnostic and assumes nothing — but **which** registry is not a neutral
+choice when you build software for clients:
 
-📦 **[ABOUT_GHCR.md](ABOUT_GHCR.md)** — what you are logging into, who owns the images, the
-token you need on each machine, what private images cost at ERPNext image sizes, and the
-deletion rule that is genuinely surprising.
+📦 **[ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md)** — start here. The image belongs in the account
+that owns the source; your credential should reach the engagement's images and nothing else; and
+what each option costs at ERPNext image sizes. Includes what to ask a client for.
+
+🐙 **[ABOUT_GHCR.md](ABOUT_GHCR.md)** — GitHub's registry in detail: tokens, scopes, how narrow
+access can be, visibility, and the deletion rule that is genuinely surprising. One option among
+several, not the default.
+
+> **You should never be the sole owner of a client's image.** If the relationship ends, they must
+> still be able to deploy and roll back software they own. cairn is built so the registry can be
+> an account you do not control, and so your push credential can be scoped to one repository.
 
 ## Deployment manifest (`cairn.toml`) — design in progress
 

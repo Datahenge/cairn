@@ -12,7 +12,7 @@ guess** — ask.
 
 ## Where things stand
 
-Phase 4 (modular code) is under way. Implemented and tested (462 tests, ruff clean, 92%
+Phase 4 (modular code) is under way. Implemented and tested (473 tests, ruff clean, 92%
 statement coverage; `cli.py` at 99%):
 
 | Command | Requirements | State |
@@ -99,9 +99,14 @@ and is not currently a requirement.
 The whole deploy path is written. What remains is running it, in this order, and the order is
 chosen so that each step is reversible until the last one.
 
+**Decide the registry first** (`ABOUT_REGISTRIES.md`). For Brian's own projects `ghcr.io/datahenge`
+is fine and already declared in the scratch manifest. For a client, the registry must be an account
+they own, with a push credential scoped to that one repository (`BR-CFG-013`).
+
 **On the control machine:**
 
 ```
+podman login <registry>            # nothing works before this
 cairn images                       # does the registry read work at all?
 cairn build --push                 # if no image is in the registry yet
 cairn new-tag production --latest --dry-run
@@ -121,8 +126,11 @@ descriptor into a wrong deploy every five minutes.
 
 **Known-unknowns to watch for on that first run**, each recorded because no test can settle it:
 
-- **The registry read.** `ADR-036`'s client has never spoken to GHCR. The token flow and the
-  media-type set are the parts most likely to need adjusting.
+- **The registry read.** `ADR-036`'s client has spoken to GHCR only as far as its 401 challenge and
+  token endpoint — verified working, and correctly reporting that no credential is stored. The
+  authenticated path, the manifest fetch, and the config-blob read are all still unexercised. If the
+  chosen registry is *not* GHCR, its token flow may differ in detail; the challenge parsing is
+  generic but has been tested against one registry's wording only.
 - **`compose.directory`.** `reconcile` renders the stack from the frappe_docker tree *on the
   target*; if the descriptor's directory is wrong, compose is invoked with no `--file` at all
   and will use whatever is in the working directory.

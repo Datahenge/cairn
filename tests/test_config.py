@@ -317,3 +317,158 @@ def test_a_series_with_a_space_is_refused(tmp_path):
 
     with pytest.raises(ManifestInvalidError, match="cannot be used in an image tag"):
         config.load_manifest(_manifest(tmp_path, text))
+
+
+# --- registry coordinates in the manifest (BR-CFG-013/014, ADR-038/039) ------
+
+
+def _deployment(tmp_path, manifest_text=None, local_text=None):
+    """A deployment directory, optionally with a manifest and a local override."""
+    directory = tmp_path / "deployment"
+    directory.mkdir(exist_ok=True)
+    if manifest_text is not None:
+        (directory / config.MANIFEST_NAME).write_text(manifest_text, encoding="utf-8")
+    if local_text is not None:
+        (directory / config.LOCAL_CONFIG_NAME).write_text(local_text, encoding="utf-8")
+    return directory / config.MANIFEST_NAME
+
+
+def _with_registry(host="ghcr.io", namespace="acme-corp"):
+    table = f'\n[cairn.registry]\nhost = "{host}"\n'
+    if namespace is not None:
+        table += f'namespace = "{namespace}"\n'
+    return VALID + table
+
+
+def test_the_manifest_declares_where_its_images_belong(monkeypatch, tmp_path):
+    """The client's registry is a property of the deployment, not of Brian's laptop — so it
+    travels with the deployment and the client can take it over."""
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(tmp_path, manifest_text=_with_registry())
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.registry == "ghcr.io"
+    assert loaded.namespace == "acme-corp"
+    assert loaded.resolve_image_base("erpnext-acme") == "ghcr.io/acme-corp/erpnext-acme"
+
+
+def test_the_manifest_overrides_the_machine_wide_default(monkeypatch, tmp_path):
+    """Otherwise a machine-wide namespace would silently publish a client's image into the
+    operator's own account — the exact failure BR-CFG-013 exists to prevent."""
+    _user_config(monkeypatch, tmp_path, 'engine = "podman"\nnamespace = "datahenge"\n')
+    manifest = _deployment(tmp_path, manifest_text=_with_registry())
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.namespace == "acme-corp"  # the client's, not the operator's
+    assert loaded.engine == "podman"  # machine facts still come from the machine
+
+
+def test_the_local_file_still_overrides_the_manifest(monkeypatch, tmp_path):
+    """The deliberate local escape hatch: publish a client's deployment elsewhere for a test
+    without editing, and committing, their manifest."""
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(
+        tmp_path,
+        manifest_text=_with_registry(),
+        local_text='registry = "localhost:5000"\nnamespace = "scratch"\n',
+    )
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.registry == "localhost:5000"
+    assert loaded.namespace == "scratch"
+
+
+def test_the_local_file_overrides_one_key_without_discarding_the_others(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(
+        tmp_path, manifest_text=_with_registry(), local_text='namespace = "scratch"\n'
+    )
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.registry == "ghcr.io"  # still the manifest's
+    assert loaded.namespace == "scratch"
+
+
+def test_a_namespace_is_optional_for_registries_that_have_none(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(tmp_path, manifest_text=_with_registry(namespace=None))
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.registry == "ghcr.io"
+    assert loaded.namespace is None
+    assert loaded.resolve_image_base("erp") == "ghcr.io/erp"
+
+
+def test_a_manifest_without_a_registry_leaves_the_image_local(monkeypatch, tmp_path):
+    """BR-CFG-011: absent a registry, images stay local. cairn never infers one."""
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(tmp_path, manifest_text=VALID)
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.registry is None
+    assert loaded.resolve_image_base("erp") == "cairn/erp"
+
+
+def test_the_registry_host_is_required_when_the_table_is_present(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(tmp_path, manifest_text=VALID + '\n[cairn.registry]\nnamespace = "x"\n')
+
+    with pytest.raises(ManifestInvalidError, match="requires 'host'"):
+        config.load_build_config(manifest)
+
+
+def test_a_machine_setting_is_refused_in_the_manifest(monkeypatch, tmp_path):
+    """`engine` describes this machine, not the deployment, and must not travel with it."""
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    manifest = _deployment(
+        tmp_path, manifest_text=VALID + '\n[cairn.registry]\nhost = "ghcr.io"\nengine = "podman"\n'
+    )
+
+    with pytest.raises(ManifestInvalidError, match="unknown key"):
+        config.load_build_config(manifest)
+
+
+def test_a_registry_written_as_a_scalar_is_refused(monkeypatch, tmp_path):
+    """`registry = "ghcr.io"` under [cairn] is the natural mistake, and it must name the table
+    it should have been rather than being silently ignored."""
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", tmp_path / "absent.toml")
+    scalar = VALID.replace(
+        'image_name = "erpnext-btu-v16"',
+        'image_name = "erpnext-btu-v16"\nregistry = "ghcr.io"',
+    )
+    manifest = _deployment(tmp_path, manifest_text=scalar)
+
+    with pytest.raises(ManifestInvalidError, match=r"\[cairn.registry\] must be a table"):
+        config.load_build_config(manifest)
+
+
+def test_an_unreadable_user_config_is_treated_as_absent(monkeypatch, tmp_path):
+    """A root-owned config must not turn every command into a traceback when the documented
+    defaults would have worked."""
+    unreadable = tmp_path / "user-config.toml"
+    unreadable.write_text('engine = "podman"\n', encoding="utf-8")
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", unreadable)
+    monkeypatch.setattr(
+        config.Path, "is_file", lambda self: (_ for _ in ()).throw(PermissionError("denied"))
+    )
+
+    assert config.load_build_config() == config.BuildConfig()
+
+
+def test_the_sources_record_every_layer_that_contributed(monkeypatch, tmp_path):
+    """`doctor` reports these, so an unexpected namespace can be traced to the file that set
+    it rather than guessed at."""
+    user = _user_config(monkeypatch, tmp_path, 'engine = "podman"\n')
+    manifest = _deployment(
+        tmp_path, manifest_text=_with_registry(), local_text='namespace = "scratch"\n'
+    )
+
+    loaded = config.load_build_config(manifest)
+
+    assert loaded.sources == (user, manifest, manifest.parent / config.LOCAL_CONFIG_NAME)

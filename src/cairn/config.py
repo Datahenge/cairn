@@ -181,7 +181,10 @@ def load_manifest(path: Path) -> Manifest:
         raise ManifestInvalidError(f"{path}: missing the required [cairn] table.")
 
     _reject_unknown(
-        path, "[cairn]", root, {"image_name", "frappe", "apps", "build", "series", "environments"}
+        path,
+        "[cairn]",
+        root,
+        {"image_name", "frappe", "apps", "build", "series", "registry", "environments"},
     )
     return Manifest(
         image_name=_image_name(path, root),
@@ -195,19 +198,42 @@ def load_manifest(path: Path) -> Manifest:
 
 
 def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
-    """Layer the user config, then any ``cairn.local.toml`` beside the manifest.
+    """Layer machine defaults, the manifest's registry, then ``cairn.local.toml``.
 
-    Both files are optional; with neither present the returned config is all-defaults
-    (`BR-CFG-012`). The override is key-by-key, so a local file naming only ``namespace``
-    keeps the user file's ``engine``.
+    Three layers, lowest precedence first (`BR-CFG-012`, `ADR-039`):
+
+    1. ``~/.config/cairn/config.toml`` — machine-wide defaults, e.g. the engine.
+    2. the manifest's ``[cairn.registry]`` — **where this deployment's images belong**.
+       Committed with the deployment, because under `BR-CFG-013` that registry is usually
+       the *client's*, and a coordinate known only to one laptop is a coordinate the client
+       cannot take over.
+    3. ``cairn.local.toml`` beside the manifest — the deliberate local override, for
+       experiments and for publishing a client's deployment somewhere else temporarily.
+
+    All three are optional; with none present the config is all-defaults and images stay
+    local (`BR-CFG-011`). Every override is key-by-key, so a local file naming only
+    ``namespace`` keeps the engine from layer 1 and the host from layer 2.
     """
     merged: dict[str, Any] = {}
     sources: list[Path] = []
-    for candidate in _build_config_paths(manifest_path):
-        if not candidate.is_file():
-            continue
-        merged.update(_build_config_values(candidate))
-        sources.append(candidate)
+
+    user_config = USER_CONFIG_PATH.expanduser()
+    if _readable(user_config):
+        merged.update(_build_config_values(user_config))
+        sources.append(user_config)
+
+    if manifest_path is not None:
+        # The registry layer needs the manifest itself; the local file needs only its
+        # directory. Keeping these separate matters: `cairn.local.toml` beside a manifest
+        # that does not exist yet is still the machine's configuration for that directory.
+        if _readable(manifest_path) and (registry := _manifest_registry(manifest_path)):
+            merged.update(registry)
+            sources.append(manifest_path)
+
+        local = manifest_path.parent / LOCAL_CONFIG_NAME
+        if _readable(local):
+            merged.update(_build_config_values(local))
+            sources.append(local)
 
     return BuildConfig(
         engine=merged.get("engine"),
@@ -219,12 +245,49 @@ def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
     )
 
 
-def _build_config_paths(manifest_path: Path | None) -> list[Path]:
-    """Return candidate build-config files, lowest precedence first (`BR-CFG-012`)."""
-    paths = [USER_CONFIG_PATH.expanduser()]
-    if manifest_path is not None:
-        paths.append(manifest_path.parent / LOCAL_CONFIG_NAME)
-    return paths
+def _manifest_registry(manifest_path: Path) -> dict[str, str]:
+    """Read the manifest's ``[cairn.registry]`` table (`BR-CFG-014`, `ADR-039`).
+
+    Read directly from the file rather than from a parsed :class:`Manifest`, so that build
+    config does not depend on full manifest validation — a manifest with a bad app list
+    should still let ``cairn doctor`` report the engine it would use.
+
+    Only ``host`` and ``namespace`` live here. ``engine``, ``image_base`` and
+    ``transcript_dir`` stay machine-local, because they describe *this machine*, not the
+    deployment (`BR-CFG-008`).
+    """
+    data = _load_toml(manifest_path, ManifestInvalidError)
+    root = data.get("cairn")
+    section = root.get("registry") if isinstance(root, dict) else None
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise ManifestInvalidError(
+            f"{manifest_path}: [cairn.registry] must be a table with 'host' and optionally "
+            f"'namespace'."
+        )
+
+    _reject_unknown(manifest_path, "[cairn.registry]", section, {"host", "namespace"})
+    values = {
+        "registry": _required_string(manifest_path, "[cairn.registry]", section, "host"),
+    }
+    if "namespace" in section:
+        values["namespace"] = _required_string(
+            manifest_path, "[cairn.registry]", section, "namespace"
+        )
+    return values
+
+
+def _readable(path: Path) -> bool:
+    """Whether *path* is a file we can stat, treating an unreadable one as absent.
+
+    A permission error here must not become a traceback: an unreadable config is the same
+    practical fact as a missing one, and the defaults are documented.
+    """
+    try:
+        return path.is_file()
+    except OSError:
+        return False
 
 
 def _build_config_values(path: Path) -> dict[str, Any]:

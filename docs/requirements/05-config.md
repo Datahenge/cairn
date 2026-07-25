@@ -39,12 +39,18 @@ and Docker secrets are `ADR-017`/`DEPLOY`. *(ADR-017)*
 
 ## B. Build configuration (local to the build machine)
 
-**`BR-CFG-008`** — Build configuration (registry/namespace target, **build engine**
-(`ADR-027`), builder/cache settings, local image base, **`transcript_dir`** (`BR-CLI-016`))
-MUST live in a local file **separate from the portable
-`cairn.toml` manifest** (e.g. `~/.config/cairn/config.toml`, with an optional
-`cairn.local.toml` override) and MUST NOT be committed with a shareable deployment. The
-manifest MUST remain free of local/build/registry settings. *(ADR-015, ADR-009, ADR-031)*
+**`BR-CFG-008`** — **Machine** configuration — the **build engine** (`ADR-027`),
+builder/cache settings, local image base, **`transcript_dir`** (`BR-CLI-016`) — MUST live in a
+local file separate from the portable `cairn.toml` manifest (e.g.
+`~/.config/cairn/config.toml`, with an optional `cairn.local.toml` override) and MUST NOT be
+committed with a shareable deployment. The manifest MUST remain free of these.
+
+**Amended 2026-07-25 (`ADR-039`):** the registry **host** and **namespace** are excepted and
+belong in the manifest (`BR-CFG-014`). They are not secrets and not machine facts — under
+`BR-CFG-013` they usually name the *client's* registry, which is a property of the deployment.
+The original wording lumped them in with machine settings on the assumption that one manifest
+might target many registries; with client-owned registries one manifest means one owner, and
+the reasoning inverts. *(ADR-015, ADR-009, ADR-031, ADR-039)*
 
 **`BR-CFG-009`** — cairn MUST be **registry-agnostic**: the image registry + namespace is a
 build-config value (any OCI registry), never hardcoded to Docker Hub. *(ADR-009)*
@@ -65,11 +71,54 @@ following precedence, and the common case MUST require no flags:
 - **Manifest** — `--manifest <path>` when given; otherwise the nearest `cairn.toml`
   searching **upward from the working directory**. The manifest root is resolved
   independently of cairn's own project root (`ADR-029`).
-- **Build config** — `~/.config/cairn/config.toml` as the machine-wide base, then an
-  optional `cairn.local.toml` **beside the manifest**, overriding **key-by-key**. Both
-  files are optional; absent both, the documented defaults apply (`BR-CFG-011`).
-- Build settings MUST NOT be read from the manifest, and the manifest MUST remain free of
-  them (`BR-CFG-008`). *(ADR-029, BR-CLI-014)*
+- **Build config**, three layers, each overriding the previous **key-by-key**:
+  1. `~/.config/cairn/config.toml` — the machine-wide base;
+  2. the manifest's `[cairn.registry]` — where *this deployment's* images belong
+     (`BR-CFG-014`);
+  3. an optional `cairn.local.toml` **beside the manifest** — the deliberate local override.
+
+  All three are optional; absent all, the documented defaults apply (`BR-CFG-011`). Layer 2
+  is deliberately below layer 3 so a local override remains possible without editing — and
+  committing — a client's manifest.
+- **Machine** settings MUST NOT be read from the manifest, and the manifest MUST remain free
+  of them (`BR-CFG-008`). Layer 2 MUST accept only `host` and `namespace`; anything else in
+  `[cairn.registry]` MUST be rejected as an unknown key. *(ADR-029, ADR-039, BR-CLI-014)*
+
+**`BR-CFG-013`** *(image ownership — the operator is never the sole owner of a client's image)*
+— cairn MUST support publishing to a registry namespace the operator **does not own**, and MUST
+NOT assume the operator's own. Absent any configured registry the image MUST stay local
+(`BR-CFG-011`); cairn MUST NOT infer a default namespace from anything — not the machine, not
+the git remote, not the operator's other deployments.
+
+**Why this is a requirement and not a preference.** A consultant who is the only owner of a
+client's built image holds that client's operations hostage: if the relationship ends badly the
+client cannot deploy or roll back software **they own**. The registry that holds a client's
+image MUST therefore be capable of being an account the client controls, so that revoking the
+operator's access leaves the client whole and costs the operator nothing but access.
+
+Three consequences that follow, and that cairn MUST NOT make awkward:
+- **One operator identity, many owners.** The operator MUST NOT need a separate login, account,
+  or credential store per client. Registry authorization is the registry's to resolve — the
+  operator holds one credential per registry *host*, and access to each namespace is granted
+  server-side.
+- **Least privilege, scoped to the engagement.** A documented pattern MUST permit the operator's
+  push credential to be scoped to **the images of that engagement and nothing else** —
+  per-repository, not per-account. This is *liability containment for the operator* before it is
+  a security control: a credential that can write exactly one repository cannot be the cause of a
+  catastrophe, and the operator is far likelier to make a costly mistake than to act in bad
+  faith. A registry whose write credentials are irreducibly account-wide is therefore **weaker
+  for this purpose**, and that MUST be documented as a selection criterion rather than left for
+  the operator to discover.
+- **Costs follow ownership.** Storage and egress for a client's images accrue to the client's
+  account, sized to their needs, and are not a cost the operator absorbs or a quota the
+  operator's other clients compete for. *(ADR-038, BR-CFG-009, BR-CFG-011, BR-CFG-014)*
+
+**`BR-CFG-014`** *(registry coordinates live in the manifest)* — The manifest MAY declare
+`[cairn.registry]` with a required `host` and an optional `namespace`. This is the deployment's
+statement of **where its images belong**, and it is committed with the deployment so that the
+image location is reproducible without the operator's machine — and so the client can take the
+deployment over and keep publishing to their own registry. It MUST contain no credentials
+(`BR-CFG-010`). *(ADR-038, ADR-039, BR-CFG-008, BR-CFG-012)*
 
 ---
 
