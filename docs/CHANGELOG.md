@@ -11,6 +11,14 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **Phase 4 begins — first module (`VEND`).** Made the project a real Python package
+  (hatchling, `src/` layout, `cairn` console script + `datahenge-cairn` alias, typer, ruff,
+  pytest). Implemented `src/cairn/`: `project.py` (root discovery + vendor-source parsing),
+  `vendor.py` (thin `ventwig` wrappers + drift/`.git` integrity checks), `cli.py` (Typer
+  app with the `vendor status|sync` group). Cites `BR-VEND-003/005/007`, `BR-CLI-001/006/015`.
+  9 unit tests (same `BR` IDs), ruff-clean; `cairn vendor status` verified end-to-end
+  against the real vendored tree.
+
 - **Non-requirement consistency sweep.** Aligned forward-looking docs with the approved
   requirements: project scope + overview reframed to **two pillars + a data-plane boundary**
   (was "three pillars"/"backup·restore·rollback"); `CLAUDE.md` `DATA` area updated; "DB

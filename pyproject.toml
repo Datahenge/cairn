@@ -1,24 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
 [project]
 name = "datahenge-cairn"
 version = "0.0.0"
-description = "Wrapper around frappe_docker for reproducible ERPNext image builds, pull-based deploys, and DB backup/restore/rollback on a single VPS."
+description = "Wrapper around frappe_docker for reproducible ERPNext image builds and pull-based deploys on a single VPS."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Brian Pond", email = "brian@datahenge.com" }]
-dependencies = []
+dependencies = [
+  "typer>=0.12",
+]
 
 [project.optional-dependencies]
-dev = ["ventwig>=0.2,<0.3"]
+dev = [
+  "ventwig>=0.2,<0.3",
+  "ruff>=0.6",
+  "pytest>=8",
+]
+
+# `cairn` is the command; `datahenge-cairn` is an alias fallback (ADR-018).
+[project.scripts]
+cairn = "cairn.cli:run"
+datahenge-cairn = "cairn.cli:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cairn"]
 
 # --- Vendoring (ventwig) ---------------------------------------------------
 # frappe_docker is vendored read-only as plain committed files. We never edit it
-# (D-001). The committed tree + .ventwig.lock (synced commit + content-tree hash)
+# (ADR-001). The committed tree + .ventwig.lock (synced commit + content-tree hash)
 # are the immutability anchor; `ref` tracks an upstream *release tag* so re-syncs
-# are deterministic and upgrades are deliberate (D-007).
+# are deterministic and upgrades are deliberate (ADR-007).
 [tool.ventwig]
-# We vendor the whole frappe_docker repo root, not a Python src/ subdir, so we do
-# NOT want __init__.py markers injected into the Docker build context.
 create_parent_package_markers = false
 
 [[tool.ventwig.sources]]
@@ -26,3 +42,15 @@ name = "frappe_docker"
 local_path = "frappe_docker"
 upstream = "https://github.com/frappe/frappe_docker.git"
 ref = "v3.2.1"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
