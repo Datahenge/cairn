@@ -9,6 +9,22 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (later still)
+
+- **`BR-CLI-018` strengthened during implementation — never remove a tagged image.** The
+  requirement said "keep the newest `<n>` per input hash (default: 1, the tagged one)",
+  whose parenthetical merely *assumed* the newest is the tagged one. Writing the code made
+  the gap visible: nothing forced it. Now stated as three concentric restrictions — cairn's
+  own labels, then untagged only, then beyond keep-N — because a tag is a name something
+  else may rely on, and removing a tagged image would require the engine's `--force`, the
+  one flag that makes an accident possible. cairn never passes it.
+- **Also required: say what is being left alone.** A 4.63 GB image absent from a prune
+  report should read as a decision, not an oversight, so the count of non-cairn images is
+  always stated along with why they are excluded.
+- **Sizes corrected to decimal units** (`cairn images --local`). It reported 2.57 GB where
+  `podman image list` reported 2.75 GB for the same image — binary arithmetic under a
+  decimal label. A listing meant to be read beside the engine's own must agree with it.
+
 ## 2026-07-25 (later)
 
 - **`ADR-032` closed — one image per input hash; prune only what cairn labelled.** Four

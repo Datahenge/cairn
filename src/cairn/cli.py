@@ -19,6 +19,7 @@ from . import (
     doctor,
     engine,
     images,
+    prune,
     push,
     resolve,
     timing,
@@ -349,6 +350,52 @@ def images_command(
 
         typer.echo(images.as_json(groups, others) if as_json else images.render(groups, others))
         return 0
+
+    _run_in_project(_action)
+
+
+@app.command(
+    "prune",
+    help=(
+        "Remove superseded images this machine built. Only cairn's own images are ever "
+        "considered, only untagged ones are removed, and the newest of each build is kept "
+        "— so build-cache layers, which make rebuilds fast, are never touched."
+    ),
+)
+def prune_command(
+    keep: Annotated[
+        int,
+        typer.Option("--keep", min=1, help="Images to keep per set of build inputs."),
+    ] = 1,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would be removed, and remove nothing.")
+    ] = False,
+    assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+) -> None:
+    """Remove superseded images on the build machine (BR-CLI-018, `ADR-032`)."""
+
+    def _action(root: Path) -> int:
+        build_config = config.load_build_config(config.find_manifest_or_none())
+        engine_name = engine.detect(build_config.engine).name
+        found, others = images.inspect_local(engine_name)
+        plan = prune.select(images.group(found), keep)
+
+        typer.echo(prune.render(plan, others))
+        if plan.is_empty or dry_run:
+            return 0
+
+        if not assume_yes and not typer.confirm("Remove them?", default=False):
+            _note("Nothing was removed.")
+            return 0
+
+        removed, failures = prune.remove(engine_name, plan.removals)
+        for failure in failures:
+            typer.secho(f"Could not remove {failure}", fg=typer.colors.YELLOW, err=True)
+        _done(
+            f"Removed {len(removed)} image(s), reclaiming "
+            f"{prune.format_size(sum(image.size for image in removed))}."
+        )
+        return 1 if failures else 0
 
     _run_in_project(_action)
 

@@ -142,10 +142,21 @@ a property of a build *run* (cache state, machine, network), not of the image's 
 and `BR-BUILD-013`'s guarantee is about inputs. *(ADR-031, BR-CLI-011)*
 
 **`BR-CLI-018`** *(prune — build machine)* — `cairn prune [--keep <n>] [--dry-run] [--yes]`
-reclaims space on the **build** machine. It MUST remove only images carrying cairn's own
-provenance labels (`BR-BUILD-011`), MUST keep the newest `<n>` per input hash (default: 1,
-the tagged one), and MUST NOT remove volumes, containers, or any image cairn did not build.
-It MUST report what it will remove and confirm before removing (`BR-CLI-011`).
+reclaims space on the **build** machine, under three concentric restrictions:
+
+1. Only images carrying cairn's own provenance labels (`BR-BUILD-011`) are candidates.
+2. Of those, only images holding **no tag** may be removed. A tag is a name something else
+   may rely on, and removing a tagged image would require the engine's `--force`, which
+   cairn MUST NOT pass — a removal needing force is one to report, not perform.
+3. Of those, only images beyond the newest `<n>` of their **input hash** (default 1).
+   `<n>` counts a group's newest members whether tagged or not, so `--keep 2` leaves the
+   current image plus one predecessor as rollback headroom — `BR-DEPLOY-006`'s keep-last-N,
+   applied per input hash because images under different hashes are different images, not
+   each other's history.
+
+cairn MUST NOT remove volumes or containers under any option (`ADR-022`), MUST report what
+it will remove and confirm first (`BR-CLI-011`), and MUST state what it is leaving alone so
+the omission is never a surprise. A removal that fails MUST NOT abort the rest.
 
 **Label-scoping is a cache-safety mechanism, not merely tidiness.** On podman, an untagged
 image may be a **build-cache stage** rather than a former build — the `builder` stage of the
