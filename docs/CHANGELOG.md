@@ -11,6 +11,12 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **CLI help no longer leaks `BR` identifiers.** `/CLAUDE.md` requires internal docstrings
+  to cite `BR` IDs while *external* descriptions omit them; because Typer renders a
+  command's docstring as its `--help` text, every command was showing its `BR` ID to
+  users. Commands now carry a user-facing `help=` on the decorator, leaving docstrings
+  free to stay internal. Caught while reviewing `cairn --help` output, not by a test —
+  worth a check before the Phase-6 user docs.
 - **`ADR-030` records a rejected alternative: a per-deployment label namespace**
   (`com.microsoft.cairn.*` for a client Microsoft). Brian raised it and spotted the risk;
   the decisive objection is that **cairn reads these labels, not just writes them** — a

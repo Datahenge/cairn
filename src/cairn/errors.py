@@ -45,6 +45,10 @@ class BuildError(CairnError):
     """The build engine was invoked and failed (BR-BUILD-009)."""
 
 
+class PushError(CairnError):
+    """An image could not be pushed, or no registry is configured (BR-CLI-003)."""
+
+
 class RefResolutionError(CairnError):
     """A manifest ref could not be resolved to exactly one commit (BR-BUILD-005)."""
 
