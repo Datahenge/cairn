@@ -1,0 +1,318 @@
+"""The manifest (``cairn.toml``) and local build configuration.
+
+Two orthogonal files, deliberately kept apart (`BR-CFG-008`):
+
+* **`cairn.toml`** — the portable manifest. *What image to build*: one
+  environment-agnostic image, its Frappe source, its ordered app list, and the build
+  knobs (`BR-BUILD-001/002/003`). Shareable; carries no registry or machine settings.
+* **build config** — `~/.config/cairn/config.toml`, optionally overridden key-by-key by
+  a `cairn.local.toml` beside the manifest. *Where and how this machine builds*: engine
+  (`ADR-027`), registry, namespace (`BR-CFG-009/011`). Never committed with a shared
+  deployment.
+
+Discovery precedence is `BR-CFG-012`; the manifest root is resolved independently of
+cairn's own project root (`ADR-029`).
+
+Validation is strict on purpose: every table but ``[cairn.build]`` rejects unknown keys,
+so a typo fails at parse time with a message naming the key rather than producing a
+subtly wrong image an hour later. ``[cairn.build]`` is the documented exception —
+`BR-BUILD-002` grants it passthrough for the long tail (``debian_base``,
+``wkhtmltopdf_*``).
+"""
+
+from __future__ import annotations
+
+import re
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from .errors import (
+    BuildConfigInvalidError,
+    ManifestInvalidError,
+    ManifestNotFoundError,
+)
+
+MANIFEST_NAME = "cairn.toml"
+LOCAL_CONFIG_NAME = "cairn.local.toml"
+USER_CONFIG_PATH = Path("~/.config/cairn/config.toml")
+
+#: Build knobs cairn maps to named build-args; anything else rides the passthrough.
+KNOWN_BUILD_KNOBS = ("python_version", "node_version", "install_chromium")
+
+#: Recognized build-config keys. Builder/cache settings land with the BUILD module.
+BUILD_CONFIG_KEYS = ("engine", "registry", "namespace", "image_base")
+
+#: Image names become OCI repository path components, which are lowercase-only.
+_IMAGE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
+
+#: A full-length hex string is unambiguously a commit — rejected by BR-BUILD-005.
+_COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+#: Fallback image base when no registry is configured (BR-BUILD-008, BR-CFG-011).
+LOCAL_IMAGE_PREFIX = "cairn"
+
+
+@dataclass(frozen=True)
+class App:
+    """One entry of the **ordered** ``[[cairn.apps]]`` list (BR-BUILD-002/003)."""
+
+    name: str
+    url: str
+    ref: str
+
+
+@dataclass(frozen=True)
+class Frappe:
+    """The ``[cairn.frappe]`` section, driving ``FRAPPE_PATH``/``FRAPPE_BRANCH``.
+
+    Frappe is supplied via build-args and never appears in ``apps.json``
+    (`BR-BUILD-004`).
+    """
+
+    url: str
+    ref: str
+
+
+@dataclass(frozen=True)
+class Manifest:
+    """A validated ``cairn.toml`` — exactly one environment-agnostic image (BR-BUILD-001)."""
+
+    image_name: str
+    frappe: Frappe
+    apps: tuple[App, ...]
+    build: dict[str, Any] = field(default_factory=dict)
+    path: Path | None = None
+
+
+@dataclass(frozen=True)
+class BuildConfig:
+    """Machine-local build settings; absent values fall back to documented defaults."""
+
+    engine: str | None = None
+    registry: str | None = None
+    namespace: str | None = None
+    image_base: str | None = None
+    sources: tuple[Path, ...] = ()
+
+    def resolve_image_base(self, image_name: str) -> str:
+        """Return the image base for *image_name* (`BR-CFG-011`, `BR-BUILD-008`).
+
+        An explicit ``image_base`` wins. With a registry configured the base is
+        ``<registry>/<namespace>/<image_name>``; absent one the image stays local as
+        ``cairn/<image_name>``.
+        """
+        if self.image_base:
+            return self.image_base
+        if self.registry:
+            parts = [self.registry, *([self.namespace] if self.namespace else []), image_name]
+            return "/".join(parts)
+        return f"{LOCAL_IMAGE_PREFIX}/{image_name}"
+
+
+# --- discovery (BR-CFG-012) -------------------------------------------------
+
+
+def find_manifest(start: Path | None = None, explicit: Path | None = None) -> Path:
+    """Locate the manifest: *explicit* if given, else the nearest ``cairn.toml`` upward.
+
+    Searching upward from the working directory — not from cairn's own project root —
+    is what lets a `pip install`-ed cairn operate on a deployment directory (`ADR-029`).
+    """
+    if explicit is not None:
+        path = explicit.expanduser()
+        if not path.is_file():
+            raise ManifestNotFoundError(f"No manifest at {path}.")
+        return path
+
+    start = (start or Path.cwd()).resolve()
+    for directory in (start, *start.parents):
+        candidate = directory / MANIFEST_NAME
+        if candidate.is_file():
+            return candidate
+    raise ManifestNotFoundError(
+        f"No {MANIFEST_NAME} found at or above {start}. "
+        f"Create one, or point at it with --manifest <path>."
+    )
+
+
+def load_manifest(path: Path) -> Manifest:
+    """Parse and validate *path* as a manifest (BR-BUILD-001/002/003/005)."""
+    data = _load_toml(path, ManifestInvalidError)
+    root = data.get("cairn")
+    if not isinstance(root, dict):
+        raise ManifestInvalidError(f"{path}: missing the required [cairn] table.")
+
+    _reject_unknown(path, "[cairn]", root, {"image_name", "frappe", "apps", "build"})
+    return Manifest(
+        image_name=_image_name(path, root),
+        frappe=_frappe(path, root),
+        apps=_apps(path, root),
+        build=_build_knobs(path, root),
+        path=path,
+    )
+
+
+def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
+    """Layer the user config, then any ``cairn.local.toml`` beside the manifest.
+
+    Both files are optional; with neither present the returned config is all-defaults
+    (`BR-CFG-012`). The override is key-by-key, so a local file naming only ``namespace``
+    keeps the user file's ``engine``.
+    """
+    merged: dict[str, Any] = {}
+    sources: list[Path] = []
+    for candidate in _build_config_paths(manifest_path):
+        if not candidate.is_file():
+            continue
+        merged.update(_build_config_values(candidate))
+        sources.append(candidate)
+
+    return BuildConfig(
+        engine=merged.get("engine"),
+        registry=merged.get("registry"),
+        namespace=merged.get("namespace"),
+        image_base=merged.get("image_base"),
+        sources=tuple(sources),
+    )
+
+
+def _build_config_paths(manifest_path: Path | None) -> list[Path]:
+    """Return candidate build-config files, lowest precedence first (`BR-CFG-012`)."""
+    paths = [USER_CONFIG_PATH.expanduser()]
+    if manifest_path is not None:
+        paths.append(manifest_path.parent / LOCAL_CONFIG_NAME)
+    return paths
+
+
+def _build_config_values(path: Path) -> dict[str, Any]:
+    """Read one build-config file, rejecting unknown or non-string values."""
+    data = _load_toml(path, BuildConfigInvalidError)
+    unknown = set(data) - set(BUILD_CONFIG_KEYS)
+    if unknown:
+        raise BuildConfigInvalidError(
+            f"{path}: unknown key(s) {', '.join(sorted(unknown))}; "
+            f"expected any of {', '.join(BUILD_CONFIG_KEYS)}."
+        )
+    for key, value in data.items():
+        if not isinstance(value, str) or not value.strip():
+            raise BuildConfigInvalidError(f"{path}: '{key}' must be a non-empty string.")
+    return data
+
+
+# --- manifest section validation --------------------------------------------
+
+
+def _image_name(path: Path, root: dict) -> str:
+    name = root.get("image_name")
+    if not isinstance(name, str) or not name.strip():
+        raise ManifestInvalidError(
+            f"{path}: [cairn] image_name is required and must be a non-empty string (BR-BUILD-002)."
+        )
+    if not _IMAGE_NAME_RE.match(name):
+        raise ManifestInvalidError(
+            f"{path}: image_name '{name}' is not a valid image name — use lowercase "
+            f"letters, digits, and separators (-, _, .), e.g. 'erpnext-btu-v16'."
+        )
+    return name
+
+
+def _frappe(path: Path, root: dict) -> Frappe:
+    section = root.get("frappe")
+    if not isinstance(section, dict):
+        raise ManifestInvalidError(
+            f"{path}: missing the required [cairn.frappe] table with 'url' and 'ref' "
+            f"(BR-BUILD-002)."
+        )
+    _reject_unknown(path, "[cairn.frappe]", section, {"url", "ref"})
+    url = _required_string(path, "[cairn.frappe]", section, "url")
+    ref = _required_string(path, "[cairn.frappe]", section, "ref")
+    _reject_commit_sha(path, "[cairn.frappe]", ref)
+    return Frappe(url=url, ref=ref)
+
+
+def _apps(path: Path, root: dict) -> tuple[App, ...]:
+    """Validate ``[[cairn.apps]]``, preserving manifest order verbatim (BR-BUILD-003)."""
+    entries = root.get("apps", [])
+    if not isinstance(entries, list):
+        raise ManifestInvalidError(f"{path}: [[cairn.apps]] must be a list of tables.")
+
+    apps: list[App] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(entries):
+        where = f"[[cairn.apps]] #{index + 1}"
+        if not isinstance(entry, dict):
+            raise ManifestInvalidError(f"{path}: {where} must be a table.")
+        _reject_unknown(path, where, entry, {"name", "url", "ref"})
+        name = _required_string(path, where, entry, "name")
+        ref = _required_string(path, where, entry, "ref")
+        _reject_commit_sha(path, where, ref)
+        if name in seen:
+            raise ManifestInvalidError(
+                f"{path}: app '{name}' is listed more than once; each app must appear "
+                f"exactly once (the list is an ordered install sequence, BR-BUILD-003)."
+            )
+        seen.add(name)
+        apps.append(App(name=name, url=_required_string(path, where, entry, "url"), ref=ref))
+    return tuple(apps)
+
+
+def _build_knobs(path: Path, root: dict) -> dict[str, Any]:
+    """Return ``[cairn.build]`` verbatim — known knobs type-checked, the rest passed through."""
+    section = root.get("build", {})
+    if not isinstance(section, dict):
+        raise ManifestInvalidError(f"{path}: [cairn.build] must be a table.")
+
+    expected_types: dict[str, type | tuple[type, ...]] = {
+        "python_version": str,
+        "node_version": str,
+        "install_chromium": bool,
+    }
+    for key, expected in expected_types.items():
+        if key in section and not isinstance(section[key], expected):
+            raise ManifestInvalidError(
+                f"{path}: [cairn.build] {key} must be a {expected.__name__}."  # type: ignore[union-attr]
+            )
+    return dict(section)
+
+
+# --- shared helpers ---------------------------------------------------------
+
+
+def _load_toml(path: Path, error: type[Exception]) -> dict:
+    try:
+        with path.open("rb") as fh:
+            return tomllib.load(fh)
+    except tomllib.TOMLDecodeError as exc:
+        raise error(f"{path}: not valid TOML — {exc}") from exc
+    except OSError as exc:
+        raise error(f"{path}: cannot be read — {exc}") from exc
+
+
+def _required_string(path: Path, where: str, section: dict, key: str) -> str:
+    value = section.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestInvalidError(
+            f"{path}: {where} requires '{key}' as a non-empty string (BR-BUILD-002)."
+        )
+    return value
+
+
+def _reject_unknown(path: Path, where: str, section: dict, allowed: set[str]) -> None:
+    """Fail on unrecognized keys so typos surface here, not as a subtly wrong image."""
+    unknown = set(section) - allowed
+    if unknown:
+        raise ManifestInvalidError(
+            f"{path}: {where} has unknown key(s) {', '.join(sorted(unknown))}; "
+            f"expected any of {', '.join(sorted(allowed))}."
+        )
+
+
+def _reject_commit_sha(path: Path, where: str, ref: str) -> None:
+    """Refs pin by branch or tag only; a raw commit SHA is unsupported (BR-BUILD-005)."""
+    if _COMMIT_SHA_RE.match(ref):
+        raise ManifestInvalidError(
+            f"{path}: {where} ref '{ref}' looks like a commit SHA. Pin to a branch or "
+            f"tag — cairn resolves it to a commit at build time (BR-BUILD-005)."
+        )

@@ -25,6 +25,22 @@ class VendorDriftError(CairnError):
     upstream version-control metadata (BR-VEND-005, BR-VEND-007)."""
 
 
+class ConfigError(CairnError):
+    """Base for manifest and build-configuration problems."""
+
+
+class ManifestNotFoundError(ConfigError):
+    """No ``cairn.toml`` was found by the documented search (BR-CFG-012)."""
+
+
+class ManifestInvalidError(ConfigError):
+    """A ``cairn.toml`` exists but is unparseable or violates BR-BUILD-002/003/005."""
+
+
+class BuildConfigInvalidError(ConfigError):
+    """A build-config file exists but is unparseable or carries an invalid value."""
+
+
 class BuildEngineError(CairnError):
     """No usable build engine was found, or the requested one is unavailable
     or too old (`ADR-027`)."""
