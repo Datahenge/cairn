@@ -70,8 +70,23 @@ def _step(message: str) -> None:
     pollute output a caller may be parsing (BR-CLI-013). Progress is mirrored into the
     active transcript, if any, so the file records the whole run and not merely the
     engine's share of it (BR-CLI-016).
+
+    Dimmed, because this is commentary that scrolls past. Anything a person is meant to
+    stop and *read* belongs in :func:`_note` instead — dim grey is the first thing to
+    disappear under a muted colour scheme.
     """
     typer.secho(message, fg=typer.colors.BRIGHT_BLACK, err=True)
+    transcript.record(message)
+
+
+def _note(message: str) -> None:
+    """Report something on stderr that is meant to be read, not skimmed past.
+
+    Timings, digests, and the transcript path are answers to questions the operator
+    asked — they travel on stderr with progress, but at full contrast, because dimming
+    them defeats the reason they are printed at all.
+    """
+    typer.secho(message, err=True)
     transcript.record(message)
 
 
@@ -200,14 +215,14 @@ def build_command(
             transcript.resolve_dir(build_config.transcript_dir), manifest.image_name
         )
         with transcript.recording(destination) as recorder:
-            _step(f"Transcript {destination}")
+            _note(f"Transcript {destination}")
             try:
                 return _build(root, found, manifest, build_config, watch, sink=recorder)
             finally:
                 # Said a second time on the way out, success or failure: the first
                 # mention scrolled past minutes of engine output long ago, and this is
                 # where someone goes looking (BR-CLI-016).
-                _step(f"Transcript {destination}")
+                _note(f"Transcript {destination}")
 
     def _build(
         root: Path,
@@ -268,7 +283,7 @@ def build_command(
             digest = build.assert_image_exists(plan)
         for reference in plan.references:
             _done(f"Built {reference}")
-        _step(f"Image {digest}")
+        _note(f"Image {digest}")
 
         if push_after:
             with watch.phase("push"):
@@ -283,10 +298,14 @@ def build_command(
 
 
 def _report_timing(watch: timing.Stopwatch) -> None:
-    """Print the per-phase and overall elapsed times (BR-CLI-017)."""
-    _step("Timing")
+    """Print the per-phase and overall elapsed times (BR-CLI-017).
+
+    At full contrast: this block exists to be read after the fact, which is precisely
+    what a dimmed colour defeats.
+    """
+    _note("Timing")
     for line in watch.summary():
-        _step(line)
+        _note(line)
 
 
 def _warn_moving_refs(plan: build.BuildPlan) -> None:
