@@ -45,9 +45,10 @@ a question about syntax support, not architecture.
 
 **Why `BR-CLI-007` says v23+:** Docker Engine 23.0 is where `docker build` stopped being
 the legacy builder and became a front for buildx/BuildKit by default; before that it
-needed `DOCKER_BUILDKIT=1`. The requirement states the floor without a rationale, so this
-is inference — but it is the only reading under which the version and the feature set
-line up.
+needed `DOCKER_BUILDKIT=1`. Originally inferred here; **since confirmed by the vendored
+upstream** at `frappe_docker/docs/02-setup/02-build-setup.md:15` — "BuildKit is the
+default builder starting with Docker Engine 23.0 — older releases will fail or silently
+fall back to the legacy builder, which does not support secret mounts."
 
 ## 2. The secret mount and the cache key interact in a way that *requires* `CACHE_BUST`
 
@@ -79,10 +80,23 @@ Three facts compose into one requirement:
 Line 129's `: "${CACHE_BUST}"` is the shell no-op `:` used solely to *reference* the ARG,
 forcing its value into that instruction's cache key.
 
-So `BR-BUILD-007` — "set `CACHE_BUST` from a hash of the resolved app commits; a correct
+So `BR-BUILD-007` — "set `CACHE_BUST` from a hash of all resolved commits; a correct
 build MUST NOT require `--no-cache`" — is a **compensating mechanism for two cache blind
 spots**, not a performance optimization. Read as an optimization it looks droppable. It
 is not: without it, correctness depends on the operator remembering `--no-cache`.
+
+**Corroborated by upstream** at `docs/03-production/06-automated-builds-and-deployment.md`:
+"This is especially relevant because `apps.json` is provided as a secret. Secret contents
+are not part of Docker layer cache keys and therefore cannot trigger cache invalidation
+automatically. As a result, Docker may reuse an older cached layer even when the custom
+app definition has changed." Derived here from the Containerfile before that prose was
+found — the agreement is reassuring rather than circular.
+
+**One gap upstream does not close:** its recommended technique is an *apps.json* hash,
+which misses Frappe. `FRAPPE_BRANCH` is a build-arg and so enters the cache key by
+**name**, but a branch that *moves* keeps its name — a Frappe-only update would reuse a
+stale `bench init` layer. `BR-BUILD-007` was therefore revised (2026-07-24) to hash
+**all** resolved commits, Frappe included.
 
 ## 3. The build destroys its own provenance
 
@@ -122,6 +136,12 @@ Read-only `0400` is correct, not a limitation: `bench init` only reads the file.
 **Scope of this result.** It settles the **build** side only. `DEPLOY` — `ADR-017`'s
 compose `.env` and Docker secrets, and the systemd pull-loop in `BR-DEPLOY-*` — was never
 tested against podman and does not need to be; see below.
+
+**Upstream agrees, which we only noticed later.** The vendored
+`docs/02-setup/02-build-setup.md` documents `podman build` as a **first-class equivalent**
+to `docker build`, with byte-identical flags (`--build-arg`, `--secret=id=apps_json,src=…`,
+`--tag`, `--file`). Reading the vendored documentation before reasoning from memory would
+have shortened this investigation considerably.
 
 **Outcome (`ADR-027`, same day):** the result was adopted. The build engine is now
 pluggable (`docker` | `podman`); `DEPLOY` stays Docker on the target, unchanged. What made

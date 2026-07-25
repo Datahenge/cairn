@@ -11,6 +11,22 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`BR-BUILD-007` revised — `CACHE_BUST` hashes *all* resolved commits, Frappe included.**
+  As written it covered "the resolved app commits" only, which cannot satisfy its own goal
+  ("a correct build MUST NOT require `--no-cache`"): `FRAPPE_BRANCH` enters the layer cache
+  key by **name**, so a Frappe branch that *moves* keeps its name and would reuse a stale
+  `bench init` layer. Brian approved including Frappe's commit, which also aligns the input
+  set with `BR-BUILD-008`'s tag hash. Upstream's own recommended technique (an `apps.json`
+  hash) has the same gap.
+- **Two upstream corroborations recorded in `04-lessons-learned.md`.** The vendored
+  `frappe_docker` docs turn out to state, in prose, two things this project had derived
+  independently: **§1** — "BuildKit is the default builder starting with Docker Engine
+  23.0" (`02-setup/02-build-setup.md:15`), confirming what was marked an inference about
+  `BR-CLI-007`'s version floor; and **§2** — that `CACHE_BUST` exists precisely because
+  secret contents are excluded from layer cache keys. **§4** gains a third: upstream
+  documents `podman build` as a first-class equivalent with byte-identical flags,
+  independent support for `ADR-027`. Reading the vendored docs earlier would have
+  shortened that investigation.
 - **`BR-CLI-007` revised — `git` added to the build-role preflight.** Implementing
   `resolve.py` surfaced that `git` is an unlisted build prerequisite: every manifest ref
   is resolved with `git ls-remote` (`BR-BUILD-005`), so a machine without git fails at

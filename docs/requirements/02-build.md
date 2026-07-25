@@ -40,8 +40,10 @@ cairn SHOULD warn when a moving branch is used. *(ADR-015)*
 
 ## Cache & tagging
 
-**`BR-BUILD-007`** — cairn MUST set `CACHE_BUST` from a hash of the resolved app commits; a
-correct build MUST NOT require `--no-cache`. *(ADR-015)*
+**`BR-BUILD-007`** — cairn MUST set `CACHE_BUST` from a hash of **all** resolved commits
+(Frappe **and** every app); a correct build MUST NOT require `--no-cache`. Frappe is
+included because `FRAPPE_BRANCH` enters the cache key by **name**, so a branch that moves
+would otherwise reuse a stale `bench init` layer. *(ADR-015)*
 
 **`BR-BUILD-008`** — cairn MUST tag the image with an **immutable primary tag**
 `<legible>-<inputhash>` — `<legible>` a slug of the resolved Frappe version (e.g.
