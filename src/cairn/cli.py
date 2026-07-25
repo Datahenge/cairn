@@ -1,8 +1,8 @@
 """cairn command-line interface — a single Typer application (BR-CLI-001).
 
 Subcommands are added per requirement area. This module currently wires the ``vendor``
-group (BR-CLI-006); further groups (``build``, ``push``, ``retag``, …) are added as their
-modules land.
+group (BR-CLI-006) and ``doctor`` (BR-CLI-007); further commands (``build``, ``push``,
+``retag``, …) are added as their modules land.
 """
 
 from collections.abc import Callable
@@ -11,7 +11,7 @@ from typing import Annotated
 
 import typer
 
-from . import __version__, vendor
+from . import __version__, doctor, vendor
 from .errors import CairnError
 from .project import find_project_root
 
@@ -83,6 +83,15 @@ def vendor_sync(
 ) -> None:
     """Re-materialize the vendored tree from its pinned ref (BR-CLI-006, BR-VEND-009)."""
     _run_in_project(lambda root: vendor.sync(root, source))
+
+
+@app.command("doctor")
+def doctor_command() -> None:
+    """Check that this machine can build: Docker Engine v23+/buildx, vendored tree sound.
+
+    Reports every check before exiting non-zero on any failure (BR-CLI-007, BR-CLI-012).
+    """
+    _run_in_project(doctor.run)
 
 
 def run() -> None:

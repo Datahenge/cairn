@@ -21,5 +21,15 @@ class VendorToolError(CairnError):
 
 
 class VendorDriftError(CairnError):
-    """The vendored tree has drifted from its ``.ventwig.lock`` anchor, or otherwise
-    fails a build-input integrity check (BR-VEND-005, BR-VEND-007)."""
+    """The vendored tree has drifted from its ``.ventwig.lock`` anchor, or contains
+    upstream version-control metadata (BR-VEND-005, BR-VEND-007)."""
+
+
+class BuildEngineError(CairnError):
+    """No usable build engine was found, or the requested one is unavailable
+    or too old (`ADR-027`)."""
+
+
+class VendorInputsMissingError(CairnError):
+    """The vendored tree is missing a required build input — the custom
+    ``Containerfile`` or a file it copies from the build context (BR-VEND-006)."""
