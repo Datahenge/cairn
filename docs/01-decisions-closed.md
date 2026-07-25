@@ -575,12 +575,25 @@ retag), not by splitting code or dependencies (the Python footprint is tiny and 
 build heaviness lives in external `docker`/`buildx` binaries).
 
 **Names:**
-- **PyPI distribution + repo:** `datahenge-cairn`. `cairn` is taken; `docker-cairn` /
+- **PyPI distribution:** `datahenge-cairn`. `cairn` is taken; `docker-cairn` /
   `frappe-cairn` would falsely imply Docker/Frappe ownership. `datahenge-cairn` truthfully
   signals Datahenge and doubles the stone motif (Datahenge = stone circle, cairn = stacked
   stones).
 - **Import package:** `cairn`. **Console command:** `cairn` (primary) + a `datahenge-cairn`
   alias as a collision fallback.
+
+**Verified 2026-07-25**, since both halves rested on an unchecked assumption: `cairn` on PyPI
+**is** taken — `cairn` 0.2.3, an unrelated project-versioning tool — and `datahenge-cairn` **is**
+available. The premise holds.
+
+**Amended 2026-07-25 — the repository is `Datahenge/cairn`, not `datahenge-cairn`.** The prefix
+was adopted for one reason: PyPI is a flat global namespace and the good name was gone. GitHub
+namespaces by owner, so that reason does not transfer — and `Datahenge/datahenge-cairn` stutters.
+`Datahenge/cofferdam` and `Datahenge/btu` already establish the plain-name convention for this
+org (`brian-pond/ventwig` does the same on the personal account). The distribution name and the
+repository name are allowed to differ; they answer to different namespaces. Owner is `Datahenge`
+rather than the personal account because cairn is ERPNext-domain tooling, like cofferdam and btu,
+where ventwig is a general-purpose utility.
 
 **Distribution:** a pip-installable wheel; on a target, `cairn reconcile` runs under a
 systemd service + timer (`BR-DEPLOY-001`).

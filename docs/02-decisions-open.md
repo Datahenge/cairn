@@ -75,6 +75,20 @@ Mitigations short of a fork, and their ceilings: `BR-BUILD-014`'s short-circuit 
 *redundant* rebuilds but not *legitimate* ones; registry-backed cache helps cold machines,
 not this. Neither reaches the seam. **This is the strongest single argument on the list.**
 
+**A second cost, found 2026-07-25 while documenting GHCR.** The argument above was made
+entirely in build minutes. There is a money cost too, and it compounds the same way. Because
+the atomic step produces one multi-gigabyte layer rather than a small one, a single-line
+change to a custom app yields a **new ~2.75 GB layer** — so layer sharing, which is exactly
+what should make an incremental push and pull cheap, buys almost nothing here. Every
+custom-app commit that reaches an environment therefore costs close to a full image in
+private-registry **storage** (multiplied by the versions retained for rollback headroom) and
+close to a full image in **outbound transfer** on every target that converges. At the
+allowances bundled with GitHub's personal and small-team plans, one image can exceed the
+entire included storage. A per-app seam would make the common case a small layer, which is
+the same fix for both costs. Recorded because the register is supposed to accumulate
+evidence: this is a second, independent consequence of one upstream constraint, not a second
+argument.
+
 **2. Commit-level pinning is impossible through bench.** *(2026-07-25, Brian)*
 
 `bench init --frappe-branch` / `bench get-app` take a branch or tag, never a raw SHA

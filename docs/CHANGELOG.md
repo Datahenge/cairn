@@ -9,6 +9,33 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (night, naming and GHCR)
+
+- **`ABOUT_GHCR.md` added at project root**, linked from `README.md`. Brian is new to GHCR and
+  asked what he is logging into, how it relates to his GitHub account and repos, and who owns
+  the images after deployment. Written for that reader, and deliberately carrying **no `BR`/`ADR`
+  identifiers** — it is user-facing documentation, where the identifier rule binds.
+- **`README.md` status corrected.** It still said "Early design. No code yet", which stopped
+  being true some time ago. Now distinguishes what has run against real infrastructure from
+  what is only tested.
+- **`ADR-018`'s naming re-verified against reality, and one half amended.** The PyPI
+  distribution `datahenge-cairn` is confirmed **available**, and `cairn` is confirmed **taken**
+  (by an unrelated project, `cairn` 0.2.3) — so the decision's premise holds and no change is
+  needed there. The *repository* half is amended: `ADR-018` proposed `datahenge-cairn` for the
+  repo too, but the prefix existed solely to dodge a collision in PyPI's flat global namespace,
+  and GitHub namespaces by owner. `Datahenge/cofferdam` and `Datahenge/btu` both establish the
+  plain-name convention, and `Datahenge/datahenge-cairn` stutters. **Repo: `Datahenge/cairn`.**
+- **`ADR-021`'s fork-pressure register gains a second, independent cost for entry 1.** The
+  atomic `bench init` layer was argued entirely in build minutes; documenting GHCR's billing
+  surfaced the money half. Because the step yields one multi-gigabyte layer, layer sharing buys
+  almost nothing, so every custom-app commit costs close to a full image in private-registry
+  storage *and* in outbound transfer to every converging target. One upstream constraint, two
+  independent consequences — recorded as evidence, not as a second argument.
+- **A gap named rather than filled:** cairn stamps no `org.opencontainers.image.source` label,
+  which is what GHCR reads to link a package to a repository automatically. Adding it requires
+  deciding *which* repository an image points at — the deployment's or the tool's — which is a
+  design question. Documented in `ABOUT_GHCR.md` as a manual step until decided.
+
 ## 2026-07-25 (night, deploy path)
 
 Three gaps blocked the deploy verbs: `BR-DEPLOY-009` and `BR-DEPLOY-010` each settled what a

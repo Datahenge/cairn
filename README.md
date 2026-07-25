@@ -17,7 +17,21 @@ data (`ADR-022`).
 
 ## Status
 
-Early design. No code yet — scaffolding and decisions are being recorded first.
+Working, unreleased. The build and deploy commands are implemented and tested;
+`cairn build`, `push`, `images`, `prune`, `doctor`, and `vendor` have been exercised against
+real images and a real registry, while the pointer verbs (`new-tag` / `retag` / `retire`) and
+the target-side `reconcile` are written and tested but have not yet run against live
+infrastructure.
+
+## Where your images live
+
+cairn builds an image and puts it in a container registry; your deployment targets pull from
+there. cairn is registry-agnostic and assumes nothing — but if you are using GitHub's registry
+and have not before, start here:
+
+📦 **[ABOUT_GHCR.md](ABOUT_GHCR.md)** — what you are logging into, who owns the images, the
+token you need on each machine, what private images cost at ERPNext image sizes, and the
+deletion rule that is genuinely surprising.
 
 ## Deployment manifest (`cairn.toml`) — design in progress
 
