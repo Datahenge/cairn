@@ -151,6 +151,39 @@ originally warned about turned out to be out of scope by construction rather tha
 to be paid. Two risks carried forward into `ADR-027`: OCI-vs-v2s2 manifest format on push,
 and label readback across engines.
 
+## 12. On podman, an untagged image may be the build cache
+
+*Measured (Brian, 2026-07-25 — cleared dangling images, next build went cold).
+Illuminates `BR-CLI-018`, `ADR-032`._
+
+`podman image list` hides *intermediate layer* images by default (`-a` reveals them), which
+makes it tempting to conclude that anything visible and untagged is a discardable former
+build. That conclusion is wrong, and expensively so.
+
+A multi-stage Containerfile leaves its **stage** images in local storage, untagged. For the
+vendored `custom` Containerfile the `builder` stage is the one that matters: it holds the
+base plus the whole build toolchain (`gcc`, `build-essential`, every `-dev` package) plus
+the completed bench, so it is *larger* than the final image — measured at **4.63 GB against
+2.75 GB**. It is also what a later build matches against to skip `bench init`, the single
+most expensive step in the whole build. Delete it and every subsequent build is cold, with
+no error and no explanation.
+
+So on podman: **`<none>/<none>` is not a synonym for "garbage".** It spans at least three
+different things — superseded final builds, multi-stage stage images, and true orphans —
+and the engine's listing cannot tell them apart.
+
+What *can* tell them apart: `--label` values are applied only at the **final** commit, so a
+stage image never carries them. Any tool that scopes destructive work to images bearing its
+own labels is structurally incapable of deleting the cache. Generalizable beyond containers:
+**when a cleanup's safety rests on a property the platform computed** (danglingness,
+reachability, age), prefer a property *you* stamped and therefore understand. Here the
+safety property and the performance property turned out to be the same property — which is
+usually the sign that the scoping is the right one.
+
+Corollary for advice-giving: "prune only dangling images, it's safe" was stated in this
+project's own conversation before this was measured. Danglingness reads like a
+reachability guarantee. It is not one.
+
 ## 11. A convention that lives only in prose will be violated
 
 *Measured the hard way — twice. Illuminates `/CLAUDE.md`._

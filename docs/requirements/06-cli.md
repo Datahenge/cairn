@@ -33,8 +33,21 @@ Selectors for `new-tag`/`retag`: `--latest | --previous | --id <ident> | --from 
 (`--from` points at whatever another env currently runs → cross-env promotion). Both accept
 opt-in **`--install-app <apps>`** (`ADR-023`). *(BR-DEPLOY-004, ADR-023)*
 
-**`BR-CLI-005`** *(introspection)* — `cairn images [--tags] [--json]` — registry
-introspection: tags, digests, and provenance labels read **remotely** (no pull). *(BR-DEPLOY-005)*
+**`BR-CLI-005`** *(introspection)* — `cairn images [--tags] [--local] [--json]`.
+
+- **Registry** (default) — tags, digests, and provenance labels read **remotely**, no pull.
+  *(BR-DEPLOY-005)*
+- **`--local`** — the same question asked of the build machine: which images does *this*
+  machine hold, why does each exist, and which are superseded. cairn MUST identify its own
+  images by their provenance labels (`BR-BUILD-011`), MUST group them by **input hash**, and
+  MUST show, per image, its tags — or that it has **none** — along with age, size, and the
+  resolved Frappe/app commits read from labels.
+
+An engine's own image listing answers only repository, tag, id, age and size, so an untagged
+former build is indistinguishable from anything else untagged. Every fact needed to explain
+it is already stamped on the image; this is the command that reads them back. Images cairn
+did not build MUST be excluded, but their count MUST be reported, so the command is never
+mistaken for a complete inventory. *(BR-DEPLOY-005, BR-BUILD-011, BR-BUILD-014, ADR-032)*
 
 **`BR-CLI-006`** *(vendor)* — `cairn vendor status | sync` — thin ventwig wrappers. *(BR-VEND-*)*
 
@@ -127,3 +140,18 @@ execution contexts** (`ADR-031`), and writes a transcript in exactly one of them
 terminal and the transcript. Timing MUST NOT be recorded in provenance labels: duration is
 a property of a build *run* (cache state, machine, network), not of the image's inputs,
 and `BR-BUILD-013`'s guarantee is about inputs. *(ADR-031, BR-CLI-011)*
+
+**`BR-CLI-018`** *(prune — build machine)* — `cairn prune [--keep <n>] [--dry-run] [--yes]`
+reclaims space on the **build** machine. It MUST remove only images carrying cairn's own
+provenance labels (`BR-BUILD-011`), MUST keep the newest `<n>` per input hash (default: 1,
+the tagged one), and MUST NOT remove volumes, containers, or any image cairn did not build.
+It MUST report what it will remove and confirm before removing (`BR-CLI-011`).
+
+**Label-scoping is a cache-safety mechanism, not merely tidiness.** On podman, an untagged
+image may be a **build-cache stage** rather than a former build — the `builder` stage of the
+vendored Containerfile is untagged, larger than the final image, and is what lets a rebuild
+skip `bench init`. A prune written against "dangling" would delete it and silently convert
+every later build into a cold one. cairn's labels are applied only at the **final** commit,
+so a stage image never carries them, and a label-scoped prune cannot reach the cache. cairn
+MUST therefore never prune by danglingness. *(BR-DEPLOY-006 is the target-side counterpart;
+this is its build-machine analogue. ADR-032, lessons §12)*

@@ -138,6 +138,19 @@ def find_manifest(start: Path | None = None, explicit: Path | None = None) -> Pa
     )
 
 
+def find_manifest_or_none(start: Path | None = None) -> Path | None:
+    """Return the nearest manifest, or None where a command does not require one.
+
+    Machine-scoped commands (`BR-CLI-005`'s ``--local``) still want build config, whose
+    lower layer is the user file and whose upper layer is a ``cairn.local.toml`` beside a
+    manifest. Missing the manifest costs only that upper layer, not the command.
+    """
+    try:
+        return find_manifest(start)
+    except ManifestNotFoundError:
+        return None
+
+
 def load_manifest(path: Path) -> Manifest:
     """Parse and validate *path* as a manifest (BR-BUILD-001/002/003/005)."""
     data = _load_toml(path, ManifestInvalidError)

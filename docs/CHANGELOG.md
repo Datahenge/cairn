@@ -9,6 +9,36 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (later)
+
+- **`ADR-032` closed — one image per input hash; prune only what cairn labelled.** Four
+  consecutive builds of an unchanged manifest produced four image IDs, five nameless
+  multi-gigabyte images, ~14 GB of orphans — and one unchanged primary tag. Diagnosis
+  required separating **declared** inputs (`version-16`) from **resolved** inputs (the
+  commit), which collapses the confusing cases: same declared/different resolved is a
+  branch that moved; different declared/same resolved is a branch and a tag naming one
+  commit. Image content is a function of resolved inputs alone — but the mapping is
+  one-to-many the other way, since the image config carries a build-time clock.
+- **`BR-BUILD-014` added — cairn will not rebuild an input hash it already holds.** An
+  existing primary tag proves the inputs are unchanged; rebuilding can only mint a second
+  digest, move the tag to it, and orphan the first. `--rebuild` overrides.
+- **`BR-BUILD-008`: "immutable primary tag" corrected to "deterministic".** The original
+  wording invited exactly the wrong inference and did so successfully. Three tiers of
+  identity now stated inline — address (digest), deterministic name (cairn's tag,
+  re-pointable), moving pointer (`latest`).
+- **`BR-CLI-005` extended with `--local`**; **`BR-CLI-018` added for `cairn prune`.** An
+  engine's image listing knows repository, tag, id, age, size — it cannot answer *why an
+  image exists*. Everything needed is already stamped by `BR-BUILD-011`.
+- **Prune scopes by label, never by danglingness — a cache-safety rule, not tidiness.**
+  Brian observed that clearing dangling images made the next build enormously slower: on
+  podman an untagged image may be a build-cache **stage**. cairn's labels land only at the
+  final commit, so a label-scoped prune cannot reach the cache. Recorded as lessons §12.
+  This retracts advice given earlier in the same conversation ("prune dangling, it's safe").
+- **Left open deliberately:** whether the tag's `<legible>` half should keep deriving from
+  the *declared* Frappe ref. It currently does, so one commit reached by a branch and by a
+  tag yields two tag names for one image, and following `BR-BUILD-005`'s own advice to pin
+  to tags renames every image for no change in content.
+
 ## 2026-07-25
 
 - **`ADR-031` closed — three execution contexts; build transcript in attended CLI only.**

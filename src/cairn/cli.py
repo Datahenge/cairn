@@ -18,6 +18,7 @@ from . import (
     config,
     doctor,
     engine,
+    images,
     push,
     resolve,
     timing,
@@ -189,6 +190,13 @@ def build_command(
         bool,
         typer.Option("--no-transcript", help="Do not save the build output to a file."),
     ] = False,
+    rebuild: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild",
+            help="Build again even if these exact inputs were already built.",
+        ),
+    ] = False,
 ) -> None:
     """Build the image declared by cairn.toml (BR-CLI-002, BR-CLI-016, BR-CLI-017).
 
@@ -270,6 +278,16 @@ def build_command(
             typer.echo(plan.render())
             return 0
 
+        if not rebuild and (held := build.existing_image(plan)):
+            _note(f"Image {held}")
+            _done(f"Already built {plan.references[0]}")
+            _step(
+                "  These exact inputs were built before, so there is nothing to do. "
+                "Rebuilding would produce an identical image under a new id and leave "
+                "this one nameless — pass --rebuild to do it anyway."
+            )
+            return 0
+
         _step(f"Building {plan.references[0]}")
         _step(
             f"  {plan.engine_name}, {len(plan.build_args)} build args, "
@@ -292,6 +310,44 @@ def build_command(
                     push.push(reference, plan.engine_name)
                     _done(f"Pushed {reference}")
 
+        return 0
+
+    _run_in_project(_action)
+
+
+@app.command(
+    "images",
+    help=(
+        "Show images and what they were built from. With --local, reports this machine's "
+        "own images grouped by their build inputs, so superseded builds are visible rather "
+        "than nameless. Images cairn did not build are counted but never listed."
+    ),
+)
+def images_command(
+    local: Annotated[
+        bool,
+        typer.Option("--local", help="Report this machine's images instead of the registry."),
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Emit machine-readable output.")] = False,
+) -> None:
+    """Report images and their provenance (BR-CLI-005).
+
+    Only ``--local`` is implemented so far; registry introspection lands with the deploy
+    verbs. Saying so is better than quietly reporting the wrong machine's images.
+    """
+    if not local:
+        raise typer.BadParameter(
+            "Reading the registry is not implemented yet; use --local to report this "
+            "machine's images."
+        )
+
+    def _action(root: Path) -> int:
+        build_config = config.load_build_config(config.find_manifest_or_none())
+        engine_name = engine.detect(build_config.engine).name
+        found, others = images.inspect_local(engine_name)
+        groups = images.group(found)
+
+        typer.echo(images.as_json(groups, others) if as_json else images.render(groups, others))
         return 0
 
     _run_in_project(_action)

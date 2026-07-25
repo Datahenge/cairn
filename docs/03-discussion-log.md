@@ -7,6 +7,64 @@ _Last updated: 2026-07-25_
 
 ---
 
+## 2026-07-25 — Inputs, images, and identity: what a cairn tag actually names (ADR-032)
+
+Started from Brian noticing two consecutive builds produced different `Image` digests
+under an identical tag, and ended somewhere more useful.
+
+**Brian's framing** — the possible relationships between inputs and images:
+1. identical inputs → identical images (easy);
+2. identical inputs → *different* images, because a branch is not a commit and we do not
+   own upstream (build at 8am, build at 11am);
+3. different inputs → different images (easy);
+4. different inputs → *identical* images, because a branch and a tag can name one commit.
+
+**The distinction that collapses all four.** "Input" was doing double duty. Separate
+**declared** inputs (what `cairn.toml` says — `version-16`) from **resolved** inputs (the
+commit it pointed at), and cases 2 and 4 are simply the two cases where the two diverge.
+The rule underneath: *image content is a function of resolved inputs alone.* This is what
+makes `BR-BUILD-005`'s resolve-and-record load-bearing rather than a nicety.
+
+**A fifth case, which the evidence had already shown.** Identical *resolved* inputs still
+produce different digests, because the image config carries a build-time clock — cairn's
+own `org.opencontainers.image.created` label plus the engine's `created` field (podman's
+`--timestamp` help says outright that it "defaults to current time"). So the mapping is
+one-to-many and no amount of hashing repairs it; it has to be *decided*. Decided as
+`BR-BUILD-014`: cairn refuses to rebuild an input hash it already holds.
+
+**Vocabulary that resolved the confusion.** Three tiers of identity — address (the digest,
+immutable, engine-owned), **deterministic name** (cairn's `<legible>-<inputhash>`, stable
+per input set but re-pointable), moving pointer (`latest`). `BR-BUILD-008` had called the
+middle tier *immutable*, which is what produced the surprise in the first place. Corrected.
+
+**Then the same fault in a third form: disk.** `podman image list` after four builds showed
+five nameless 2.75 GB images — about 14 GB — all sharing one input hash. Not versions: four
+copies of one declared image, distinguished only by build clock. The tag had never changed.
+Same cause, third symptom, and the strongest argument yet for the refusal to rebuild.
+
+**A correction that mattered.** The suggested immediate relief — `podman image prune`,
+"dangling only, therefore safe" — was wrong, and Brian had already measured why: he had
+cleared dangling images earlier and watched the next build go fully cold. On podman an
+untagged image may be a build-cache **stage**; the `builder` stage measured 4.63 GB against
+the final image's 2.75 GB, and is exactly what lets a rebuild skip `bench init`. Recorded
+as lessons §12. The design consequence is pleasing: because `--label` values are applied
+only at the final commit, scoping prune to cairn's own labels is *structurally* incapable of
+eating the cache. The safety property and the performance property are the same property.
+
+**The gap Brian named next** — no CLI command glues what podman knows to what cairn knows.
+Half the complaint ("not enough metadata to know why these exist") turned out to be false:
+fourteen provenance labels ride on every image. The metadata exists; the command does not.
+Worse, `cairn images` was specified **registry-only** (`BR-CLI-005`, `BR-DEPLOY-005`), so
+this was an unwritten requirement rather than unwritten code. Extended with `--local`, and
+`BR-CLI-018` added for `cairn prune` — the build-machine analogue of `BR-DEPLOY-006`, which
+had only ever covered targets.
+
+**Left open.** The tag's `<legible>` half derives from the *declared* Frappe ref, so
+`legible_slug` yields `v16` from a branch and `v16.0.1` from a tag naming the same commit —
+two tag names, one image, and a rename of every image as the price of following
+`BR-BUILD-005`'s advice to pin to tags. Options: declare a series in the manifest, read the
+version at the resolved commit, or drop the half entirely. Not decided.
+
 ## 2026-07-25 — First real build: transcripts, timing, and three execution contexts (ADR-031)
 
 Brian ran `cairn build` for the first time and reported three things: the output was a

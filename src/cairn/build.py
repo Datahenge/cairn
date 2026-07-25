@@ -316,6 +316,25 @@ def _tee(command: list[str], sink: Transcript) -> int:
     return process.wait()
 
 
+def existing_image(build_plan: BuildPlan) -> str | None:
+    """Return the digest already holding this build's primary tag, or None (BR-BUILD-014).
+
+    The primary tag is a deterministic function of every resolved input, so finding it
+    already present proves the inputs are unchanged and the build is redundant. Rebuilding
+    would not merely waste time: it would mint a second digest, move the tag onto it, and
+    leave the first image nameless — which is how a build machine accumulates orphaned
+    multi-gigabyte images under a name that never changed (`ADR-032`).
+    """
+    reference = build_plan.references[0]
+    command = [build_plan.engine_name, "image", "inspect", "--format", "{{.Id}}", reference]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except FileNotFoundError as exc:
+        raise BuildError(f"`{build_plan.engine_name}` not found on PATH.") from exc
+
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
 def assert_image_exists(build_plan: BuildPlan) -> str:
     """Confirm the engine really produced the tagged image, returning its digest.
 

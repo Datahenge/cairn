@@ -326,6 +326,44 @@ def test_a_teed_build_still_fails_on_a_nonzero_exit(monkeypatch, tmp_path):
         build.run(_plan(), recorder)
 
 
+# --- one image per input hash (BR-BUILD-014, ADR-032) -----------------------
+
+
+def test_an_existing_primary_tag_is_reported_not_rebuilt(monkeypatch):
+    """The tag is a function of every resolved input, so its presence proves them unchanged."""
+
+    def _run(command, **kwargs):
+        assert command[:3] == ["podman", "image", "inspect"]
+        return type("R", (), {"returncode": 0, "stdout": "sha256:abc\n", "stderr": ""})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+
+    assert build.existing_image(_plan()) == "sha256:abc"
+
+
+def test_a_missing_primary_tag_reads_as_nothing_built(monkeypatch):
+    def _run(command, **kwargs):
+        return type("R", (), {"returncode": 1, "stdout": "", "stderr": "no such image"})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+
+    assert build.existing_image(_plan()) is None
+
+
+def test_the_existence_check_asks_about_the_primary_tag(monkeypatch):
+    """Not `latest`: the moving tag says nothing about which inputs produced it."""
+    seen: list[str] = []
+
+    def _run(command, **kwargs):
+        seen.append(command[-1])
+        return type("R", (), {"returncode": 0, "stdout": "sha256:abc\n", "stderr": ""})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+    build.existing_image(_plan())
+
+    assert seen == ["ghcr.io/datahenge/erpnext-btu-v16:v16-abc123"]
+
+
 # --- post-conditions and failure visibility (BR-CLI-011, BR-CLI-015) --------
 
 

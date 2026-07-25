@@ -58,6 +58,10 @@ class BuildEngineError(CairnError):
     or too old (`ADR-027`)."""
 
 
+class ImageQueryError(CairnError):
+    """Local or remote image introspection could not be completed (BR-CLI-005)."""
+
+
 class TranscriptError(CairnError):
     """The build transcript directory or file cannot be used safely (BR-CLI-016)."""
 

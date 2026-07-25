@@ -45,17 +45,45 @@ cairn SHOULD warn when a moving branch is used. *(ADR-015)*
 included because `FRAPPE_BRANCH` enters the cache key by **name**, so a branch that moves
 would otherwise reuse a stale `bench init` layer. *(ADR-015)*
 
-**`BR-BUILD-008`** — cairn MUST tag the image with an **immutable primary tag**
+**`BR-BUILD-008`** — cairn MUST tag the image with a **deterministic primary tag**
 `<legible>-<inputhash>` — `<legible>` a slug of the resolved Frappe version (e.g.
 `version-16`→`v16`), `<inputhash>` a short hash of *all* resolved inputs (Frappe + app
 commits + effective build args) that alone guarantees uniqueness (e.g.
 `cairn/erpnext-btu-v16:v16-a1b2c3d4`). cairn MUST also apply a moving `latest` tag. The
 image base defaults to `cairn/<image_name>` and MUST be registry-agnostic.
 
+**"Deterministic", not "immutable"** — the word was corrected 2026-07-25 (`ADR-032`) after
+the original wording invited a false inference. Same inputs always produce the same *name*;
+that name is still a mutable pointer the engine will move onto a newer image. Three tiers
+of identity are in play and only the first is immutable:
+
+| Tier | Example | Property | Owner |
+| --- | --- | --- | --- |
+| Address | `sha256:1782626c…` | content-addressed, immutable | the engine / OCI |
+| **Deterministic name** | `v16-1bf0adf3823f` | derived from resolved inputs; **re-pointable** | cairn |
+| Moving pointer | `latest`, later `:production` | names a role, not content | cairn |
+
 Because the input hash covers **effective** build args (`BR-BUILD-010`), a deliberate
 `frappe_docker` pin bump that changes a Containerfile default changes the tag **even when
 `cairn.toml` is unchanged**. This is intended, not a defect: the image's inputs did change,
 and `BR-VEND-009` already makes pin bumps explicit and reviewable. *(ADR-011, ADR-009)*
+
+**`BR-BUILD-014`** *(one image per input hash)* — When the primary tag already exists
+**locally**, cairn MUST NOT rebuild. It MUST report the existing image and its digest and
+exit 0, unless `--rebuild` is given.
+
+The primary tag is a deterministic function of every resolved input (`BR-BUILD-008`), so an
+existing tag is proof that the inputs are unchanged. Rebuilding cannot produce a different
+image in any respect that matters — but it *will* produce a different **digest**, because
+the image config carries a build-time clock (`org.opencontainers.image.created`, and the
+engine's own `created` field). That new digest takes the tag, and the previous image is left
+nameless. Rebuilding is therefore not merely wasted time: it is how a *deterministic* name
+comes to point at a succession of digests, and how a build machine accumulates orphaned
+multi-gigabyte images.
+
+Consequently **one input hash SHOULD correspond to one image**, and cairn's refusal to
+rebuild is what makes that true in practice. `--rebuild` remains available for the case
+where an image is believed corrupt. *(ADR-032, BR-CLI-005, BR-CLI-018)*
 
 ## Build invocation
 
