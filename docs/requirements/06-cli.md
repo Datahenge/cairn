@@ -67,7 +67,13 @@ skip for automation. `--install-app` against Production is **doubly** explicit. 
 **`BR-CLI-011`** *(least surprise)* — Nothing consequential is silent: no auto-rollback
 (`ADR-025`), no auto-install (`ADR-023`), no data/volume/DB writes of cairn's own
 (`ADR-022`). Consequential/destructive actions confirm; `--dry-run` is available on
-`build`/`push`/`new-tag`/`retag`/`reconcile`. *(ADR-022, ADR-023, ADR-025)*
+`build`/`push`/`new-tag`/`retag`/`reconcile`.
+
+**Silence cuts both ways.** A command MUST NOT appear to do nothing: any operation that
+takes more than a moment (ref resolution, image build, push) MUST report what it is doing
+and what it is doing it to, and MUST verify its own post-condition rather than trusting an
+exit code — an engine that exits 0 without producing the image MUST be reported as a
+failure, not as success. *(ADR-022, ADR-023, ADR-025)*
 
 ## Conventions
 

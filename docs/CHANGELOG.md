@@ -11,6 +11,16 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`BR-CLI-011` strengthened — "silence cuts both ways".** As written, the requirement
+  listed only *destructive* examples (no auto-rollback, no auto-install, no data writes),
+  and was implemented as "no silent destructive actions". That reading let `cairn build`
+  run vendored-tree checks, three network round-trips, and a container build while
+  printing **nothing** — reported by Brian as a build that "finished almost instantly"
+  with no output at all. The requirement now also forbids a command *appearing to do
+  nothing*, and requires verifying post-conditions instead of trusting an exit code: an
+  engine that exits 0 without producing the image must be reported as a failure. A
+  requirement ambiguous enough to produce the wrong implementation is a requirement
+  defect, so it was fixed rather than only the code.
 - **CLI help no longer leaks `BR` identifiers.** `/CLAUDE.md` requires internal docstrings
   to cite `BR` IDs while *external* descriptions omit them; because Typer renders a
   command's docstring as its `--help` text, every command was showing its `BR` ID to
