@@ -184,6 +184,38 @@ Corollary for advice-giving: "prune only dangling images, it's safe" was stated 
 project's own conversation before this was measured. Danglingness reads like a
 reachability guarantee. It is not one.
 
+### Confirmed, and a stage image can be named for free
+
+*Measured 2026-07-25 on the real build machine._
+
+Re-running the build with `--target builder` and a `--tag`, against a warm cache and the
+identical build-args and `CACHE_BUST`:
+
+- **0.762s**, every step reporting `Using cache` — including the `bench init` layer, which
+  resolved to `Using cache e03e7719c39b53f6…`, the id already in local storage;
+- `COMMIT` landed on **that same id**, and the listing's `CREATED` still read "51 minutes
+  ago" — the image was *named*, not rebuilt;
+- total distinct images unchanged: no new disk.
+
+This settles two things. The 4.63 GB untagged image **is** the `builder` stage, proven from
+the engine's own cache resolution rather than inferred from its size. And an existing stage
+can be given a repository and tag for approximately nothing, because a tag is a pointer.
+
+Two cautions that came out of the same run:
+
+- **podman prefixes an unqualified name with `localhost/`** — the tag requested as
+  `cairn-cache/erpnext-btu-v16:builder` appears as
+  `localhost/cairn-cache/erpnext-btu-v16:builder`. Anything matching on that name later must
+  expect the prefix.
+- **The cheapness depends entirely on the cache being warm.** The same command against a
+  *cold* cache is a full `bench init` — so a tagging pass is only safe immediately after a
+  build that actually ran, never after one that was short-circuited, where the stage may
+  have been pruned since.
+
+*Reasoned, not measured:* none of this transfers to Docker. BuildKit keeps build cache in a
+separate store rather than as images, so there is no untagged stage to name — and asking for
+one with `--target` would make it **materialize** several GB that otherwise never exist.
+
 ## 11. A convention that lives only in prose will be violated
 
 *Measured the hard way — twice. Illuminates `/CLAUDE.md`._
