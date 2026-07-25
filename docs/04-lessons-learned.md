@@ -131,6 +131,48 @@ originally warned about turned out to be out of scope by construction rather tha
 to be paid. Two risks carried forward into `ADR-027`: OCI-vs-v2s2 manifest format on push,
 and label readback across engines.
 
+## 9. A pattern-filtered `git ls-remote` omits the peeled ref
+
+*Measured, 2026-07-24. Illuminates `BR-BUILD-005`, `BR-BUILD-011`._
+
+`git ls-remote --heads --tags <url>` lists an annotated tag twice — the tag object, then
+the commit it peels to:
+
+```
+78e30c5a…  refs/tags/v1.0
+6247c646…  refs/tags/v1.0^{}
+```
+
+Add a **pattern** and the second line disappears:
+
+```
+$ git ls-remote --heads --tags <url> v1.0
+78e30c5a…  refs/tags/v1.0            # tag object only
+
+$ git ls-remote --heads --tags <url> v1.0 'v1.0^{}'
+78e30c5a…  refs/tags/v1.0
+6247c646…  refs/tags/v1.0^{}         # the commit
+```
+
+The peeled entry is a ref whose name ends in `^{}`, so it does not match the pattern
+`v1.0`; it must be requested by name. Without the second pattern, resolution records the
+**tag object's** SHA — an object a clone never checks out. That would have poisoned
+provenance (`BR-BUILD-011`), the input hash (`BR-BUILD-008`), and `CACHE_BUST`
+(`BR-BUILD-007`) for every annotated-tag pin, while looking entirely plausible: a
+40-character hex SHA, in the right field, wrong object.
+
+**Why it survived unit testing:** the stub returned both lines, because that is what an
+*unfiltered* `ls-remote` returns and what the documentation examples show. The test
+encoded the author's assumption rather than the command's behaviour, and passed. It was
+caught by resolving against a throwaway local repository with one annotated tag, one
+lightweight tag, and one branch — three lines of setup that no amount of mocking would
+have substituted for.
+
+Generalizable: when stubbing a subprocess, the stub's *output* is a second assumption
+under test, and a passing test only confirms the two assumptions agree. Verify the real
+command's output shape at least once, especially where a wrong value is still
+well-formed.
+
 ## 8. Ask which machine runs it before asking whether the tool supports it
 
 *Reasoned. Illuminates `ADR-018`, `ADR-027`._

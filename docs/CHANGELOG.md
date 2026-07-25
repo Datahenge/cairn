@@ -11,6 +11,20 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`BR-CLI-007` revised — `git` added to the build-role preflight.** Implementing
+  `resolve.py` surfaced that `git` is an unlisted build prerequisite: every manifest ref
+  is resolved with `git ls-remote` (`BR-BUILD-005`), so a machine without git fails at
+  resolution time rather than at preflight. Brian confirmed git is a prerequisite; the
+  requirement now names it. No minimum version — `ls-remote` and its pattern matching
+  predate every git a current distribution ships.
+- **Lessons §9 — a pattern-filtered `git ls-remote` omits the peeled ref.** Found while
+  implementing `resolve.py` (`BR-BUILD-005`): requesting `<ref>` alone returns an
+  annotated tag's **tag object**, not the commit it peels to; `<ref>^{}` must be passed
+  as a second pattern. Left uncorrected this would have recorded an object no clone ever
+  checks out into provenance (`BR-BUILD-011`), the input hash (`BR-BUILD-008`), and
+  `CACHE_BUST` (`BR-BUILD-007`) — well-formed and wrong. Unit tests passed throughout,
+  because the stub returned what an *unfiltered* `ls-remote` returns; caught only by
+  resolving against a real repository. No requirement changed.
 - **`ADR-029` + `BR-CFG-012` — config discovery and precedence, finally documented.**
   `BR-CLI-014` promised "documented precedence" that was never written down; implementing
   `config.py` forced the gap. **Decided:** the manifest root and cairn's own project root
