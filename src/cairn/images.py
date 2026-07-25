@@ -219,13 +219,19 @@ def as_json(groups: list[ImageGroup], others: int) -> str:
 
 
 def format_size(size: int) -> str:
-    """Render bytes the way an image listing does."""
+    """Render bytes in the **decimal** units the container engines use.
+
+    Base 1000, not 1024. Both ``podman image list`` and ``docker image ls`` report decimal
+    GB, and this command exists to be read alongside them — reporting a binary GB showed
+    2.57 where the engine showed 2.75 for the same image, which reads as a bug in whichever
+    tool you trust less. Three significant digits matches their output too.
+    """
     value = float(size)
-    for unit in ("B", "KB", "MB", "GB"):
-        if value < 1024 or unit == "GB":
-            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.2f} {unit}"
-        value /= 1024
-    return f"{value:.2f} GB"
+    for unit in ("B", "kB", "MB", "GB", "TB"):
+        if value < 1000 or unit == "TB":
+            return f"{value:.0f} {unit}" if unit == "B" else f"{value:.3g} {unit}"
+        value /= 1000
+    return f"{value:.3g} TB"
 
 
 def format_age(created: datetime | None) -> str:
