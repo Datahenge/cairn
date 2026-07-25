@@ -58,7 +58,7 @@ def push(image: str, engine_name: str) -> None:
         raise PushError(
             f"Pushing {image} failed with exit code {result.returncode}. If this is an "
             f"authentication failure, run `{engine_name} login {registry_host(image)}` — "
-            f"cairn never stores registry credentials (BR-CFG-010). The command was:\n"
+            f"cairn never stores registry credentials. The command was:\n"
             f"  {shlex.join(command)}"
         )
 

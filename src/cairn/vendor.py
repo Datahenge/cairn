@@ -68,7 +68,7 @@ def assert_no_nested_git(root: Path) -> None:
         if nested.exists():
             raise VendorDriftError(
                 f"Vendored source '{src.name}' contains a nested {GIT_DIR_NAME} "
-                f"({nested}); the vendored tree must be plain files (BR-VEND-007)."
+                f"({nested}); the vendored tree must be plain committed files."
             )
 
 

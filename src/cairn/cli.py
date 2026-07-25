@@ -6,7 +6,6 @@ group (BR-CLI-006), ``doctor`` (BR-CLI-007), ``build`` (BR-CLI-002), and ``push`
 added as their modules land.
 """
 
-import shlex
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
@@ -165,8 +164,12 @@ def build_command(
             typer.echo(plan.render())
             return 0
 
-        _step(f"Building with {plan.engine_name} — this takes several minutes.")
-        _step(f"  {shlex.join(plan.command(Path('<apps.json>')))}")
+        _step(f"Building {plan.references[0]}")
+        _step(
+            f"  {plan.engine_name}, {len(plan.build_args)} build args, "
+            f"{len(plan.labels)} labels, apps.json as a build secret "
+            f"— `--dry-run` prints the full command. This takes several minutes."
+        )
         build.run(plan)
 
         digest = build.assert_image_exists(plan)
@@ -194,8 +197,7 @@ def _warn_moving_refs(plan: build.BuildPlan) -> None:
         return
     names = ", ".join(f"{ref.name}@{ref.ref}" for ref in moving)
     typer.secho(
-        f"Warning: pinned to moving branch(es): {names}. "
-        f"Tags are reproducible; branches are not (BR-BUILD-005).",
+        f"Warning: pinned to moving branch(es): {names}. Tags are reproducible; branches are not.",
         fg=typer.colors.YELLOW,
         err=True,
     )

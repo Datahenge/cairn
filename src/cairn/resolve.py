@@ -120,7 +120,7 @@ def resolve_ref(name: str, url: str, ref: str) -> ResolvedRef:
 
     raise RefResolutionError(
         f"{name}: ref '{ref}' is neither a branch nor a tag at {url}. "
-        f"Refs pin by branch or tag only (BR-BUILD-005)."
+        f"Refs pin by branch or tag only."
     )
 
 

@@ -208,7 +208,7 @@ def _image_name(path: Path, root: dict) -> str:
     name = root.get("image_name")
     if not isinstance(name, str) or not name.strip():
         raise ManifestInvalidError(
-            f"{path}: [cairn] image_name is required and must be a non-empty string (BR-BUILD-002)."
+            f"{path}: [cairn] image_name is required and must be a non-empty string."
         )
     if not _IMAGE_NAME_RE.match(name):
         raise ManifestInvalidError(
@@ -222,8 +222,7 @@ def _frappe(path: Path, root: dict) -> Frappe:
     section = root.get("frappe")
     if not isinstance(section, dict):
         raise ManifestInvalidError(
-            f"{path}: missing the required [cairn.frappe] table with 'url' and 'ref' "
-            f"(BR-BUILD-002)."
+            f"{path}: missing the required [cairn.frappe] table with 'url' and 'ref'."
         )
     _reject_unknown(path, "[cairn.frappe]", section, {"url", "ref"})
     url = _required_string(path, "[cairn.frappe]", section, "url")
@@ -251,7 +250,7 @@ def _apps(path: Path, root: dict) -> tuple[App, ...]:
         if name in seen:
             raise ManifestInvalidError(
                 f"{path}: app '{name}' is listed more than once; each app must appear "
-                f"exactly once (the list is an ordered install sequence, BR-BUILD-003)."
+                f"exactly once — the list is an ordered install sequence."
             )
         seen.add(name)
         apps.append(App(name=name, url=_required_string(path, where, entry, "url"), ref=ref))
@@ -293,9 +292,7 @@ def _load_toml(path: Path, error: type[Exception]) -> dict:
 def _required_string(path: Path, where: str, section: dict, key: str) -> str:
     value = section.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise ManifestInvalidError(
-            f"{path}: {where} requires '{key}' as a non-empty string (BR-BUILD-002)."
-        )
+        raise ManifestInvalidError(f"{path}: {where} requires '{key}' as a non-empty string.")
     return value
 
 
@@ -314,5 +311,5 @@ def _reject_commit_sha(path: Path, where: str, ref: str) -> None:
     if _COMMIT_SHA_RE.match(ref):
         raise ManifestInvalidError(
             f"{path}: {where} ref '{ref}' looks like a commit SHA. Pin to a branch or "
-            f"tag — cairn resolves it to a commit at build time (BR-BUILD-005)."
+            f"tag — cairn resolves it to a commit at build time."
         )
