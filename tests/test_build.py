@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shlex
 from pathlib import Path
 
 import pytest
 
-from cairn import build, vendor
+from cairn import build, transcript, vendor
 from cairn.config import App, BuildConfig, Frappe, Manifest
 from cairn.errors import BuildError, VendorDriftError
 from cairn.resolve import RefKind, Resolution, ResolvedRef
@@ -223,6 +224,21 @@ def test_command_uses_the_selected_engine():
     assert _plan(engine_name="docker").command(Path("/x"))[0] == "docker"
 
 
+def test_attended_docker_builds_request_plain_progress():
+    """BR-CLI-016: BuildKit's TTY display redraws lines, ruining scrollback and any file."""
+    assert "--progress=plain" not in _plan(engine_name="docker").command(Path("/x"))
+    assert "--progress=plain" in _plan(engine_name="docker", plain_progress=True).command(
+        Path("/x")
+    )
+
+
+def test_podman_is_never_given_a_progress_flag():
+    """podman builds with buildah, which has no --progress and is already append-only."""
+    assert "--progress=plain" not in _plan(engine_name="podman", plain_progress=True).command(
+        Path("/x")
+    )
+
+
 def test_dry_run_render_shows_everything_without_building():
     """BR-BUILD-012: resolved apps.json, the exact command, tags, and intended provenance."""
     report = _plan().render()
@@ -272,6 +288,42 @@ def test_run_succeeds_quietly(monkeypatch):
     build.run(_plan())
 
     assert captured[0][0] == "podman"
+
+
+def test_engine_output_is_teed_to_terminal_and_transcript(monkeypatch, capsys, tmp_path):
+    """BR-CLI-016: the transcript is *in addition to* live output, never instead of it."""
+    engine_output = "#1 [base 1/3] FROM python:3.14.2\n#2 DONE 0.1s\n"
+
+    class _Process:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.StringIO(engine_output)
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(build.subprocess, "Popen", _Process)
+
+    path = tmp_path / "build.log"
+    with transcript.recording(path) as recorder:
+        build.run(_plan(), recorder)
+
+    assert capsys.readouterr().err == engine_output  # still live on the terminal
+    assert path.read_text(encoding="utf-8") == engine_output  # and saved
+
+
+def test_a_teed_build_still_fails_on_a_nonzero_exit(monkeypatch, tmp_path):
+    class _Process:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.StringIO("")
+
+        def wait(self):
+            return 7
+
+    monkeypatch.setattr(build.subprocess, "Popen", _Process)
+
+    path = tmp_path / "build.log"
+    with pytest.raises(BuildError, match="exit code 7"), transcript.recording(path) as recorder:
+        build.run(_plan(), recorder)
 
 
 # --- post-conditions and failure visibility (BR-CLI-011, BR-CLI-015) --------

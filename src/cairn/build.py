@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+import sys
 import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,6 +38,7 @@ from .config import BuildConfig, Manifest
 from .errors import BuildError, ProjectRootNotFoundError
 from .project import read_vendor_sources
 from .resolve import Resolution
+from .transcript import Transcript
 
 #: ventwig's committed anchor — the synced commit/tree of the vendored tree (`BR-VEND-003`).
 LOCK_NAME = ".ventwig.lock"
@@ -81,6 +83,7 @@ class BuildPlan:
     containerfile: Path
     engine_name: str
     no_cache: bool = False
+    plain_progress: bool = False
 
     @property
     def references(self) -> tuple[str, str]:
@@ -90,6 +93,8 @@ class BuildPlan:
     def command(self, apps_json: Path) -> list[str]:
         """Return the exact engine invocation, with *apps_json* mounted as a secret."""
         command = [self.engine_name, "build"]
+        if self.plain_progress and self.engine_name == engine.DOCKER:
+            command.append("--progress=plain")
         if self.no_cache:
             command.append("--no-cache")
         for key, value in self.build_args.items():
@@ -135,6 +140,7 @@ def plan(
     *,
     no_cache: bool = False,
     engine_name: str | None = None,
+    plain_progress: bool = False,
 ) -> BuildPlan:
     """Resolve everything and decide the whole build, without invoking anything.
 
@@ -166,6 +172,7 @@ def plan(
         containerfile=containerfile,
         engine_name=selected,
         no_cache=no_cache,
+        plain_progress=plain_progress,
     )
 
 
@@ -257,27 +264,56 @@ def vendor_pin(root: Path, source_name: str = vendor.FRAPPE_DOCKER_SOURCE) -> di
     return {"ref": ref, "commit": str(locked.get("synced_commit", ""))}
 
 
-def run(build_plan: BuildPlan) -> None:
+def run(build_plan: BuildPlan, sink: Transcript | None = None) -> None:
     """Execute *build_plan*, raising :class:`BuildError` if the engine fails (BR-BUILD-009).
 
-    The engine's own output is inherited rather than captured, so a long build reports
-    progress live. On failure the exact command is quoted back, since that is what makes
-    the failure reproducible by hand (`BR-CLI-015`).
+    Without a *sink* the engine's output is inherited rather than captured, so a long
+    build reports progress live at no cost. With one — attended use (`BR-CLI-016`) — the
+    output is teed: still live on the terminal, and simultaneously into the transcript.
+    On failure the exact command is quoted back, since that is what makes the failure
+    reproducible by hand (`BR-CLI-015`).
     """
     with appsjson.written(build_plan.apps_json) as apps_json:
         command = build_plan.command(apps_json)
         try:
-            result = subprocess.run(command, check=False)
+            returncode = (
+                _tee(command, sink) if sink else subprocess.run(command, check=False).returncode
+            )
         except FileNotFoundError as exc:
             raise BuildError(
                 f"`{build_plan.engine_name}` not found on PATH when starting the build."
             ) from exc
 
-    if result.returncode != 0:
+    if returncode != 0:
         raise BuildError(
-            f"{build_plan.engine_name} build failed with exit code {result.returncode}.\n"
+            f"{build_plan.engine_name} build failed with exit code {returncode}.\n"
             f"Command:\n  {shlex.join(command)}"
         )
+
+
+def _tee(command: list[str], sink: Transcript) -> int:
+    """Run *command*, streaming its output to stderr and *sink* at once.
+
+    stderr is merged into stdout so the transcript preserves interleaving exactly as the
+    terminal showed it — two separately-drained pipes would reorder the two streams
+    against each other. Lines are flushed as they arrive, so an interrupted build still
+    leaves a transcript that ends where the build stopped.
+    """
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        bufsize=1,
+    )
+    assert process.stdout is not None  # guaranteed by stdout=PIPE
+    with process.stdout as stream:
+        for line in stream:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            sink.write(line)
+    return process.wait()
 
 
 def assert_image_exists(build_plan: BuildPlan) -> str:

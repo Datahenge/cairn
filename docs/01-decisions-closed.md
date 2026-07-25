@@ -3,7 +3,7 @@
 Stable IDs (`ADR-00N`) persist even if a decision reopens. When an open decision
 closes, it moves here keeping its ID and gains a **Decided** date.
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-07-25_
 
 ---
 
@@ -380,6 +380,13 @@ outbound, transport-agnostic POST with a structured payload — so a tech team l
 failures without writing a journald-parsing cron, while cairn owns none of the delivery
 (SMTP/Slack/PagerDuty is the endpoint's job). *(BR-DEPLOY-019/020)*
 
+**Amended 2026-07-25 (`ADR-031`):** as written, this was absolute — no log files, ever —
+and that over-reached. Its rationale is *"something else already owns the record"*
+(journald on a target), which is true for the daemon and for CI, but false for a human at
+a keyboard. `ADR-031` splits the three contexts and permits a **build transcript** in
+attended CLI use only. The rule above stands unchanged for `reconcile` and for every
+unattended invocation.
+
 ---
 
 ### ADR-027 — Build engine is pluggable (`docker` | `podman`); deploy engine stays Docker
@@ -561,6 +568,47 @@ systemd service + timer (`BR-DEPLOY-001`).
 heavy *build-only* dependency appears, or a hard requirement emerges that target code be
 *physically incapable* of build/push logic (beyond credential-gating). Neither holds today.
 *(BR-DEPLOY-001)*
+
+---
+
+### ADR-031 — Three execution contexts; a build transcript only when nobody else owns the record
+**Decided:** 2026-07-25
+`ADR-026` forbade custom log files outright. Brian's first real `cairn build` showed the
+cost: minutes of engine output in a terminal emulator, unscrollable, and gone forever on
+a stray `clear` unless he had thought to `tee` it. The fix is not to weaken the rule but
+to notice that "target vs. not" was the wrong axis. There are **three** contexts, and the
+question that separates them is **does something else already own and retain the record?**
+
+| Context | Owner of the record | Behavior |
+| --- | --- | --- |
+| Target daemon (systemd unit/timer) | journald | stdout/stderr only |
+| Unattended CLI (CI — e.g. GitHub Actions) | the CI system's log viewer | stdout/stderr only |
+| **Attended CLI** (human at a terminal) | **nobody** | terminal **and** a transcript file |
+
+The CI row is the one that proves the principle. A GitHub Actions runner *does* have a
+writable filesystem, so "we cannot write" would be a false rationale. The real reason is
+that the runner is ephemeral — a file evaporates at job end unless explicitly uploaded —
+while Actions already provides search, permalinks and retention over the captured stream.
+A transcript there is redundant at best, and an uncollected file at worst.
+
+Consequences:
+- **One test resolves all three.** Neither journald nor a CI runner allocates a TTY, so a
+  single `isatty()` check on stderr lands correctly in every context. Explicit
+  `--transcript <path>` / `--no-transcript` remain, for when the proxy is wrong (a piped
+  attended run, `script`, or a CI job that genuinely wants an artifact to upload).
+- **Attended builds force `--progress=plain`.** BuildKit's default TTY display redraws
+  lines in place with ANSI escapes — which is *why* scrollback was useless, and would
+  make a teed file unreadable. Plain progress is append-only. Nothing changes in the
+  other two contexts: BuildKit already defaults to plain with no TTY.
+- **Transcripts are disposable diagnostics, not project artifacts.** They default under
+  `/tmp/cairn-<uid>/` — self-cleaning, and outside any source tree, consistent with
+  `BR-BUILD-011`'s refusal to write markers into cairn's own tree. A `last-build.log`
+  symlink and printing the path at **both** start and end solve discoverability without
+  requiring anyone to memorise a path; printing at the start also means the path survives
+  a Ctrl-C or a lost terminal. `transcript_dir` in build config (`BR-CFG-008`) buys
+  durability for anyone who wants history beyond a reboot.
+
+*(BR-CLI-016, BR-CLI-017, BR-CFG-008, BR-DEPLOY-019, amends ADR-026)*
 
 ---
 

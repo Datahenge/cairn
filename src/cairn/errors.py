@@ -58,6 +58,10 @@ class BuildEngineError(CairnError):
     or too old (`ADR-027`)."""
 
 
+class TranscriptError(CairnError):
+    """The build transcript directory or file cannot be used safely (BR-CLI-016)."""
+
+
 class VendorInputsMissingError(CairnError):
     """The vendored tree is missing a required build input — the custom
     ``Containerfile`` or a file it copies from the build context (BR-VEND-006)."""

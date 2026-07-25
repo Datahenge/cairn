@@ -1,10 +1,10 @@
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
 
 The `cairn` command surface. Mostly *cites* verbs defined in other areas; adds the
 create/move/retire guards, global flags, and output/exit conventions. Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-018`, `ADR-023`.
+`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-018`, `ADR-023`, `ADR-031`.
 
 ---
 
@@ -91,3 +91,39 @@ specified by `BR-CFG-012`. *(BR-CFG-008, BR-CFG-012, ADR-029)*
 
 **`BR-CLI-015`** *(help & errors)* — Every command has `--help`; errors are actionable and
 name the fix; convention over configuration. *(—)*
+
+**`BR-CLI-016`** *(build transcript — attended CLI only)* — cairn recognises **three
+execution contexts** (`ADR-031`), and writes a transcript in exactly one of them:
+
+| Context | Behavior |
+| --- | --- |
+| Target daemon (systemd) | stdout/stderr only (`BR-DEPLOY-019`) |
+| Unattended CLI (CI) | stdout/stderr only |
+| **Attended CLI** (human at a terminal) | terminal **and** transcript file |
+
+- Attendedness MUST be detected from **stderr being a TTY**, and MUST be overridable in
+  both directions by `--transcript <path>` and `--no-transcript`.
+- In attended mode cairn MUST write the full build output to a transcript **and** keep it
+  streaming live to the terminal — the transcript replaces neither the live output nor
+  the operator's ability to `tee`.
+- Attended builds MUST request **plain, append-only** engine progress, so both scrollback
+  and the transcript stay readable. Unattended contexts are unaffected.
+- The default location MUST be `/tmp/cairn-<uid>/`, created mode `0700`; cairn MUST refuse
+  to use it if it exists and is not owned by the invoking user, or is not a real directory.
+  Files are named `<timestamp>--<image_name>.log` — from the **manifest's** image name, not
+  the built tag, because the file must be open before ref resolution can compute a tag and
+  the resolution is itself part of what the transcript records. The primary tag is written
+  into the transcript instead. A `last-build.log` symlink points at the newest, and a
+  `last-failure.log` symlink is updated on failure so a later success cannot bury it.
+- The transcript path MUST be printed **when the build starts and when it ends**, so the
+  path survives an interrupted run or a lost terminal.
+- A failed build MUST retain its transcript.
+- The location MUST be overridable by `transcript_dir` in build config (`BR-CFG-008`).
+
+*(ADR-031, BR-CFG-008, BR-DEPLOY-019)*
+
+**`BR-CLI-017`** *(timing)* — Any command that can take more than a moment MUST report
+**start time, end time, and elapsed duration**, plus **per-phase** elapsed times, to the
+terminal and the transcript. Timing MUST NOT be recorded in provenance labels: duration is
+a property of a build *run* (cache state, machine, network), not of the image's inputs,
+and `BR-BUILD-013`'s guarantee is about inputs. *(ADR-031, BR-CLI-011)*

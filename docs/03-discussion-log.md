@@ -3,9 +3,146 @@
 Chronological summaries of the design conversation — the reasoning behind the
 decisions, so future readers (and future sessions) don't have to re-derive it.
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-07-25_
 
 ---
+
+## 2026-07-25 — First real build: transcripts, timing, and three execution contexts (ADR-031)
+
+Brian ran `cairn build` for the first time and reported three things: the output was a
+very long wall of text, awkward to scroll, and **lost unless he had thought to `tee`**;
+the build took an unknown-but-long time because nothing reported duration; and it was
+slow enough to make him want staged, reusable images (parked — see the next entry).
+
+**The transcript collided with an approved decision.** `BR-DEPLOY-019` and `ADR-026` said
+cairn MUST NOT write custom log files, full stop. First proposal was to narrow `ADR-026`
+to "the target side."
+
+**Brian rejected that as too simplistic**, and was right. Narrowing by *location* ignores
+a third case: an **unattended CLI** build in CI (GitHub Actions on a branch push), where
+the filesystem is ephemeral and a file is again the wrong answer. His three-way split —
+target daemon / attended CLI / unattended CLI — became `ADR-031`.
+
+Sharpening that fell out of it: the discriminator is not *where* the build runs, nor even
+whether a human is present, but **whether something else already owns and retains the
+record**. journald owns it on a target; the CI system's log viewer owns it in Actions
+(with search, permalinks and retention); on a workstation **nobody** does. Note the CI
+rationale is *not* "we cannot write there" — Actions has a writable filesystem — but that
+the runner is ephemeral and the stream is already captured better than we could.
+
+Two findings shaped the implementation:
+- **One `isatty()` on stderr resolves all three contexts.** Neither journald nor a CI
+  runner allocates a TTY. Three contexts, two behaviors, one test — with
+  `--transcript`/`--no-transcript` as the escape hatch when the proxy is wrong.
+- **The scrolling complaint was not about volume.** BuildKit's default `--progress=auto`
+  redraws lines in place with ANSI escapes, which is precisely why scrollback was useless
+  — and would have turned a teed file into control-character soup. Attended builds force
+  plain progress; the other two contexts already default to it with no TTY.
+
+**Location.** `~/.local/state/cairn/builds/` was proposed and rejected by Brian as
+"buried and my human brain will forget the path"; cwd rejected as wrong. He was drawn to
+`/tmp` for memorability and self-cleaning. Settled on `/tmp/cairn-<uid>/` (uid-scoped and
+`0700` against `/tmp` symlink games on shared hosts), a `last-build.log` symlink so the
+real filename never has to be typed, and — the actual fix for forgetting — **printing the
+path at both start and end**, so it survives a Ctrl-C or a lost terminal. `transcript_dir`
+in build config buys durability for anyone wanting history past a reboot. Transcripts are
+disposable diagnostics, not project artifacts, consistent with `BR-BUILD-011` keeping
+byproducts out of source trees.
+
+**Timing** (`BR-CLI-017`): start, end, total, and per-phase, to terminal and transcript —
+but deliberately **not** into provenance labels. Duration is a property of a *run* (cache
+state, machine, network), not of the image's inputs, and inputs are what `BR-BUILD-013`
+guarantees. Per-phase timing is also the prerequisite for the staging decision below.
+
+## 2026-07-25 — Multi-image staging: where cairn can and cannot make builds faster
+
+**Parked for now** — recorded so the analysis is not re-derived. Prompted by Brian's
+first real `cairn build`, which took long enough that he proposed splitting the build
+into a sequence of images, each content-addressed, so a later step could reuse an
+earlier step whose hash was still valid.
+
+The proposal is sound in principle. Reading the vendored
+`frappe_docker/images/custom/Containerfile` shows that **half of it already happens**
+and the other half is blocked upstream.
+
+### What the Containerfile actually does
+
+Three stages:
+
+| Stage | Work |
+| --- | --- |
+| `base` | `python:${PYTHON_VERSION}-slim-${DEBIAN_BASE}`, apt packages, nvm + Node, yarn/pnpm, wkhtmltopdf, optional Chromium, `pip install frappe-bench`, nginx fixups |
+| `builder` | build-time apt deps, then **one** `RUN` performing the whole app install |
+| `backend` | `COPY --from=builder` the finished bench, move assets, entrypoints |
+
+### Finding 1 — the expensive base is already cached
+
+`ARG CACHE_BUST` is declared in `builder`, *after* every instruction in `base`. A build
+arg only invalidates cache from its declaration point onward, so a changed app commit
+does **not** rebuild `base`. Apt, Node, wkhtmltopdf and Chromium are paid once per
+*base-knob* change, not once per build. This confirms in mechanism what the
+2026-07-21 `layered vs custom` entry asserted when `ADR-004` was taken.
+
+Consequence: cairn building its own separate "step 1 base image" would duplicate what
+BuildKit's layer cache already provides locally. It would only add value across
+machines — which is the registry-cache option below, not a staging redesign.
+
+### Finding 2 — apps cannot be split, and that is the whole problem
+
+The entire app install is a single atomic layer:
+
+```dockerfile
+RUN --mount=type=secret,id=apps_json,... \
+  : "${CACHE_BUST}" && \
+  bench init ${APP_INSTALL_ARGS} --frappe-branch=${FRAPPE_BRANCH} \
+    --frappe-path=${FRAPPE_PATH} ... /home/frappe/frappe-bench && ...
+```
+
+Frappe clone, *every* app clone, all pip installs, and the yarn/esbuild asset build
+happen inside that one `RUN`, guarded by one `CACHE_BUST`. There is **no seam** between
+Frappe and the apps, or between one app and the next.
+
+So the sequenced-image model cannot be built for apps without editing the Containerfile
+— forbidden by `BR-VEND-004`, ruled out by `ADR-001`. Obtaining it means reopening
+`ADR-021` (deliberate fork), whose recorded cost is transferring frappe_docker's
+continuous maintenance of a correct recipe onto us. Not justified without measurements.
+
+This is also why `BR-BUILD-007`'s all-inputs `CACHE_BUST` is not over-broad: upstream
+offers exactly one cache-bust knob covering exactly one layer. A per-app hash would have
+nowhere to attach.
+
+### Options available without a fork
+
+1. **Registry-backed cache** (`--cache-to` / `--cache-from`). No help for a warm local
+   rebuild; large help for a **cold** machine — CI, a new workstation, a pruned cache.
+   Mature in buildx; weaker in podman, which `ADR-027` requires us to keep supporting.
+2. **Short-circuit on an unchanged input hash.** `BR-BUILD-008` makes the primary tag
+   `<legible>-<inputhash>` immutable and unique over *all* resolved inputs. If that exact
+   tag already exists locally or in the registry, the build is provably redundant: cairn
+   can report it and exit 0 in about a second instead of handing a no-op to the engine.
+   Cheap, no fork, and it makes the common "did I already build this?" case instant.
+   This is Brian's reuse instinct applied where cairn actually holds authority.
+3. **`images/layered/Containerfile`** — also vendored; identical to `custom` except it
+   starts `FROM frappe/build:${FRAPPE_BRANCH}` and `frappe/base:${FRAPPE_BRANCH}`,
+   skipping the base build. **Rejected**, and not merely on speed: `ADR-004` already
+   turned it down because those published tags are *mutable*, which defeats
+   reproducibility. It also does nothing for the `bench init` layer — the actual cost —
+   and would render `PYTHON_VERSION`, `NODE_VERSION`, `INSTALL_CHROMIUM` and the
+   wkhtmltopdf knobs inert.
+4. **`--target base` prebuild.** Pointless locally; BuildKit already caches that stage.
+
+### Recommendation
+
+**Instrument first.** We do not know how the elapsed time splits between apt/Node/
+Chromium, the Frappe clone, pip installs, and the asset build. If assets dominate,
+no restructuring helps — nothing caches a yarn build. If the base dominates, it is
+already solved. Per-phase timing (agreed the same day, terminal + transcript) is the
+prerequisite for this decision, not an unrelated nicety.
+
+Once measured, the durable facts about frappe_docker's cache seams belong in
+`04-lessons-learned.md` marked *measured*, and the fork question — if it is still live —
+belongs in `02-decisions-open.md` against `ADR-021`. Option 2 is worth doing regardless
+of the outcome and needs a `BR-BUILD` requirement of its own.
 
 ## 2026-07-24 — Requirements clarity audit
 

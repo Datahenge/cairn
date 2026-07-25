@@ -42,7 +42,7 @@ USER_CONFIG_PATH = Path("~/.config/cairn/config.toml")
 KNOWN_BUILD_KNOBS = ("python_version", "node_version", "install_chromium")
 
 #: Recognized build-config keys. Builder/cache settings land with the BUILD module.
-BUILD_CONFIG_KEYS = ("engine", "registry", "namespace", "image_base")
+BUILD_CONFIG_KEYS = ("engine", "registry", "namespace", "image_base", "transcript_dir")
 
 #: Image names become OCI repository path components, which are lowercase-only.
 _IMAGE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
@@ -94,6 +94,7 @@ class BuildConfig:
     registry: str | None = None
     namespace: str | None = None
     image_base: str | None = None
+    transcript_dir: str | None = None
     sources: tuple[Path, ...] = ()
 
     def resolve_image_base(self, image_name: str) -> str:
@@ -174,6 +175,7 @@ def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
         registry=merged.get("registry"),
         namespace=merged.get("namespace"),
         image_base=merged.get("image_base"),
+        transcript_dir=merged.get("transcript_dir"),
         sources=tuple(sources),
     )
 

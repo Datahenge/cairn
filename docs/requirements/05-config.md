@@ -1,6 +1,6 @@
 # BR-CFG — Configuration Requirements
 
-_Status: **approved** 2026-07-23 (living) · revised 2026-07-24 · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-23 (living) · revised 2026-07-25 · Last updated: 2026-07-25_
 
 Configuration, in two orthogonal sub-domains: **target** (runtime, per-environment, on the
 sites volume) and **build** (build-time only, local to the build machine). Conventions: see
@@ -40,10 +40,11 @@ and Docker secrets are `ADR-017`/`DEPLOY`. *(ADR-017)*
 ## B. Build configuration (local to the build machine)
 
 **`BR-CFG-008`** — Build configuration (registry/namespace target, **build engine**
-(`ADR-027`), builder/cache settings, local image base) MUST live in a local file **separate from the portable
+(`ADR-027`), builder/cache settings, local image base, **`transcript_dir`** (`BR-CLI-016`))
+MUST live in a local file **separate from the portable
 `cairn.toml` manifest** (e.g. `~/.config/cairn/config.toml`, with an optional
 `cairn.local.toml` override) and MUST NOT be committed with a shareable deployment. The
-manifest MUST remain free of local/build/registry settings. *(ADR-015, ADR-009)*
+manifest MUST remain free of local/build/registry settings. *(ADR-015, ADR-009, ADR-031)*
 
 **`BR-CFG-009`** — cairn MUST be **registry-agnostic**: the image registry + namespace is a
 build-config value (any OCI registry), never hardcoded to Docker Hub. *(ADR-009)*

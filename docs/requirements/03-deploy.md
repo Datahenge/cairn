@@ -1,6 +1,6 @@
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
@@ -108,7 +108,9 @@ health failure/timeout), cairn MUST **halt and report**; it MUST NOT auto-rollba
 ## Observability
 
 **`BR-DEPLOY-019`** — cairn MUST log **only to stdout/stderr** and MUST NOT write custom log
-files. *(ADR-026)*
+files. This is **absolute** for `reconcile` and for every unattended invocation, where
+journald or the CI system already owns and retains the record. The sole exception is the
+attended-CLI build transcript (`BR-CLI-016`), where nothing else does. *(ADR-026, ADR-031)*
 
 **`BR-DEPLOY-020`** *(optional failure webhook)* — On any failure, cairn MAY POST to an
 **operator-configured** webhook — a best-effort, outbound POST with a structured payload

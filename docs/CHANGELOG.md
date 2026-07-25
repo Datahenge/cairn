@@ -9,6 +9,43 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25
+
+- **`ADR-031` closed — three execution contexts; build transcript in attended CLI only.**
+  `ADR-026` forbade custom log files outright, which `BR-DEPLOY-019` restated as an
+  absolute. Brian's first real build exposed the cost: minutes of unscrollable engine
+  output, lost to any stray `clear`. The initial proposal — "narrow it to the target
+  side" — was rejected by Brian as too simplistic, since it ignores unattended **CI**
+  builds where the filesystem is again the wrong place. The axis is not *where* but
+  **who already owns and retains the record**: journald (daemon), the CI log viewer
+  (unattended), nobody (attended). `ADR-026` amended, `BR-DEPLOY-019` scoped to name its
+  one exception, new `BR-CLI-016` (transcript) and `BR-CLI-017` (timing), and
+  `transcript_dir` added to `BR-CFG-008`.
+- **Two findings folded into that decision.** Attended builds force plain engine progress
+  — BuildKit's default TTY display redraws lines with ANSI escapes, which is what
+  destroyed scrollback and would have made a teed file unreadable. And one `isatty()`
+  check on stderr resolves all three contexts correctly, since neither journald nor a CI
+  runner allocates a TTY: three contexts, two behaviors, one test.
+- **`BR-CLI-016` corrected during implementation — transcript filename.** It first
+  specified `<timestamp>--<image>-<primary-tag>.log`, which is unbuildable: the file has
+  to be open *before* ref resolution, and resolution is what computes the tag. Named from
+  the manifest's `image_name` instead, with the tag written inside the transcript. The
+  `last-build.log` symlink means the filename is rarely typed anyway.
+- **Timing is terminal + transcript only, never a provenance label** (`BR-CLI-017`).
+  Duration is a property of a build *run* — cache state, machine, network — not of the
+  image's inputs, which is what `BR-BUILD-013` makes guarantees about.
+- **Multi-image staging analysed and parked** (`03-discussion-log.md`). After the first
+  real `cairn build`, Brian proposed splitting the build into a sequence of
+  content-addressed images so later steps could reuse earlier ones. Reading the vendored
+  `images/custom/Containerfile` established two things: the expensive `base` stage is
+  *already* cached across builds (`CACHE_BUST` is declared in `builder`, after every
+  `base` instruction), and the app install is a **single atomic `RUN`** — Frappe clone,
+  every app clone, pip installs and the asset build in one layer with one cache-bust
+  knob. There is therefore no seam to split apps on without editing the vendored tree
+  (`BR-VEND-004`, `ADR-001`) or forking (`ADR-021`). Four fork-free options recorded;
+  the input-hash short-circuit is worth doing regardless. Decision deferred pending
+  per-phase build timings — no requirements changed yet.
+
 ## 2026-07-24
 
 - **The identifier rule made enforceable, after being violated twice.** Brian asked

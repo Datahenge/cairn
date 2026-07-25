@@ -12,7 +12,18 @@ from typing import Annotated
 
 import typer
 
-from . import __version__, build, config, doctor, engine, push, resolve, vendor
+from . import (
+    __version__,
+    build,
+    config,
+    doctor,
+    engine,
+    push,
+    resolve,
+    timing,
+    transcript,
+    vendor,
+)
 from .errors import CairnError
 from .project import find_project_root
 
@@ -56,9 +67,21 @@ def _step(message: str) -> None:
 
     Long operations must not look like nothing is happening (BR-CLI-011: nothing
     consequential is silent), and stderr is the right channel because it does not
-    pollute output a caller may be parsing (BR-CLI-013).
+    pollute output a caller may be parsing (BR-CLI-013). Progress is mirrored into the
+    active transcript, if any, so the file records the whole run and not merely the
+    engine's share of it (BR-CLI-016).
     """
     typer.secho(message, fg=typer.colors.BRIGHT_BLACK, err=True)
+    transcript.record(message)
+
+
+def _done(message: str) -> None:
+    """Report a completed action on stdout — the command's actual result — and record it.
+
+    stdout rather than stderr, per `_step`: progress is commentary, this is the outcome.
+    """
+    typer.secho(message, fg=typer.colors.GREEN)
+    transcript.record(message)
 
 
 def _run_in_project(action: Callable[[Path], int]) -> None:
@@ -140,22 +163,90 @@ def build_command(
     push_after: Annotated[
         bool, typer.Option("--push", help="Also upload the built image to the registry.")
     ] = False,
+    transcript_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--transcript",
+            help="Write the build output to this file, in addition to the terminal.",
+        ),
+    ] = None,
+    no_transcript: Annotated[
+        bool,
+        typer.Option("--no-transcript", help="Do not save the build output to a file."),
+    ] = False,
 ) -> None:
-    """Build the image declared by cairn.toml (BR-CLI-002).
+    """Build the image declared by cairn.toml (BR-CLI-002, BR-CLI-016, BR-CLI-017).
 
     Default is **build-only**; `--push` also uploads, and is checked for a configured
     registry up front so a long build cannot succeed only to fail at the last step.
+
+    At a terminal the whole run is also saved to a transcript, because nothing else is
+    keeping it (`ADR-031`); under CI or systemd it is not, because something already is.
     """
+    if transcript_path is not None and no_transcript:
+        raise typer.BadParameter("--transcript and --no-transcript contradict each other.")
 
     def _action(root: Path) -> int:
+        watch = timing.Stopwatch()
         found = config.find_manifest(explicit=manifest_path)
-        _step(f"Manifest {found}")
         build_config = config.load_build_config(found)
+        manifest = config.load_manifest(found)
+
+        keep = not dry_run and transcript.wanted(explicit=transcript_path, disabled=no_transcript)
+        if not keep:
+            return _build(root, found, manifest, build_config, watch)
+
+        destination = transcript_path or transcript.path_for(
+            transcript.resolve_dir(build_config.transcript_dir), manifest.image_name
+        )
+        with transcript.recording(destination) as recorder:
+            _step(f"Transcript {destination}")
+            try:
+                return _build(root, found, manifest, build_config, watch, sink=recorder)
+            finally:
+                # Said a second time on the way out, success or failure: the first
+                # mention scrolled past minutes of engine output long ago, and this is
+                # where someone goes looking (BR-CLI-016).
+                _step(f"Transcript {destination}")
+
+    def _build(
+        root: Path,
+        found: Path,
+        manifest: config.Manifest,
+        build_config: config.BuildConfig,
+        watch: timing.Stopwatch,
+        *,
+        sink: transcript.Transcript | None = None,
+    ) -> int:
+        try:
+            return _steps(root, found, manifest, build_config, watch, sink)
+        finally:
+            # In a finally, because "it failed after nine minutes" is at least as worth
+            # knowing as how long a success took (BR-CLI-017).
+            if not dry_run:
+                _report_timing(watch)
+
+    def _steps(
+        root: Path,
+        found: Path,
+        manifest: config.Manifest,
+        build_config: config.BuildConfig,
+        watch: timing.Stopwatch,
+        sink: transcript.Transcript | None,
+    ) -> int:
+        _step(f"Manifest {found}")
         if push_after:
             push.assert_registry_configured(build_config)
 
         _step("Checking vendored tree and resolving refs (contacts each app's remote)…")
-        plan = build.plan(root, config.load_manifest(found), build_config, no_cache=no_cache)
+        with watch.phase("checks + ref resolution"):
+            plan = build.plan(
+                root,
+                manifest,
+                build_config,
+                no_cache=no_cache,
+                plain_progress=sink is not None,
+            )
         for ref in plan.resolution.all_refs:
             _step(f"  {ref.name:<12} {ref.ref:<14} {ref.kind.value:<7} {ref.short_commit}")
         _warn_moving_refs(plan)
@@ -170,20 +261,32 @@ def build_command(
             f"{len(plan.labels)} labels, apps.json as a build secret "
             f"— `--dry-run` prints the full command. This takes several minutes."
         )
-        build.run(plan)
+        with watch.phase("image build"):
+            build.run(plan, sink)
 
-        digest = build.assert_image_exists(plan)
+        with watch.phase("verify image"):
+            digest = build.assert_image_exists(plan)
         for reference in plan.references:
-            typer.secho(f"Built {reference}", fg=typer.colors.GREEN)
+            _done(f"Built {reference}")
         _step(f"Image {digest}")
 
-        for reference in plan.references if push_after else ():
-            _step(f"Pushing {reference}…")
-            push.push(reference, plan.engine_name)
-            typer.secho(f"Pushed {reference}", fg=typer.colors.GREEN)
+        if push_after:
+            with watch.phase("push"):
+                for reference in plan.references:
+                    _step(f"Pushing {reference}…")
+                    push.push(reference, plan.engine_name)
+                    _done(f"Pushed {reference}")
+
         return 0
 
     _run_in_project(_action)
+
+
+def _report_timing(watch: timing.Stopwatch) -> None:
+    """Print the per-phase and overall elapsed times (BR-CLI-017)."""
+    _step("Timing")
+    for line in watch.summary():
+        _step(line)
 
 
 def _warn_moving_refs(plan: build.BuildPlan) -> None:
