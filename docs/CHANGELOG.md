@@ -9,6 +9,33 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (evening)
+
+- **`BR-BUILD-015` added — name the build-cache stage.** Brian asked whether cairn should
+  label the build cache so an admin running `podman image list` doesn't delete it. The
+  mechanism had to change: `podman image list` prints repository, tag, id, age and size —
+  **labels are never displayed**, only filterable, so a label helps nobody scanning a
+  listing. A **tag** is what shows, and a tag is a pointer: free.
+- **Measured before committing** (lessons §12): a `--target builder` pass against a warm
+  cache took **0.762s**, every step a cache hit, `COMMIT` landing on the *existing* image
+  id with `CREATED` unchanged. No new image, no new disk. It also proved from the engine's
+  own cache resolution that the 4.63 GB untagged image **is** the `builder` stage.
+- **Two constraints the measurement produced.** The pass is only cheap against a warm
+  cache, so it runs solely after a build that *actually ran* — never after a
+  `BR-BUILD-014` short-circuit, where the stage may have been pruned since and the same
+  command would be a full `bench init`. And podman prefixes unqualified names with
+  `localhost/`.
+- **`ADR-027` amended — the engines are equivalent in *output*, not in *residue*.** Docker
+  keeps build cache in a separate store rather than as images, so `--target` there would
+  **materialize** several GB that otherwise never exist. `BR-BUILD-015` is podman-only as a
+  correctness constraint, not a preference. General rule recorded: behaviour touching an
+  engine's local storage is decided per engine; behaviour touching the image is not.
+- **A claim of mine withdrawn before it reached code.** I had argued tagging would also let
+  `cairn prune` reclaim *stale* cache stages. It does not: a moving `:builder` tag hands
+  itself to each new stage, so superseded ones revert to untagged. Tagging per input hash
+  would identify them but pin every 4.63 GB stage forever — worse. The design keeps one
+  moving tag: the live cache is protected, stale stages correctly become collectable.
+
 ## 2026-07-25 (later still)
 
 - **`BR-CLI-018` strengthened during implementation — never remove a tagged image.** The

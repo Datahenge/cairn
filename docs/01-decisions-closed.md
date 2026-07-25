@@ -423,6 +423,27 @@ format where Docker historically preferred v2s2 (`--format docker` is the fallba
 provenance **labels** must read back identically via `docker inspect .Config.Labels`
 regardless of which engine stamped them — load-bearing for `retag`/rollback. Also assumes
 build-host architecture matches the target (both amd64 today).
+
+**Amended 2026-07-25 — the engines are equivalent in *output*, not in *residue*.** This
+decision rests on the artifact crossing between machines being an OCI image, which remains
+true. But the two engines leave different things behind on the build machine, and one
+behaviour cannot be written for both:
+
+| | podman / buildah | docker / BuildKit |
+| --- | --- | --- |
+| Build cache lives as | **untagged images** in local storage | a separate cache store |
+| Multi-stage `builder` stage | exists as an image (measured: 4.63 GB) | does not exist as an image |
+| Naming it with `--target` | free — tags what is already there | **materializes** several GB |
+
+So `BR-BUILD-015` (naming the cache stage so an administrator does not delete it) is
+**podman-only** — not a preference but a correctness constraint: doing it under Docker would
+create the very disk consumption it exists to protect. `BR-CLI-018`'s label-scoped prune is
+unaffected and remains engine-neutral, because it works from cairn's own labels rather than
+from anything the engine leaves behind.
+
+The general rule this establishes: **behaviour that touches an engine's local storage must
+be decided per engine; behaviour that touches the image must not.** *(BR-BUILD-015,
+lessons §12)*
 *(BR-CLI-007, BR-BUILD-006/011/012, BR-CFG-008/010; amends `ADR-003`)*
 
 ---

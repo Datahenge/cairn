@@ -396,3 +396,80 @@ def test_missing_engine_binary_at_build_time_is_actionable(monkeypatch):
 
     with pytest.raises(BuildError, match="not found on PATH"):
         build.run(_plan())
+
+
+# --- naming the build-cache stage (BR-BUILD-015, ADR-027 amended) ------------
+
+
+def test_cache_stage_is_named_under_a_self_explaining_repository():
+    assert _plan().cache_stage_reference == "cairn-cache/erpnext-btu-v16:builder"
+
+
+def test_cache_stage_pass_targets_the_builder_stage():
+    command = _plan().cache_stage_command(Path("/tmp/apps.json"))
+
+    assert command[:4] == ["podman", "build", "--target", "builder"]
+    assert "--tag" in command
+    assert "cairn-cache/erpnext-btu-v16:builder" in command
+
+
+def test_cache_stage_pass_never_ignores_the_cache():
+    """It exists to name what the build just produced; --no-cache would rebuild it."""
+    command = _plan(no_cache=True).cache_stage_command(Path("/x"))
+
+    assert "--no-cache" not in command
+
+
+def test_cache_stage_pass_carries_no_labels():
+    """Labels belong to a finished image, and a stage is not one."""
+    command = _plan().cache_stage_command(Path("/x"))
+
+    assert "--label" not in command
+
+
+def test_cache_stage_pass_keeps_the_build_args_that_key_the_cache():
+    command = _plan().cache_stage_command(Path("/x"))
+
+    assert "PYTHON_VERSION=3.13.1" in command
+    assert "CACHE_BUST=deadbeef" in command
+
+
+def test_docker_is_never_asked_to_materialize_a_stage(monkeypatch):
+    """BuildKit has no stage image; --target would create GB that otherwise never exist."""
+    called: list[list[str]] = []
+    monkeypatch.setattr(build.subprocess, "run", lambda c, **k: called.append(c))
+
+    assert build.tag_cache_stage(_plan(engine_name="docker")) is None
+    assert called == []
+
+
+def test_tagging_reports_the_reference_on_success(monkeypatch):
+    monkeypatch.setattr(
+        build.subprocess,
+        "run",
+        lambda c, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+    )
+
+    assert build.tag_cache_stage(_plan()) == "cairn-cache/erpnext-btu-v16:builder"
+
+
+def test_a_failed_tagging_pass_does_not_fail_the_build(monkeypatch):
+    """The image is already built and verified; a courtesy name is not worth failing over."""
+    monkeypatch.setattr(
+        build.subprocess,
+        "run",
+        lambda c, **k: type("R", (), {"returncode": 1, "stdout": "", "stderr": "boom"})(),
+    )
+
+    assert build.tag_cache_stage(_plan()) is None
+
+
+def test_a_hung_tagging_pass_is_abandoned_not_awaited(monkeypatch):
+    """A cold cache here means a full bench init — bound it rather than wear it."""
+
+    def _timeout(command, **kwargs):
+        raise build.subprocess.TimeoutExpired(command, build.CACHE_TAG_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr(build.subprocess, "run", _timeout)
+
+    assert build.tag_cache_stage(_plan()) is None

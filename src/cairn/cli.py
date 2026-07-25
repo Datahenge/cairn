@@ -198,6 +198,13 @@ def build_command(
             help="Build again even if these exact inputs were already built.",
         ),
     ] = False,
+    no_cache_tag: Annotated[
+        bool,
+        typer.Option(
+            "--no-cache-tag",
+            help="Leave the reusable build layers unnamed in the engine's image list.",
+        ),
+    ] = False,
 ) -> None:
     """Build the image declared by cairn.toml (BR-CLI-002, BR-CLI-016, BR-CLI-017).
 
@@ -304,6 +311,9 @@ def build_command(
             _done(f"Built {reference}")
         _note(f"Image {digest}")
 
+        if not no_cache_tag:
+            _tag_cache_stage(plan, watch)
+
         if push_after:
             with watch.phase("push"):
                 for reference in plan.references:
@@ -398,6 +408,23 @@ def prune_command(
         return 1 if failures else 0
 
     _run_in_project(_action)
+
+
+def _tag_cache_stage(plan: build.BuildPlan, watch: timing.Stopwatch) -> None:
+    """Name the reusable build layers so they are not mistaken for garbage (BR-BUILD-015).
+
+    Reported rather than raised: the image is already built and verified, so failing to
+    attach a courtesy name is not a reason to fail the command — but it is a reason to say
+    so, since the protection the operator expects is then absent.
+    """
+    with watch.phase("name build cache"):
+        named = build.tag_cache_stage(plan)
+
+    if named:
+        _note(f"Cache {named}")
+        _step("  Named so it is not mistaken for a stale image; deleting it costs a slow rebuild.")
+    elif plan.engine_name == engine.PODMAN:
+        _step("  Could not name the reusable build layers; they stay unnamed in image lists.")
 
 
 def _report_timing(watch: timing.Stopwatch) -> None:

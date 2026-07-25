@@ -63,6 +63,16 @@ FRAPPE_BRANCH_ARG = "FRAPPE_BRANCH"
 LABEL_NAMESPACE = "com.datahenge.cairn"
 OCI_NAMESPACE = "org.opencontainers.image"
 
+#: The vendored Containerfile's expensive intermediate stage (`BR-BUILD-015`).
+CACHE_STAGE_TARGET = "builder"
+
+#: Repository the cache stage is named under, so a listing explains itself.
+CACHE_STAGE_REPOSITORY = "cairn-cache"
+
+#: Ceiling on the tagging pass. Against a warm cache it takes under a second; this only
+#: bounds the pathological case where the stage has somehow gone and it starts rebuilding.
+CACHE_TAG_TIMEOUT_SECONDS = 300
+
 
 @dataclass(frozen=True)
 class BuildPlan:
@@ -105,6 +115,33 @@ class BuildPlan:
         command += ["--secret", f"id={appsjson.SECRET_ID},src={apps_json}"]
         for reference in self.references:
             command += ["--tag", reference]
+        command += ["--file", str(self.containerfile), str(self.context)]
+        return command
+
+    @property
+    def local_name(self) -> str:
+        """The manifest's image name, without any registry or namespace."""
+        return self.image_base.rpartition("/")[2]
+
+    @property
+    def cache_stage_reference(self) -> str:
+        """The name given to the build-cache stage (`BR-BUILD-015`)."""
+        return f"{CACHE_STAGE_REPOSITORY}/{self.local_name}:{CACHE_STAGE_TARGET}"
+
+    def cache_stage_command(self, apps_json: Path) -> list[str]:
+        """Return the pass that *names* the cache stage rather than building anything.
+
+        Deliberately omits two things the real build has. **Labels**, because they belong
+        to the finished image and a stage is not one. And **``--no-cache``**, even when the
+        build itself used it: this pass exists to name what that build just produced, so
+        ignoring the cache would rebuild the very layer it is trying to point at.
+        """
+        command = [self.engine_name, "build", "--target", CACHE_STAGE_TARGET]
+        for key, value in self.build_args.items():
+            command += ["--build-arg", f"{key}={value}"]
+        command += ["--build-arg", f"{CACHE_BUST_ARG}={self.cache_bust}"]
+        command += ["--secret", f"id={appsjson.SECRET_ID},src={apps_json}"]
+        command += ["--tag", self.cache_stage_reference]
         command += ["--file", str(self.containerfile), str(self.context)]
         return command
 
@@ -314,6 +351,41 @@ def _tee(command: list[str], sink: Transcript) -> int:
             sys.stderr.flush()
             sink.write(line)
     return process.wait()
+
+
+def tag_cache_stage(build_plan: BuildPlan) -> str | None:
+    """Name the build-cache stage, returning its reference, or None (BR-BUILD-015).
+
+    **Call only immediately after a build that actually ran.** A tag is a pointer, so this
+    is free — measured at 0.762s, every step a cache hit, no new image — but *only* against
+    a warm cache. Run it when the stage has since been pruned and the identical command is a
+    full ``bench init`` instead. The moment after a real build is the one moment the stage
+    is guaranteed to exist.
+
+    Podman only: docker keeps its cache in a separate store, so there is no stage to name
+    and asking for one would make BuildKit materialize several gigabytes that otherwise
+    never exist (`ADR-027`, amended).
+
+    Best-effort by design. The image is already built and verified; failing to attach a
+    courtesy name must not turn a successful build into a failed command.
+    """
+    if build_plan.engine_name != engine.PODMAN:
+        return None
+
+    with appsjson.written(build_plan.apps_json) as apps_json:
+        command = build_plan.cache_stage_command(apps_json)
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=CACHE_TAG_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+
+    return build_plan.cache_stage_reference if result.returncode == 0 else None
 
 
 def existing_image(build_plan: BuildPlan) -> str | None:

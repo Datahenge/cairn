@@ -95,6 +95,35 @@ where an image is believed corrupt. *(ADR-032, BR-CLI-005, BR-CLI-018)*
 MUST record the effective values (including Containerfile defaults where unset) in
 provenance. *(ADR-015)*
 
+**`BR-BUILD-015`** *(name the build-cache stage)* — On **podman**, after a build that
+actually ran, cairn SHOULD tag the vendored Containerfile's `builder` stage
+`cairn-cache/<image_name>:builder` (podman stores this as `localhost/…`). `--no-cache-tag`
+disables it.
+
+An untagged image invites deletion. The `builder` stage is untagged, **larger** than the
+final image (measured: 4.63 GB against 2.75 GB), and is what lets a rebuild skip
+`bench init` — so an administrator running `podman image list`, seeing `<none>`, and
+reaching for `prune` converts every later build into a cold one, with no error to explain
+it. A tag is a pointer: naming it changes no digest, creates no image, and costs no disk
+(measured at 0.762s, every step a cache hit).
+
+Constraints, each load-bearing:
+- **podman only.** Docker keeps build cache in a separate store rather than as images, so
+  there is no stage to name and `--target` would make BuildKit **materialize** several GB
+  that otherwise never exist. See the `ADR-027` amendment.
+- **Only after a build that ran** — never after a `BR-BUILD-014` short-circuit, and never as
+  a standalone verb. The pass is cheap *only* against a warm cache; if the stage has since
+  been pruned, the identical command is a full `bench init`. Confining it to the moment
+  after a real build is what guarantees the stage exists.
+- **The tagging pass MUST NOT pass `--no-cache`**, even when the build did. It exists to
+  name what that build just produced.
+- **Best-effort.** A failure MUST NOT fail the build; the image is already built and
+  verified. It is reported, not raised.
+- The tag **moves** with each build, like `latest`. Superseded stages revert to untagged and
+  are then genuinely collectable — which is correct, and is why cairn does not tag per input
+  hash: that would identify them but pin every one of them forever. *(lessons §12, ADR-027,
+  ADR-032, BR-CLI-018)*
+
 ## Provenance
 
 **`BR-BUILD-011`** — On a successful build, cairn MUST stamp provenance onto the image as OCI
