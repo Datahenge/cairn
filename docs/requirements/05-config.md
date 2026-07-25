@@ -39,8 +39,8 @@ and Docker secrets are `ADR-017`/`DEPLOY`. *(ADR-017)*
 
 ## B. Build configuration (local to the build machine)
 
-**`BR-CFG-008`** — Build configuration (registry/namespace target, buildx builder, cache
-settings, local image base) MUST live in a local file **separate from the portable
+**`BR-CFG-008`** — Build configuration (registry/namespace target, **build engine**
+(`ADR-027`), builder/cache settings, local image base) MUST live in a local file **separate from the portable
 `cairn.toml` manifest** (e.g. `~/.config/cairn/config.toml`, with an optional
 `cairn.local.toml` override) and MUST NOT be committed with a shareable deployment. The
 manifest MUST remain free of local/build/registry settings. *(ADR-015, ADR-009)*
@@ -49,10 +49,10 @@ manifest MUST remain free of local/build/registry settings. *(ADR-015, ADR-009)*
 build-config value (any OCI registry), never hardcoded to Docker Hub. *(ADR-009)*
 
 **`BR-CFG-010`** — cairn MUST NOT store, persist, or write registry credentials;
-authentication is Docker's responsibility (`docker login`). cairn MAY read a registry token
-from an environment variable or a local env file at invocation to perform a **transient**
-`docker login`, but MUST NOT persist it. Build config carries only the non-secret registry
-namespace. *(ADR-017)*
+authentication is the **container engine's** responsibility (`docker login` /
+`podman login`, `ADR-027`). cairn MAY read a registry token from an environment variable or
+a local env file at invocation to perform a **transient** login, but MUST NOT persist it.
+Build config carries only the non-secret registry namespace. *(ADR-017, ADR-027)*
 
 **`BR-CFG-011`** — With a registry configured, cairn pushes images to
 `<registry>/<namespace>/<image_name>:<tag>`, and the provenance labels (`BR-BUILD-011`) ride

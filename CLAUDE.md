@@ -44,6 +44,7 @@ local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` com
 | `docs/requirements/` | Numbered requirement docs + ToC (`00-overview.md`, then per-area) | `BR-<AREA>-NNN` |
 | `docs/01-decisions-closed.md`, `docs/02-decisions-open.md` | Decision register (ADRs) | `ADR-NNN` |
 | `docs/03-discussion-log.md` | Narrative design record | — |
+| `docs/04-lessons-learned.md` | Durable technical findings about the tools we build on; each marked *measured* or *reasoned* | — |
 | `docs/CHANGELOG.md` | Living-documentation revisions | — |
 | `docs/plans/` | Implementation plans, downstream of requirements | — |
 | `frappe_docker/` | Vendored upstream, **read-only** (ventwig, `ADR-007`) — never edit | — |

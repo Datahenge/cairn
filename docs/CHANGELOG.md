@@ -11,6 +11,55 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`ADR-027` — build engine is pluggable (`docker` | `podman`); deploy engine stays
+  Docker.** Adopted after the measured buildah result. The unlock was recognizing that the
+  build machine and the target are **different machines** whose only interchange is an OCI
+  image in a registry, so `DEPLOY` needs no change at all — `BR-DEPLOY-005` already reads
+  provenance over the (engine-independent) registry manifest API. Engine is auto-detected
+  (prefer `docker`, else `podman`) and overridable via `engine =` in **local build config**,
+  never in the portable `cairn.toml`. **Revised:** `BR-CLI-007` (role-aware preflight),
+  `BR-BUILD-006` ("BuildKit secret" → "build secret"), `BR-BUILD-011` (engine's `--label`),
+  `BR-BUILD-012` (exact build command), `BR-CFG-008` (engine is build config),
+  `BR-CFG-010` (`docker login` / `podman login`); **amended** `ADR-003`. Engine floors:
+  Docker v23+, podman v4+ (measured on 5.4.2). Carried risks: OCI-vs-v2s2 manifest format
+  on push, and label readback across engines — both to confirm against a real registry.
+  Rationale, evidence, and risks in `ADR-027`; motivation was avoiding a second engine
+  managing nftables chains on a build-only laptop.
+- **`ADR-028` — `cairn doctor` is role-aware, detected from context.** One package serves
+  two roles (`ADR-018`), so a fixed preflight reports irrelevant failures. Build/control:
+  build engine, vendored-tree integrity, config. Target: Docker + Compose, systemd,
+  registry reachability. No flag in the common case (`BR-CLI-014`). The **target-role
+  branch lands with `DEPLOY`**; doctor implements the build role today.
+- **New document type — `docs/04-lessons-learned.md`.** Durable technical findings about
+  the tools cairn builds on, kept separate from `BR` (what must be true), `ADR` (what we
+  chose), and the discussion log (how we got there); each finding marked **measured** or
+  **reasoned** and citing the IDs it illuminates. Added a row for it to `/CLAUDE.md`'s
+  artifacts table. Seeded with seven findings from the Docker/podman investigation, the
+  most consequential being **why `BR-BUILD-007` (`CACHE_BUST`) is a correctness
+  requirement rather than an optimization**: a BuildKit secret's contents are excluded
+  from the layer cache key by design, so editing `apps.json` alone will *not* invalidate
+  the `bench init` layer. Also records that `Containerfile:144` strips app `.git`
+  metadata — foreclosing image inspection as a provenance source and making
+  `BR-BUILD-005`/`BR-BUILD-011` necessary rather than tidy.
+- **Measured: buildah 1.39.3 / podman 5.4.2 satisfies the build side** (`BR-BUILD-006`,
+  `BR-BUILD-007`) — secret mount honoured with `uid=`/`gid=`, no leak into layers or
+  history, `CACHE_BUST` keying the cache in both directions. Retracts an earlier
+  overstated claim that buildx has no podman equivalent. **No requirement changes**: the
+  docs still name Docker (`BR-CLI-007`, `BR-BUILD-011`, `ADR-003`) and DEPLOY remains
+  compose-shaped and untested against podman. Recorded so the question can be reopened
+  cheaply if it ever is.
+- **Phase 4 — second module (`cairn doctor`).** Implemented `src/cairn/doctor.py` (Docker
+  Engine v23+ and buildx probes, plus the three vendored-tree preconditions) and
+  `vendor.assert_build_inputs` — the first implementation of `BR-VEND-006`, deriving the
+  required build inputs from the Containerfile's own context `COPY`s rather than a
+  hardcoded list. Cites `BR-CLI-007/012/015`, `BR-VEND-005/006/007`. 20 unit tests
+  (same `BR` IDs), ruff-clean; both the pass and fail paths verified end-to-end.
+  **`BR-CLI-007` is landed partially by design:** its *"config valid"* leg awaits the
+  config module and will be added when `config.py` lands (`BR-CLI-014`, `BR-CFG-008`,
+  `BR-BUILD-002`). Decided then: a **missing** `cairn.toml` will WARN and keep exit 0
+  (doctor is a machine preflight, legitimately run on a target host or before a manifest
+  exists); a **malformed** one will FAIL. `--json` was deliberately not added — `BR-CLI-013`
+  scopes it to `images`/status.
 - **Phase 4 begins — first module (`VEND`).** Made the project a real Python package
   (hatchling, `src/` layout, `cairn` console script + `datahenge-cairn` alias, typer, ruff,
   pytest). Implemented `src/cairn/`: `project.py` (root discovery + vendor-source parsing),

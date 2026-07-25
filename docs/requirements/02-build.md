@@ -35,8 +35,8 @@ MUST resolve every ref (Frappe + each app) to its commit at build time and recor
 provenance; it MUST NOT freeze commits into the build. The manifest SHOULD pin to tags;
 cairn SHOULD warn when a moving branch is used. *(ADR-015)*
 
-**`BR-BUILD-006`** — `apps.json` MUST be passed only as a BuildKit secret
-(`--secret id=apps_json`), never as a build-arg. *(ADR-015)*
+**`BR-BUILD-006`** — `apps.json` MUST be passed only as a **build secret**
+(`--secret id=apps_json`), never as a build-arg. *(ADR-015, ADR-027)*
 
 ## Cache & tagging
 
@@ -63,14 +63,14 @@ provenance. *(ADR-015)*
 ## Provenance
 
 **`BR-BUILD-011`** — On a successful build, cairn MUST stamp provenance onto the image as OCI
-labels (via `docker build --label`), recording: `image_name`; resolved Frappe + app commits
+labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; resolved Frappe + app commits
 with their source refs; effective build args; both tags; the `frappe_docker` pin (from
 `.ventwig.lock`); the input-hash; and a timestamp. cairn MAY emit a sidecar marker into the
 deployment working directory, and MUST NOT write markers into its own installation or source
 tree. *(ADR-011)*
 
 **`BR-BUILD-012`** — cairn MUST offer a `--dry-run` that emits the resolved `apps.json`, the
-exact `docker build` command, the computed tags, and the intended provenance, without
+exact build command, the computed tags, and the intended provenance, without
 building. *(BR-CLI)*
 
 ## Reproducibility bar

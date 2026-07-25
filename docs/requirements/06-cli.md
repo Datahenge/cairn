@@ -38,8 +38,11 @@ introspection: tags, digests, and provenance labels read **remotely** (no pull).
 
 **`BR-CLI-006`** *(vendor)* — `cairn vendor status | sync` — thin ventwig wrappers. *(BR-VEND-*)*
 
-**`BR-CLI-007`** *(doctor)* — `cairn doctor` — preflight: Docker Engine v23+/buildx present,
-`ventwig status` clean, config valid. *(BR-VEND-005/006)*
+**`BR-CLI-007`** *(doctor)* — `cairn doctor` — **role-aware** preflight, role detected from
+context (`ADR-028`). On a **build/control** machine: the selected build engine present and
+capable of secret-mount builds (Docker Engine v23+, or podman v4+ — `ADR-027`),
+`ventwig status` clean, config valid. On a **target**: Docker Engine + Compose, systemd,
+and registry reachability. *(BR-VEND-005/006, BR-CLI-014, ADR-027, ADR-028)*
 
 **`BR-CLI-008`** *(reconcile)* — `cairn reconcile` — the target-side, single-flight
 pull-loop verb, run under systemd. *(BR-DEPLOY-001/003/016)*

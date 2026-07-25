@@ -27,6 +27,10 @@ Phase 1 is a Python CLI using Click or Typer, shelling out to `docker`/`buildx`/
 `compose`/`bench`. Thin bash only where unavoidable. A TUI may come much later;
 not Phase 1.
 
+**Amended 2026-07-24 (`ADR-027`):** the *build* engine is pluggable — `docker build` or
+`podman build`, selected per build machine. `compose`/`bench` remain Docker-side on the
+target, unchanged.
+
 ---
 
 ### ADR-004 — Image build strategy: `custom`, not `layered`
@@ -375,6 +379,58 @@ cairn MAY POST to an **optional, operator-configured failure webhook** — a bes
 outbound, transport-agnostic POST with a structured payload — so a tech team learns of
 failures without writing a journald-parsing cron, while cairn owns none of the delivery
 (SMTP/Slack/PagerDuty is the endpoint's job). *(BR-DEPLOY-019/020)*
+
+---
+
+### ADR-027 — Build engine is pluggable (`docker` | `podman`); deploy engine stays Docker
+**Decided:** 2026-07-24
+The build machine and the target are **different machines** (`ADR-018` already splits the
+roles), and the artifact that crosses between them is an **OCI image in a registry** — not
+a build engine. buildah produces OCI images; Docker 23+ consumes them. So the build engine
+is a property of the build machine only.
+
+**Decision:** `BUILD` may use `docker build` **or** `podman build`, auto-detected (prefer
+`docker` when present, else `podman`) and overridable via `engine =` in **local build
+config** (`ADR-015`, `BR-CFG-008`) — never in the portable `cairn.toml`, which must stay
+free of build-machine settings. `DEPLOY` is **unchanged**: Docker + Docker Compose on the
+target, per `ADR-002`. `BR-DEPLOY-005` already reads provenance over the **registry
+manifest API** (HTTP), so introspection is engine-independent.
+
+**Rationale:** the author's build machine runs rootless, daemonless podman. Installing
+`dockerd` beside it puts a second engine on the host managing its own nftables chains
+(`DOCKER`, `DOCKER-USER`, `DOCKER-FORWARD`) and rewriting the `FORWARD` policy — a real,
+recurring cost on a machine that only *builds* and needs none of Docker's networking. The
+client's TEST VPS ships Docker, and `DEPLOY` is untouched by this decision.
+
+**Evidence (measured 2026-07-24, podman 5.4.2 / buildah 1.39.3):** the secret mount at
+`Containerfile:128` works with `uid=`/`gid=` honoured (mode `0400`, owned `1000:1000`);
+the secret leaks into neither the filesystem nor image history; `CACHE_BUST` keys the
+layer cache in both directions. Full result in `04-lessons-learned.md` §4.
+
+**Engine floors:** Docker Engine **v23+** (BuildKit is the default builder from 23.0).
+Podman **v4.0+** — the documented floor for `--mount=type=secret`; only 5.4.2 is measured,
+so the floor is conservative-by-documentation rather than by test.
+
+**Accepted risks, to confirm against a real registry:** buildah defaults to OCI manifest
+format where Docker historically preferred v2s2 (`--format docker` is the fallback); and
+provenance **labels** must read back identically via `docker inspect .Config.Labels`
+regardless of which engine stamped them — load-bearing for `retag`/rollback. Also assumes
+build-host architecture matches the target (both amd64 today).
+*(BR-CLI-007, BR-BUILD-006/011/012, BR-CFG-008/010; amends `ADR-003`)*
+
+---
+
+### ADR-028 — `cairn doctor` is role-aware, detected from context
+**Decided:** 2026-07-24
+`ADR-018` establishes that one package serves two roles — build/control on the laptop,
+`reconcile` on targets. A single fixed preflight therefore reports irrelevant failures:
+a target has no vendored tree and no build engine; a build machine has no compose stack.
+
+**Decision:** `cairn doctor` **detects its role from context** and checks accordingly —
+build/control (build engine, vendored-tree integrity, config) versus target (Docker +
+Compose, systemd, registry reachability). No flag in the common case, per `BR-CLI-014`'s
+minimal-typing goal. The target-role branch lands with `DEPLOY`.
+*(BR-CLI-007, BR-CLI-014, ADR-018, ADR-027)*
 
 ---
 
