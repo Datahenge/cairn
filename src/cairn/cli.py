@@ -6,6 +6,7 @@ group (BR-CLI-006), ``doctor`` (BR-CLI-007), ``build`` (BR-CLI-002), and ``push`
 added as their modules land.
 """
 
+import shlex
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
@@ -51,11 +52,22 @@ def _root(
     """cairn — reproducible ERPNext image builds and pull-based deploys."""
 
 
+def _step(message: str) -> None:
+    """Report progress on stderr, keeping stdout clean for a command's actual result.
+
+    Long operations must not look like nothing is happening (BR-CLI-011: nothing
+    consequential is silent), and stderr is the right channel because it does not
+    pollute output a caller may be parsing (BR-CLI-013).
+    """
+    typer.secho(message, fg=typer.colors.BRIGHT_BLACK, err=True)
+
+
 def _run_in_project(action: Callable[[Path], int]) -> None:
     """Resolve the project root, run ``action(root)``, and exit with its return code.
 
     A :class:`CairnError` is rendered as a clean, actionable message with exit code 2
-    rather than a traceback (BR-CLI-015).
+    rather than a traceback (BR-CLI-015). Anything else is re-raised with a note naming
+    it as unexpected, so an unhandled failure is never mistaken for silent success.
     """
     try:
         root = find_project_root()
@@ -63,6 +75,17 @@ def _run_in_project(action: Callable[[Path], int]) -> None:
     except CairnError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(130) from None
+    except Exception as exc:
+        typer.secho(
+            f"Internal error ({type(exc).__name__}): {exc}\n"
+            f"This is a bug in cairn; the traceback follows.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise
     raise typer.Exit(code)
 
 
@@ -127,21 +150,32 @@ def build_command(
 
     def _action(root: Path) -> int:
         found = config.find_manifest(explicit=manifest_path)
+        _step(f"Manifest {found}")
         build_config = config.load_build_config(found)
         if push_after:
             push.assert_registry_configured(build_config)
 
+        _step("Checking vendored tree and resolving refs (contacts each app's remote)…")
         plan = build.plan(root, config.load_manifest(found), build_config, no_cache=no_cache)
+        for ref in plan.resolution.all_refs:
+            _step(f"  {ref.name:<12} {ref.ref:<14} {ref.kind.value:<7} {ref.short_commit}")
         _warn_moving_refs(plan)
+
         if dry_run:
             typer.echo(plan.render())
             return 0
 
+        _step(f"Building with {plan.engine_name} — this takes several minutes.")
+        _step(f"  {shlex.join(plan.command(Path('<apps.json>')))}")
         build.run(plan)
+
+        digest = build.assert_image_exists(plan)
         for reference in plan.references:
             typer.secho(f"Built {reference}", fg=typer.colors.GREEN)
+        _step(f"Image {digest}")
 
         for reference in plan.references if push_after else ():
+            _step(f"Pushing {reference}…")
             push.push(reference, plan.engine_name)
             typer.secho(f"Pushed {reference}", fg=typer.colors.GREEN)
         return 0

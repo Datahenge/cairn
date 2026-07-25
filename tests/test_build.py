@@ -272,3 +272,37 @@ def test_run_succeeds_quietly(monkeypatch):
     build.run(_plan())
 
     assert captured[0][0] == "podman"
+
+
+# --- post-conditions and failure visibility (BR-CLI-011, BR-CLI-015) --------
+
+
+def test_image_existence_is_verified_after_a_successful_exit(monkeypatch):
+    """An engine that exits 0 without building must not be reported as success."""
+
+    def _run(command, **kwargs):
+        return type("R", (), {"returncode": 1, "stdout": "", "stderr": "no such image"})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+
+    with pytest.raises(BuildError, match=r"reported success but .* does not exist locally"):
+        build.assert_image_exists(_plan())
+
+
+def test_image_digest_is_returned_when_present(monkeypatch):
+    def _run(command, **kwargs):
+        return type("R", (), {"returncode": 0, "stdout": "sha256:abc\n", "stderr": ""})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+
+    assert build.assert_image_exists(_plan()) == "sha256:abc"
+
+
+def test_missing_engine_binary_at_build_time_is_actionable(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise FileNotFoundError("podman")
+
+    monkeypatch.setattr(build.subprocess, "run", _raise)
+
+    with pytest.raises(BuildError, match="not found on PATH"):
+        build.run(_plan())

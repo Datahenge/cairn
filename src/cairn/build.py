@@ -258,15 +258,50 @@ def vendor_pin(root: Path, source_name: str = vendor.FRAPPE_DOCKER_SOURCE) -> di
 
 
 def run(build_plan: BuildPlan) -> None:
-    """Execute *build_plan*, raising :class:`BuildError` if the engine fails (BR-BUILD-009)."""
+    """Execute *build_plan*, raising :class:`BuildError` if the engine fails (BR-BUILD-009).
+
+    The engine's own output is inherited rather than captured, so a long build reports
+    progress live. On failure the exact command is quoted back, since that is what makes
+    the failure reproducible by hand (`BR-CLI-015`).
+    """
     with appsjson.written(build_plan.apps_json) as apps_json:
         command = build_plan.command(apps_json)
-        result = subprocess.run(command, check=False)
+        try:
+            result = subprocess.run(command, check=False)
+        except FileNotFoundError as exc:
+            raise BuildError(
+                f"`{build_plan.engine_name}` not found on PATH when starting the build."
+            ) from exc
+
     if result.returncode != 0:
         raise BuildError(
-            f"{build_plan.engine_name} build failed with exit code {result.returncode}. "
-            f"The command was:\n  {shlex.join(command)}"
+            f"{build_plan.engine_name} build failed with exit code {result.returncode}.\n"
+            f"Command:\n  {shlex.join(command)}"
         )
+
+
+def assert_image_exists(build_plan: BuildPlan) -> str:
+    """Confirm the engine really produced the tagged image, returning its digest.
+
+    An engine that exits 0 without building anything would otherwise be reported as
+    success — the worst possible outcome, since nothing downstream would notice until a
+    deploy pulled a tag that does not exist. Verifying the post-condition converts that
+    into an immediate, explicable failure (`BR-CLI-011`: nothing consequential is silent).
+    """
+    reference = build_plan.references[0]
+    command = [build_plan.engine_name, "image", "inspect", "--format", "{{.Id}}", reference]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except FileNotFoundError as exc:
+        raise BuildError(f"`{build_plan.engine_name}` not found on PATH.") from exc
+
+    if result.returncode != 0:
+        raise BuildError(
+            f"{build_plan.engine_name} reported success but {reference} does not exist "
+            f"locally. Something went wrong inside the engine — re-run with the command "
+            f"printed above to see its output."
+        )
+    return result.stdout.strip()
 
 
 def _as_arg(value: Any) -> str:
