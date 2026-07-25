@@ -17,7 +17,9 @@ declaring exactly one, environment-agnostic image. *(ADR-015)*
 section (`url`, `ref`) driving `FRAPPE_PATH`/`FRAPPE_BRANCH`; an **ordered** `[[cairn.apps]]`
 list (`name`, `url`, `ref`) for ERPNext + custom apps; and `[cairn.build]` knobs
 (`python_version`, `node_version`, `install_chromium`) with an optional passthrough for the
-long tail (`debian_base`, `wkhtmltopdf_*`). *(ADR-015)*
+long tail (`debian_base`, `wkhtmltopdf_*`). It MAY provide an optional
+`[cairn.environments]` table — the declared environment list of `BR-DEPLOY-009`
+(`ADR-033`), which no build reads. *(ADR-015, ADR-033)*
 
 **`BR-BUILD-003`** — `[[cairn.apps]]` is **order-significant**: cairn MUST preserve manifest
 order into `apps.json` and into the deploy-time install sequence, and MUST NOT reorder or

@@ -132,6 +132,58 @@ def test_malformed_toml_is_reported_as_such(tmp_path):
         config.load_manifest(_manifest(tmp_path, "[cairn\n"))
 
 
+# --- the declared environment list (BR-DEPLOY-009a, ADR-033) ----------------
+
+
+def test_environments_are_optional(tmp_path):
+    """A manifest that only ever builds declares none, and that is not a defect — the
+    pointer verbs report that no environment exists rather than inventing one."""
+    assert config.load_manifest(_manifest(tmp_path)).environments == {}
+
+
+def test_environments_map_names_to_registry_tags(tmp_path):
+    text = VALID + '\n[cairn.environments]\nproduction = "production"\nstaging = "stg"\n'
+
+    manifest = config.load_manifest(_manifest(tmp_path, text))
+
+    assert manifest.environments == {"production": "production", "staging": "stg"}
+
+
+def test_two_environments_may_not_share_one_tag(tmp_path):
+    """The tag *is* the desired-state pointer, so sharing one would make a retag of either
+    deploy to both at once."""
+    text = VALID + '\n[cairn.environments]\nstaging = "live"\nproduction = "live"\n'
+
+    with pytest.raises(ManifestInvalidError, match="both point at"):
+        config.load_manifest(_manifest(tmp_path, text))
+
+
+def test_an_environment_needs_a_tag_string(tmp_path):
+    text = VALID + "\n[cairn.environments]\nproduction = true\n"
+
+    with pytest.raises(ManifestInvalidError, match="must name a registry tag"):
+        config.load_manifest(_manifest(tmp_path, text))
+
+
+def test_an_invalid_tag_is_rejected_at_parse_time(tmp_path):
+    """A tag the registry would refuse must fail here, not after a build and a push."""
+    text = VALID + '\n[cairn.environments]\nproduction = "not a tag"\n'
+
+    with pytest.raises(ManifestInvalidError, match="not a valid image tag"):
+        config.load_manifest(_manifest(tmp_path, text))
+
+
+def test_environments_is_not_a_build_input(tmp_path):
+    """No environment name may reach the image: it is promoted between environments, never
+    built per environment."""
+    text = VALID + '\n[cairn.environments]\nproduction = "production"\n'
+
+    manifest = config.load_manifest(_manifest(tmp_path, text))
+
+    assert "environments" not in manifest.build
+    assert "production" not in str(manifest.build)
+
+
 # --- discovery (BR-CFG-012, ADR-029) ----------------------------------------
 
 

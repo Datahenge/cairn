@@ -12,19 +12,26 @@ guess** — ask.
 
 ## Where things stand
 
-Phase 4 (modular code) is under way. Implemented and tested (282 tests, ruff clean, 94%
-statement coverage; `cli.py` at 100%):
+Phase 4 (modular code) is under way. Implemented and tested (444 tests, ruff clean, 92%
+statement coverage; `cli.py` at 99%):
 
 | Command | Requirements | State |
 | --- | --- | --- |
 | `cairn build` | `BR-CLI-002`, `BR-BUILD-*` | Working end-to-end against a real registry |
 | `cairn push` | `BR-CLI-003` | Working |
-| `cairn images --local` | `BR-CLI-005` | Working; **registry mode not implemented** |
+| `cairn images --local` | `BR-CLI-005` | Working; verified on the real machine |
+| `cairn images` (registry) | `BR-CLI-005`, `BR-DEPLOY-005` | Written; **never run against a real registry** |
 | `cairn prune` | `BR-CLI-018` | Working; verified on the real machine 2026-07-25 |
-| `cairn doctor` | `BR-CLI-007` | Working |
+| `cairn doctor` | `BR-CLI-007` | Working; **target-role branch not written** (`ADR-028`) |
 | `cairn vendor status\|sync` | `BR-CLI-006` | Working |
-| `new-tag` / `retag` / `retire` | `BR-CLI-004`, `BR-CLI-009/010` | Not started |
-| `reconcile` | `BR-CLI-008` | Not started |
+| `new-tag` / `retag` | `BR-CLI-004`, `BR-CLI-009/010` | Written; **never run against a real registry** |
+| `retire` | `BR-CLI-009` | Written; reports only — edits no manifest, deletes no tag |
+| `reconcile` | `BR-CLI-008`, `BR-DEPLOY-003` | Written; **never run on a real target** |
+| `systemd-units` | `BR-CLI-019` | Written; prints units, installs nothing |
+
+**Everything in the deploy path is unexercised against real infrastructure.** It is heavily
+tested and mutation-checked, which establishes that it does what it was written to do — not
+that what it was written to do is right. The first live run is the test that matters.
 
 `build` gained a lot in this session: attended-mode transcripts (`BR-CLI-016`), per-phase
 timing (`BR-CLI-017`), the input-hash short-circuit (`BR-BUILD-014`), and cache-stage naming
@@ -97,18 +104,57 @@ Options on the table, with the prior lean recorded as **(c)**:
 
 ---
 
-## 4. Remaining command surface
+## 4. The first live deployment — do this next
 
-In dependency order:
+The whole deploy path is written. What remains is running it, in this order, and the order is
+chosen so that each step is reversible until the last one.
 
-1. **`cairn images` registry mode** (`BR-CLI-005`, `BR-DEPLOY-005`) — provenance labels read
-   over the registry manifest API without pulling. Currently `cairn images` without
-   `--local` fails with a message saying so, rather than pretending.
-2. **`new-tag` / `retag` / `retire`** (`BR-CLI-004`, `BR-CLI-009`, `BR-CLI-010`) — the
-   pointer verbs, with existence guards and the production confirmation gate.
-3. **`reconcile`** (`BR-CLI-008`, `BR-DEPLOY-001/003/016`) — the target-side pull loop.
+**On the control machine:**
 
-`DEPLOY` requirements are written and approved; these are implementation, not design.
+```
+cairn images                       # does the registry read work at all?
+cairn build --push                 # if no image is in the registry yet
+cairn new-tag production --latest --dry-run
+cairn new-tag production --latest  # prompts, because it is production
+```
+
+**On the VPS**, write `/etc/cairn/environment.toml` (`ADR-034`), then:
+
+```
+cairn reconcile --dry-run          # says what it would do, takes no lock, changes nothing
+cairn reconcile                    # pull -> compose up -> bench migrate -> health
+cairn systemd-units | less         # only once a manual pass has succeeded
+```
+
+Do **not** install the timer before a manual `reconcile` has worked. A timer turns a wrong
+descriptor into a wrong deploy every five minutes.
+
+**Known-unknowns to watch for on that first run**, each recorded because no test can settle it:
+
+- **The registry read.** `ADR-036`'s client has never spoken to GHCR. The token flow and the
+  media-type set are the parts most likely to need adjusting.
+- **`compose.directory`.** `reconcile` renders the stack from the frappe_docker tree *on the
+  target*; if the descriptor's directory is wrong, compose is invoked with no `--file` at all
+  and will use whatever is in the working directory.
+- **`stack_is_up` reads `docker compose ps --format json`,** whose shape has changed across
+  Compose versions. Both known shapes are handled; a third would read as "not up" and time
+  out at the health check.
+- **The health check probes from inside the stack** with `curl`, which the backend image may
+  not carry. Absent a `[health] url` it checks containers only, which is the safer default.
+
+## 4a. After the first deployment
+
+- **`cairn doctor`'s target-role branch** (`ADR-028`, `BR-CLI-007`) — Docker + Compose,
+  systemd, registry reachability. Currently `doctor` only knows the build/control role, so on a
+  target it checks for a vendored tree that is not there. This is the most obvious gap the
+  first live run will expose.
+- **`ADR-037`** — how an `install-app` opt-in reaches a target. Open, and blocking nothing:
+  `reconcile` deliberately never installs. Decide it the first time an app must be added to a
+  live environment, based on what was actually needed at that moment.
+- **`BR-DEPLOY-006`** — the target-side GC pass (keep last N images, **never** touch volumes).
+  `cairn prune` is its build-machine analogue and the same label-scoping applies.
+- **`BR-DEPLOY-020`** — the optional failure webhook. Opt-in, best-effort, must never crash
+  cairn or alter deploy behaviour.
 
 ---
 
@@ -117,10 +163,14 @@ In dependency order:
 - **Registry-backed cache** (`--cache-to` / `--cache-from`). No help for a warm local
   rebuild; large help for a cold CI runner. Weaker on podman, which `ADR-027` requires we
   keep supporting. Not yet a requirement.
-- **A coverage floor.** `pytest-cov` is now a declared dev dependency and the package sits at
-  94%. A `--cov-fail-under` floor was deliberately *not* added: putting `--cov` in
+- **A coverage floor.** `pytest-cov` is a declared dev dependency and the package sits at
+  92%. A `--cov-fail-under` floor was deliberately *not* added: putting `--cov` in
   `addopts` makes every plain `pytest` run fail without the plugin installed. Decide the
   trade before adding it.
+- **`ADR-036` is mine, not Brian's.** cairn speaking the registry API directly was decided
+  during implementation, on the evidence that no tool present on the control machine can read a
+  remote image's labels. It is the one decision in the deploy path he did not choose, and the
+  module boundary is drawn so that swapping in `skopeo` later would touch nothing else.
 - **`ADR-020`** — ventwig pin immutability. Brian owns ventwig; not a cairn blocker.
 - **Phase 6** — `README.md` / `USAGE.md`. Note that the identifier rule binds from the first
   line of code, not from Phase 6, and `tests/test_conventions.py` enforces it.

@@ -9,6 +9,74 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (night, deploy path)
+
+Three gaps blocked the deploy verbs: `BR-DEPLOY-009` and `BR-DEPLOY-010` each settled what a
+thing *is* without saying where it lives, and `BR-DEPLOY-001` required a systemd timer without
+saying who writes it. All three are now decided, and Brian chose each.
+
+- **`ADR-033` — the declared environment list is `[cairn.environments]` in `cairn.toml`**
+  (environment name → registry tag). Chosen over a second file because the list is portable,
+  shared, and belongs under review beside what it points at — and the manifest is already
+  discovered with no flags (`BR-CFG-012`). It does **not** contradict `BR-BUILD-001`: that
+  calls the *image* environment-agnostic, not the file, and no environment name reaches a
+  build. Build config was rejected outright — a source of truth gating a production retag
+  cannot live somewhere machine-local and uncommitted (`BR-CFG-008`). Recorded as
+  `BR-DEPLOY-009a`; `BR-BUILD-002` now admits the optional fifth key.
+- **`ADR-034` — the target descriptor is TOML at `/etc/cairn/environment.toml`, one
+  environment per host.** Fixed path, because `reconcile` runs unattended: a flag is
+  something nobody is present to pass, and a search path can silently find the wrong file.
+  The file's presence doubles as the role signal `ADR-028` detects a target from. One
+  environment per host follows `BR-DEPLOY-014` (one site per environment) and `ADR-002`
+  (single-host VPS), and keeps `reconcile` argument-free with a single global lock; if
+  multiple environments per host are ever needed, `/etc/cairn/<env>.toml` extends it and
+  `reconcile` gains an argument. It is **host state, not deployment state** — never committed.
+  Recorded as `BR-DEPLOY-010a`.
+- **`ADR-035` — cairn emits systemd units and never installs them.** Writing to
+  `/etc/systemd/system` and reloading the daemon needs root and changes the host outside
+  cairn's stated boundary; `BR-DEPLOY-008` makes cairn a thin orchestrator *over* systemd, not
+  an adopter of the host's init configuration. Ignoring the units was also rejected: the
+  cadence, the single-flight expectation, and journald owning the log are cairn's knowledge,
+  and a printed unit is documentation that cannot drift from the code. Recorded as
+  `BR-CLI-019`.
+
+**Field context that shaped the sequencing:** the VPS already runs a live site, so `cairn`
+takes over the image pointer only — `BR-DEPLOY-007` keeps `bench new-site` the operator's job,
+and none of this work creates sites, volumes, or databases.
+
+Two further decisions the implementation forced:
+
+- **`ADR-036` — cairn speaks the registry API directly** rather than shelling out, and this was
+  decided by evidence rather than preference. `BR-DEPLOY-005` requires reading an image's
+  provenance labels *remotely, without pulling*; the control machine has `podman` 5.4.2 and
+  `buildah` 1.39.3 and **no podman or buildah subcommand can do that**. `docker buildx
+  imagetools` and `skopeo` can, and neither is installed — so delegating would mean a new hard
+  binary dependency to perform one manifest fetch. cairn now owns a small stdlib client: three
+  GETs and a PUT, no third-party HTTP library. Credentials stay the engine's (`BR-CFG-010`):
+  cairn reads the file `podman login` wrote, uses it for one command, and persists nothing;
+  anonymous is tried first, so a public repository never opens it. **Flagged for Brian's
+  review** — he chose the other three decisions, not this one.
+- **`ADR-037` (open) — how an `install-app` opt-in reaches a target.** `BR-DEPLOY-003` permits
+  it behind an opt-in directive and `BR-CLI-004` expresses that opt-in control-side, but the two
+  halves of an environment are joined *only by the tag name*, which has no room for a payload.
+  So `cairn reconcile` does not run `install-app` at all, which is the correct reading of
+  `ADR-023`: absent a decided transport, installing would be the auto-install that decision
+  forbids. Four options are recorded, including striking the clause — a genuine possibility,
+  since adding an app to a live site is a rare and deliberate act. Trigger: the first time it is
+  actually needed, note what was needed, then decide.
+
+**On testing this before it touches production.** The deploy path is covered by 162 new tests,
+and — as with the CLI work — the tests were checked for the failure they claim to detect. 22
+mutations were applied to `registry.py`, `environments.py`, `reconcile.py`, `descriptor.py`, and
+`cli.py` one at a time: a retag that re-serializes the manifest (which would change its digest),
+a retag writing to the source tag, a pull-only token, credentials read before trying anonymous,
+`new-tag` accepting a live pointer, production's confirmation skipped, a stopped stack counted as
+converged, `migrate` skipped, compose overrides layered in reverse, a shared rather than
+exclusive lock. **Every one was caught by a named test.** One real defect was found this way and
+not in production: a root-owned `~/.docker/config.json` made `Path.is_file()` raise
+`PermissionError`, which would have turned every registry command into a traceback where
+anonymous access would have worked.
+
 ## 2026-07-25 (night)
 
 - **`cairn prune` verified on the real machine.** Brian confirmed it worked as intended,

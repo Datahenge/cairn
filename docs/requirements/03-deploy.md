@@ -64,11 +64,26 @@ truth for which environments exist and gates `new-tag`/`retag`/`retire` (`BR-CLI
 Control-side commands operate on the **registry only** and MUST NOT require a target host's
 address or inbound access. *(ADR-005, ADR-006, ADR-010)*
 
+**`BR-DEPLOY-009a`** *(location of the declared list)* — The declared environment list is an
+optional `[cairn.environments]` table in `cairn.toml`, mapping environment name → registry
+tag (`ADR-033`). It is discovered with the manifest (`BR-CFG-012`) and requires no flag.
+Absent or empty, **no environment exists**: the pointer verbs MUST report that rather than
+create one (`BR-CLI-009`). No environment name may reach a build — the table exists to name
+registry pointers, and the image stays environment-agnostic (`BR-BUILD-001`). *(ADR-033)*
+
 **`BR-DEPLOY-010`** — The target-side **environment descriptor** declares: image + watched
 tag; which frappe_docker overrides to compose (db, redis, proxy, TLS); domain/host and
 ports; site name; and a **reference** to secrets. `cairn reconcile` MUST **render** the
 final compose stack from it (base + selected overrides, plus `CUSTOM_IMAGE`/`CUSTOM_TAG`/
 `PULL_POLICY`). The descriptor lives on the target and MUST NOT contain secrets. *(ADR-017)*
+
+**`BR-DEPLOY-010a`** *(location and form of the descriptor)* — The descriptor is TOML at the
+fixed path **`/etc/cairn/environment.toml`**, holding **one** environment per host
+(`ADR-034`). Its presence is what identifies a machine as a target, and is the context
+`ADR-028` detects the role from. Because `reconcile` runs unattended, the path MUST NOT be
+searched for and MUST NOT be supplied by flag in the common case; an override MAY exist for
+testing. The descriptor is **host state, not deployment state** — it MUST NOT be committed
+with the deployment, and MUST contain no secret values (`BR-DEPLOY-011`). *(ADR-034)*
 
 ## Secrets (cairn is secret-agnostic)
 

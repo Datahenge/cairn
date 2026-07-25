@@ -16,12 +16,17 @@ from . import (
     __version__,
     build,
     config,
+    descriptor,
     doctor,
     engine,
+    environments,
     images,
     prune,
     push,
+    reconcile,
+    registry,
     resolve,
+    systemd,
     timing,
     transcript,
     vendor,
@@ -341,24 +346,35 @@ def images_command(
     ] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Emit machine-readable output.")] = False,
 ) -> None:
-    """Report images and their provenance (BR-CLI-005).
+    """Report images and their provenance, locally or from the registry (BR-CLI-005).
 
-    Only ``--local`` is implemented so far; registry introspection lands with the deploy
-    verbs. Saying so is better than quietly reporting the wrong machine's images.
+    Two genuinely different questions. ``--local`` asks what this machine holds and which of
+    it is superseded; the default asks what the registry holds and which tags point where —
+    read remotely, with nothing pulled.
     """
-    if not local:
-        raise typer.BadParameter(
-            "Reading the registry is not implemented yet; use --local to report this "
-            "machine's images."
-        )
 
     def _action(root: Path) -> int:
-        build_config = config.load_build_config(config.find_manifest_or_none())
-        engine_name = engine.detect(build_config.engine).name
-        found, others = images.inspect_local(engine_name)
-        groups = images.group(found)
+        found_manifest = config.find_manifest_or_none()
+        build_config = config.load_build_config(found_manifest)
 
-        typer.echo(images.as_json(groups, others) if as_json else images.render(groups, others))
+        if local:
+            engine_name = engine.detect(build_config.engine).name
+            held, others = images.inspect_local(engine_name)
+            groups = images.group(held)
+            typer.echo(images.as_json(groups, others) if as_json else images.render(groups, others))
+            return 0
+
+        base = _registry_repository(found_manifest, build_config)
+        if not as_json:
+            _step(f"Reading {base.base} (one request per tag; nothing is pulled)…")
+        remote, others = images.inspect_registry(base)
+        grouped = images.group_registry(remote)
+
+        typer.echo(
+            images.registry_as_json(base, grouped, others)
+            if as_json
+            else images.render_registry(base, grouped, others)
+        )
         return 0
 
     _run_in_project(_action)
@@ -498,6 +514,341 @@ def push_command(
         return 0
 
     _run_in_project(_action)
+
+
+def _registry_repository(
+    manifest_path: Path | None, build_config: config.BuildConfig
+) -> registry.ImageRef:
+    """The repository the registry commands act on, taken from the manifest and build config.
+
+    The tag is a placeholder — every caller replaces it. What matters is the repository, which
+    is composed exactly as `cairn build` composes it, so the images read here are the images
+    built there.
+    """
+    if manifest_path is None:
+        raise CairnError(
+            "No manifest found, so cairn does not know which repository to read. Run this "
+            "from a deployment directory, or pass --manifest."
+        )
+    manifest = config.load_manifest(manifest_path)
+    base = build_config.resolve_image_base(manifest.image_name)
+    if not build_config.registry and not build_config.image_base:
+        raise CairnError(
+            "No registry is configured, so images stay local and there is no registry to "
+            "read. Set `registry` (and usually `namespace`) in ~/.config/cairn/config.toml "
+            "or cairn.local.toml, or use --local."
+        )
+    return registry.parse_ref(f"{base}:latest")
+
+
+def _pointer_move(
+    name: str,
+    *,
+    creating: bool,
+    latest: bool,
+    previous: bool,
+    identifier: str | None,
+    from_env: str | None,
+    manifest_path: Path | None,
+    dry_run: bool,
+    assume_yes: bool,
+) -> int:
+    """Create or move an environment pointer — the shared body of ``new-tag`` and ``retag``.
+
+    One function because deploy, promote, and rollback are one operation (`BR-DEPLOY-004`);
+    the only difference between the two commands is which pre-existing state is an error.
+    """
+    selector, source_name = _selector(latest, previous, identifier, from_env)
+
+    found = config.find_manifest(explicit=manifest_path)
+    manifest = config.load_manifest(found)
+    build_config = config.load_build_config(found)
+
+    environment = environments.require(manifest, build_config, name)
+    source_environment = (
+        environments.require(manifest, build_config, source_name) if source_name else None
+    )
+
+    candidates = None
+    if selector in (environments.Selector.LATEST, environments.Selector.PREVIOUS):
+        _step(f"Reading {environment.ref.base} to find the image…")
+        held, _ = images.inspect_registry(environment.ref)
+        candidates = [
+            registry.RemoteImage(
+                ref=environment.ref.with_tag(image.tags[0]),
+                digest=image.digest,
+                media_type="",
+                size=image.size,
+                labels=image.labels,
+            )
+            for image in held
+            if image.tags
+        ]
+
+    move = environments.plan_move(
+        environment,
+        selector=selector,
+        identifier=identifier,
+        source_environment=source_environment,
+        candidates=candidates,
+    )
+    environments.assert_creating(move) if creating else environments.assert_moving(move)
+
+    typer.echo(move.render())
+    if dry_run:
+        return 0
+
+    if move.is_noop:
+        _done(f"{environment.name} already points at {move.source.digest}")
+        return 0
+
+    # The production gate (BR-CLI-010). Asked after the move is fully decided, so the digest
+    # in the prompt is the digest that will be deployed.
+    if (
+        environment.is_production
+        and not assume_yes
+        and not typer.confirm(f"Move '{environment.name}' to this image?", default=False)
+    ):
+        _note("The pointer was not moved.")
+        return 0
+
+    _step(f"Pointing {environment.ref} at {move.source.digest}…")
+    digest = environments.apply(move)
+    _done(f"{environment.name} now points at {digest}")
+    _step("  The target converges on its next poll; nothing was pulled or rebuilt.")
+    return 0
+
+
+def _selector(
+    latest: bool, previous: bool, identifier: str | None, from_env: str | None
+) -> tuple[environments.Selector, str | None]:
+    """Validate that exactly one selector was given, and return it (`BR-CLI-004`)."""
+    chosen = [
+        (environments.Selector.LATEST, latest),
+        (environments.Selector.PREVIOUS, previous),
+        (environments.Selector.IDENTIFIER, identifier is not None),
+        (environments.Selector.FROM_ENV, from_env is not None),
+    ]
+    given = [selector for selector, present in chosen if present]
+
+    if not given:
+        raise typer.BadParameter(
+            "Choose which image to point at: --latest, --previous, --id <tag>, or --from <env>."
+        )
+    if len(given) > 1:
+        raise typer.BadParameter(
+            "Only one of --latest, --previous, --id, and --from may be given — they each "
+            "name a different image."
+        )
+    return given[0], from_env
+
+
+@app.command(
+    "new-tag",
+    help=(
+        "Create an environment's registry pointer for the first time. The environment must "
+        "already be declared in cairn.toml; cairn never invents one. Nothing is rebuilt or "
+        "pulled — the pointer is written in the registry and the target converges on its "
+        "next poll."
+    ),
+)
+def new_tag_command(
+    environment: Annotated[str, typer.Argument(help="The declared environment to point.")],
+    latest: Annotated[bool, typer.Option("--latest", help="The newest image cairn built.")] = False,
+    previous: Annotated[
+        bool, typer.Option("--previous", help="The image before the one running now.")
+    ] = False,
+    identifier: Annotated[
+        str | None, typer.Option("--id", help="A specific tag already in the registry.")
+    ] = None,
+    from_env: Annotated[
+        str | None, typer.Option("--from", help="Whatever another environment runs now.")
+    ] = None,
+    manifest_path: Annotated[
+        Path | None, typer.Option("--manifest", help="Path to cairn.toml.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show the move, and make none.")
+    ] = False,
+    assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+) -> None:
+    """Create an environment's pointer (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004)."""
+    _run_in_project(
+        lambda root: _pointer_move(
+            environment,
+            creating=True,
+            latest=latest,
+            previous=previous,
+            identifier=identifier,
+            from_env=from_env,
+            manifest_path=manifest_path,
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+        )
+    )
+
+
+@app.command(
+    "retag",
+    help=(
+        "Move an environment's pointer to another image. Deploy, promote, and rollback are "
+        "all this one command — nothing is rebuilt and nothing is pulled. Moving production "
+        "asks first."
+    ),
+)
+def retag_command(
+    environment: Annotated[str, typer.Argument(help="The declared environment to move.")],
+    latest: Annotated[bool, typer.Option("--latest", help="The newest image cairn built.")] = False,
+    previous: Annotated[
+        bool, typer.Option("--previous", help="The image before the one running now.")
+    ] = False,
+    identifier: Annotated[
+        str | None, typer.Option("--id", help="A specific tag already in the registry.")
+    ] = None,
+    from_env: Annotated[
+        str | None, typer.Option("--from", help="Whatever another environment runs now.")
+    ] = None,
+    manifest_path: Annotated[
+        Path | None, typer.Option("--manifest", help="Path to cairn.toml.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show the move, and make none.")
+    ] = False,
+    assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+) -> None:
+    """Move an environment's pointer (BR-CLI-004, BR-CLI-010, BR-DEPLOY-004)."""
+    _run_in_project(
+        lambda root: _pointer_move(
+            environment,
+            creating=False,
+            latest=latest,
+            previous=previous,
+            identifier=identifier,
+            from_env=from_env,
+            manifest_path=manifest_path,
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+        )
+    )
+
+
+@app.command(
+    "retire",
+    help=(
+        "Decommission an environment from cairn. No image is touched and no registry tag is "
+        "deleted — this reports what to remove from cairn.toml, and what will remain behind."
+    ),
+)
+def retire_command(
+    environment: Annotated[str, typer.Argument(help="The declared environment to retire.")],
+    manifest_path: Annotated[
+        Path | None, typer.Option("--manifest", help="Path to cairn.toml.")
+    ] = None,
+) -> None:
+    """Decommission an environment at cairn's layer only (BR-CLI-009)."""
+
+    def _action(root: Path) -> int:
+        found = config.find_manifest(explicit=manifest_path)
+        manifest = config.load_manifest(found)
+        build_config = config.load_build_config(found)
+        retiring = environments.retire(manifest, build_config, environment)
+
+        typer.echo(
+            "\n".join(
+                [
+                    f"Retire '{retiring.name}' by removing this line from {found}:",
+                    f'  [cairn.environments]  {retiring.name} = "{retiring.tag}"',
+                ]
+            )
+        )
+        typer.secho(
+            f"Warning: the registry tag '{retiring.tag}' will still exist and still resolve. "
+            f"cairn does not delete it — a registry version can carry several tags, so "
+            f"deleting it could destroy an image another environment still points at. Any "
+            f"target still holding this descriptor will also keep converging to it; remove "
+            f"its timer first.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return 0
+
+    _run_in_project(_action)
+
+
+@app.command(
+    "reconcile",
+    help=(
+        "Converge this host to the image its environment's tag points at. Idempotent and "
+        "safe to run repeatedly: with nothing changed it does nothing. Reads "
+        "/etc/cairn/environment.toml, and never rolls back on failure — it stops and reports."
+    ),
+)
+def reconcile_command(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would converge, and change nothing.")
+    ] = False,
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor",
+            help="Read this descriptor instead of the host's.",
+            hidden=True,
+        ),
+    ] = None,
+) -> None:
+    """Converge the target to its desired state (BR-CLI-008, BR-DEPLOY-003).
+
+    Deliberately does **not** require a cairn project: a target has no manifest and no
+    vendored tree, only the descriptor that says what it runs (`ADR-034`).
+    """
+    watch = timing.Stopwatch()
+    try:
+        environment = descriptor.load(descriptor_path)
+        _step(f"Environment {environment.environment} — site {environment.site}")
+
+        with watch.phase("converge"):
+            outcome = reconcile.run(environment, dry_run=dry_run, report=_step)
+
+        if outcome.changed:
+            _done(outcome.detail)
+        else:
+            _note(outcome.detail)
+        _report_timing(watch)
+        raise typer.Exit(0)
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        _report_timing(watch)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(130) from None
+
+
+@app.command(
+    "systemd-units",
+    help=(
+        "Print a systemd service and timer that run `cairn reconcile` on this host. cairn "
+        "prints them and installs nothing — review them, then install them yourself."
+    ),
+)
+def systemd_units_command(
+    interval: Annotated[
+        str, typer.Option("--interval", help="How often to poll, as a systemd time span.")
+    ] = systemd.DEFAULT_INTERVAL,
+    user: Annotated[str, typer.Option("--user", help="The user the service runs as.")] = "root",
+) -> None:
+    """Print the systemd units for `cairn reconcile` (BR-CLI-019)."""
+    rendered = systemd.units(interval=interval, user=user)
+
+    _note("Assumed for this host:")
+    for line in rendered.assumptions:
+        _note(f"  {line}")
+    _note("")
+
+    typer.echo(rendered.render())
+
+    for line in systemd.install_hint():
+        _note(line)
 
 
 @app.command(

@@ -166,3 +166,13 @@ every later build into a cold one. cairn's labels are applied only at the **fina
 so a stage image never carries them, and a label-scoped prune cannot reach the cache. cairn
 MUST therefore never prune by danglingness. *(BR-DEPLOY-006 is the target-side counterpart;
 this is its build-machine analogue. ADR-032, lessons §12)*
+
+**`BR-CLI-019`** *(systemd units — emitted, never installed)* — `cairn systemd-units` MUST
+print a ready-to-install systemd **service** and **timer** for `cairn reconcile` to stdout,
+and MUST NOT write them to the host or reload the daemon (`ADR-035`). The emitted unit MUST
+reflect what cairn knows and the operator would otherwise guess: `Type=oneshot`, no custom
+log file (journald owns the record, `BR-DEPLOY-019`), and a cadence consistent with
+`reconcile` being idempotent and single-flight (`BR-DEPLOY-016`) so an overrunning pass cannot
+stack. Because a unit is host-specific, the command MUST report the values it assumed
+(binary path, user, cadence) rather than silently choosing them. *(BR-DEPLOY-001,
+BR-DEPLOY-008, BR-DEPLOY-016, BR-DEPLOY-019, ADR-035)*

@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from cairn import images
-from cairn.errors import ImageQueryError
+from cairn import images, registry
+from cairn.errors import ImageQueryError, RegistryError
 
 APPS = json.dumps(
     [
@@ -224,3 +224,171 @@ def test_sizes_render_in_the_units_the_engine_uses():
     assert images.format_size(443_000_000) == "443 MB"
     assert images.format_size(4_700_000) == "4.7 MB"
     assert images.format_size(512) == "512 B"
+
+
+# --- the registry report (BR-CLI-005 default mode, BR-DEPLOY-005) -----------
+
+
+def _remote_image(digest, labels, size=2_750_000_000):
+    return registry.RemoteImage(
+        ref=registry.parse_ref(f"ghcr.io/datahenge/erpnext-btu-v16:{digest[:6]}"),
+        digest=digest,
+        media_type="application/vnd.oci.image.manifest.v1+json",
+        size=size,
+        labels=labels,
+    )
+
+
+def _cairn_labels(input_hash="aaa111", created="2026-07-25T10:00:00Z"):
+    return {
+        images.INPUT_HASH_LABEL: input_hash,
+        images.FRAPPE_REF_LABEL: "v16.0.1",
+        images.FRAPPE_COMMIT_LABEL: "a" * 40,
+        images.CREATED_LABEL: created,
+    }
+
+
+def _stub_registry(monkeypatch, tags, answers):
+    base = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:latest")
+    monkeypatch.setattr(registry, "tags", lambda ref: tags)
+
+    def _inspect(ref):
+        answer = answers[ref.tag]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(registry, "inspect", _inspect)
+    return base
+
+
+def test_tags_pointing_at_one_image_are_folded_together(monkeypatch):
+    """Several tags routinely name one image — its primary tag, its moving tag, and every
+    environment running it. Reporting it three times would make "what runs this" unanswerable.
+    """
+    same = "sha256:" + "1" * 64
+    base = _stub_registry(
+        monkeypatch,
+        ["v16.0.1-aaa111", "v16", "production"],
+        {
+            tag: _remote_image(same, _cairn_labels())
+            for tag in ("v16.0.1-aaa111", "v16", "production")
+        },
+    )
+
+    found, others = images.inspect_registry(base)
+
+    assert len(found) == 1
+    assert found[0].tags == ("production", "v16", "v16.0.1-aaa111")
+    assert others == 0
+
+
+def test_images_cairn_did_not_build_are_counted_not_listed(monkeypatch):
+    """The same rule as the local report: excluded, but never silently, so the listing is not
+    mistaken for a complete inventory."""
+    base = _stub_registry(
+        monkeypatch,
+        ["v16", "someone-elses"],
+        {
+            "v16": _remote_image("sha256:" + "1" * 64, _cairn_labels()),
+            "someone-elses": _remote_image("sha256:" + "2" * 64, {}),
+        },
+    )
+
+    found, others = images.inspect_registry(base)
+
+    assert [image.short_digest for image in found] == ["111111111111"]
+    assert others == 1
+
+
+def test_an_unreadable_tag_does_not_prevent_reporting_the_rest(monkeypatch):
+    """A repository shared with another tool may hold manifests cairn has no business
+    understanding, and one of them must not fail the whole report."""
+    base = _stub_registry(
+        monkeypatch,
+        ["v16", "broken"],
+        {
+            "v16": _remote_image("sha256:" + "1" * 64, _cairn_labels()),
+            "broken": RegistryError("unsupported manifest type"),
+        },
+    )
+
+    found, others = images.inspect_registry(base)
+
+    assert len(found) == 1
+    assert others == 1
+
+
+def test_registry_images_are_ordered_by_their_own_creation_label(monkeypatch):
+    """A registry reports no creation time — only the image does, via BR-BUILD-011. That
+    label is the sole clock available, and tag order is explicitly not meaningful."""
+    base = _stub_registry(
+        monkeypatch,
+        ["old", "new"],
+        {
+            "old": _remote_image(
+                "sha256:" + "1" * 64, _cairn_labels(created="2026-07-01T00:00:00Z")
+            ),
+            "new": _remote_image(
+                "sha256:" + "2" * 64, _cairn_labels(created="2026-07-25T00:00:00Z")
+            ),
+        },
+    )
+
+    found, _ = images.inspect_registry(base)
+
+    assert [image.tags[0] for image in found] == ["new", "old"]
+
+
+def test_an_image_without_a_creation_label_sorts_last(monkeypatch):
+    labels = _cairn_labels()
+    del labels[images.CREATED_LABEL]
+    base = _stub_registry(
+        monkeypatch,
+        ["dated", "undated"],
+        {
+            "dated": _remote_image("sha256:" + "1" * 64, _cairn_labels()),
+            "undated": _remote_image("sha256:" + "2" * 64, labels),
+        },
+    )
+
+    found, _ = images.inspect_registry(base)
+
+    assert [image.tags[0] for image in found] == ["dated", "undated"]
+
+
+def test_registry_grouping_is_by_input_hash(monkeypatch):
+    base = _stub_registry(
+        monkeypatch,
+        ["a", "b"],
+        {
+            "a": _remote_image("sha256:" + "1" * 64, _cairn_labels(input_hash="aaa111")),
+            "b": _remote_image("sha256:" + "2" * 64, _cairn_labels(input_hash="bbb222")),
+        },
+    )
+    found, _ = images.inspect_registry(base)
+
+    grouped = images.group_registry(found)
+
+    assert sorted(input_hash for input_hash, _ in grouped) == ["aaa111", "bbb222"]
+
+
+def test_the_registry_report_says_sizes_are_download_sizes():
+    """Registry sizes are compressed transfer sizes and local sizes are unpacked; the two
+    legitimately differ and must never be read as a discrepancy."""
+    base = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:latest")
+    image = _remote_image("sha256:" + "1" * 64, _cairn_labels())
+    image = images.RegistryImage(
+        digest=image.digest, tags=("v16",), size=image.size, labels=image.labels
+    )
+
+    rendered = images.render_registry(base, [("aaa111", [image])], 0)
+
+    assert "download size" in rendered
+    assert "not unpacked size" in rendered
+
+
+def test_an_empty_registry_says_so_plainly():
+    base = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:latest")
+
+    assert "No images cairn built" in images.render_registry(base, [], 0)

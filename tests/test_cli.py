@@ -27,9 +27,27 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from cairn import build, cli, config, doctor, engine, images, prune, push, vendor
+from cairn import (
+    build,
+    cli,
+    config,
+    doctor,
+    engine,
+    images,
+    prune,
+    push,
+    reconcile,
+    registry,
+    vendor,
+)
 from cairn.config import App, BuildConfig, Frappe, Manifest
-from cairn.errors import BuildError, ManifestNotFoundError, PushError
+from cairn.errors import (
+    BuildError,
+    ManifestNotFoundError,
+    PushError,
+    ReconcileError,
+    RegistryError,
+)
 from cairn.images import LocalImage
 from cairn.resolve import RefKind, Resolution, ResolvedRef
 
@@ -175,6 +193,94 @@ def local(project, monkeypatch):
         engine, "detect", lambda preferred=None: engine.BuildEngine(engine.PODMAN, "5.4.2")
     )
     return project
+
+
+def _manifest_with_environments(**environments):
+    base = _manifest()
+    return Manifest(
+        image_name=base.image_name,
+        frappe=base.frappe,
+        apps=base.apps,
+        build=base.build,
+        environments=environments or {"production": "production", "staging": "staging"},
+    )
+
+
+def _remote(input_hash, *, tags=("v16",), size=2_750_000_000, minutes_old=0, digest=None):
+    created = datetime.now(UTC) - timedelta(minutes=minutes_old)
+    return images.RegistryImage(
+        digest=digest or ("sha256:" + input_hash + "0" * (64 - len(input_hash))),
+        tags=tuple(tags),
+        size=size,
+        labels={
+            images.INPUT_HASH_LABEL: input_hash,
+            images.FRAPPE_REF_LABEL: "v16.0.1",
+            images.FRAPPE_COMMIT_LABEL: "a" * 40,
+            images.CREATED_LABEL: created.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+    )
+
+
+@pytest.fixture
+def registry_repo(project, monkeypatch):
+    """A configured registry and a discovered manifest, for the registry-side commands."""
+    manifest_path = project / "cairn.toml"
+    manifest_path.touch()
+    monkeypatch.setattr(config, "find_manifest_or_none", lambda start=None: manifest_path)
+    monkeypatch.setattr(
+        config, "find_manifest", lambda start=None, explicit=None: explicit or manifest_path
+    )
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environments())
+    monkeypatch.setattr(
+        config,
+        "load_build_config",
+        lambda path=None: BuildConfig(registry="ghcr.io", namespace="datahenge"),
+    )
+    return manifest_path
+
+
+@dataclass
+class PointerStubs:
+    """What the registry was asked to do, and what it reported back."""
+
+    seen: dict = field(default_factory=dict)
+    current: str | None = None  #: digest the environment's tag resolves to now
+    catalog: list = field(default_factory=list)
+
+
+@pytest.fixture
+def pointers(registry_repo, monkeypatch) -> PointerStubs:
+    state = PointerStubs(catalog=[_remote("aaa111", tags=("v16",))])
+
+    def _digest_of(ref):
+        if state.current is None:
+            raise RegistryError(f"{ref} does not exist in the registry.")
+        return state.current
+
+    def _retag(source, tag):
+        state.seen["retag"] = (str(source), tag)
+        return source_digest(source)
+
+    def source_digest(source):
+        return next(
+            (image.digest for image in state.catalog if source.tag in image.tags),
+            "sha256:" + "f" * 64,
+        )
+
+    def _inspect(ref):
+        return registry.RemoteImage(
+            ref=ref,
+            digest=source_digest(ref),
+            media_type="application/vnd.oci.image.manifest.v1+json",
+            size=2_750_000_000,
+            labels={images.INPUT_HASH_LABEL: "aaa111"},
+        )
+
+    monkeypatch.setattr(registry, "digest_of", _digest_of)
+    monkeypatch.setattr(registry, "retag", _retag)
+    monkeypatch.setattr(registry, "inspect", _inspect)
+    monkeypatch.setattr(images, "inspect_registry", lambda base: (state.catalog, 0))
+    return state
 
 
 # --- exit codes through `_run_in_project` (BR-CLI-012, BR-CLI-015) ----------
@@ -431,12 +537,48 @@ def test_a_moving_branch_is_warned_about(stubs, monkeypatch):
 # --- images (BR-CLI-005, BR-CLI-013) ---------------------------------------
 
 
-def test_registry_mode_says_it_is_not_implemented(local):
-    """Better than quietly reporting the wrong machine's images."""
+def test_registry_mode_needs_a_manifest_to_know_the_repository(local):
+    """Which repository to read comes from the manifest; without one there is no question
+    to ask, and guessing a repository would read someone else's images."""
+    result = runner.invoke(cli.app, ["images"])
+
+    assert result.exit_code == 2
+    assert "--manifest" in result.stderr
+
+
+def test_registry_mode_needs_a_configured_registry(registry_repo, monkeypatch):
+    """Absent a registry, images stay local and there is nothing remote to read — saying so
+    beats reporting an empty registry as though it were the answer."""
+    monkeypatch.setattr(config, "load_build_config", lambda path=None: BuildConfig())
+
     result = runner.invoke(cli.app, ["images"])
 
     assert result.exit_code == 2
     assert "--local" in result.stderr
+
+
+def test_registry_mode_reads_tags_without_pulling(registry_repo, monkeypatch):
+    remote = _remote("aaa111", tags=("v16.0.1-aaa111", "v16", "production"))
+    monkeypatch.setattr(images, "inspect_registry", lambda base: ([remote], 2))
+
+    result = runner.invoke(cli.app, ["images"])
+
+    assert result.exit_code == 0
+    assert "input hash aaa111" in result.stdout
+    assert "production" in result.stdout
+    assert "2 other tag(s)" in result.stdout
+
+
+def test_registry_json_is_parseable(registry_repo, monkeypatch):
+    remote = _remote("aaa111", tags=("v16",))
+    monkeypatch.setattr(images, "inspect_registry", lambda base: ([remote], 0))
+
+    result = runner.invoke(cli.app, ["images", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["repository"] == "ghcr.io/datahenge/erpnext-btu-v16"
+    assert payload["groups"][0]["images"][0]["tags"] == ["v16"]
 
 
 def test_local_images_are_reported_for_people_by_default(local, monkeypatch):
@@ -528,6 +670,274 @@ def test_a_failed_removal_exits_nonzero_without_aborting_the_rest(prunable):
 
     assert result.exit_code == 1
     assert "Could not remove bbb000000000" in result.stderr
+
+
+# --- pointer verbs (BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-DEPLOY-004) -----
+
+
+def test_new_tag_creates_the_pointer(pointers):
+    result = runner.invoke(cli.app, ["new-tag", "staging", "--latest"])
+
+    assert result.exit_code == 0
+    assert pointers.seen["retag"] == ("ghcr.io/datahenge/erpnext-btu-v16:v16", "staging")
+    assert "staging now points at" in result.stdout
+
+
+def test_new_tag_refuses_an_undeclared_environment(pointers):
+    """No auto-vivification: a typo must not quietly create an environment."""
+    result = runner.invoke(cli.app, ["new-tag", "stagng", "--latest"])
+
+    assert result.exit_code == 2
+    assert "No such environment 'stagng'" in result.stderr
+    assert "production, staging" in result.stderr
+    assert "retag" not in pointers.seen
+
+
+def test_new_tag_refuses_a_pointer_that_already_exists(pointers):
+    """Creating over a live pointer would be a deploy wearing the word 'new'."""
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["new-tag", "staging", "--latest"])
+
+    assert result.exit_code == 2
+    assert "already exists" in result.stderr
+    assert "retag" not in pointers.seen
+
+
+def test_retag_refuses_a_pointer_that_does_not_exist(pointers):
+    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+
+    assert result.exit_code == 2
+    assert "does not exist" in result.stderr
+    assert "new-tag" in result.stderr
+    assert "retag" not in pointers.seen
+
+
+def test_retag_moves_an_existing_pointer(pointers):
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+
+    assert result.exit_code == 0
+    assert pointers.seen["retag"][1] == "staging"
+
+
+def test_dry_run_moves_nothing(pointers):
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "staging", "--latest", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "retag" not in pointers.seen
+    assert "environment  staging" in result.stdout
+
+
+def test_a_pointer_already_on_the_image_is_reported_not_rewritten(pointers):
+    """A retag that changes nothing still writes a manifest; saying so beats a cheerful
+    success message that hides it."""
+    pointers.current = pointers.catalog[0].digest
+
+    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+
+    assert result.exit_code == 0
+    assert "already points at" in result.stdout
+    assert "retag" not in pointers.seen
+
+
+def test_production_asks_before_moving(pointers):
+    """BR-CLI-010: the production gate, and the default answer is no."""
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "production", "--latest"], input="n\n")
+
+    assert result.exit_code == 0
+    assert "retag" not in pointers.seen
+    assert "The pointer was not moved." in result.stderr
+
+
+def test_production_moves_when_confirmed(pointers):
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "production", "--latest"], input="y\n")
+
+    assert result.exit_code == 0
+    assert pointers.seen["retag"][1] == "production"
+
+
+def test_yes_skips_the_production_gate_for_automation(pointers):
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "production", "--latest", "--yes"])
+
+    assert result.exit_code == 0
+    assert pointers.seen["retag"][1] == "production"
+
+
+def test_non_production_is_not_gated(pointers):
+    """The gate is deliberately narrow — every environment confirming would train the habit
+    of confirming without reading."""
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+
+    assert result.exit_code == 0
+    assert "retag" in pointers.seen
+
+
+def test_a_selector_is_required(pointers):
+    result = runner.invoke(cli.app, ["retag", "staging"])
+
+    assert result.exit_code == 2
+    assert "--latest" in result.stderr
+
+
+def test_selectors_are_mutually_exclusive(pointers):
+    result = runner.invoke(cli.app, ["retag", "staging", "--latest", "--previous"])
+
+    assert result.exit_code == 2
+    assert "only one of" in result.stderr.lower()
+
+
+def test_from_promotes_whatever_another_environment_runs(pointers):
+    """Promotion reads the *source* environment's pointer, not the newest image."""
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "staging", "--from", "production"])
+
+    assert result.exit_code == 0
+    assert pointers.seen["retag"][0] == "ghcr.io/datahenge/erpnext-btu-v16:production"
+
+
+def test_id_points_at_a_named_tag(pointers):
+    pointers.current = "sha256:" + "9" * 64
+
+    result = runner.invoke(cli.app, ["retag", "staging", "--id", "v16.0.1-aaa111"])
+
+    assert result.exit_code == 0
+    assert pointers.seen["retag"][0].endswith(":v16.0.1-aaa111")
+
+
+def test_retire_touches_nothing_and_warns_the_tag_persists(pointers):
+    result = runner.invoke(cli.app, ["retire", "staging"])
+
+    assert result.exit_code == 0
+    assert "retag" not in pointers.seen
+    assert 'staging = "staging"' in result.stdout
+    assert "will still exist" in result.stderr
+
+
+def test_retire_refuses_an_undeclared_environment(pointers):
+    result = runner.invoke(cli.app, ["retire", "nope"])
+
+    assert result.exit_code == 2
+    assert "No such environment 'nope'" in result.stderr
+
+
+# --- reconcile (BR-CLI-008, BR-DEPLOY-003) ---------------------------------
+
+
+@pytest.fixture
+def target(tmp_path, monkeypatch):
+    """A target host: a descriptor on disk, and a stubbed convergence."""
+    path = tmp_path / "environment.toml"
+    path.write_text(
+        "\n".join(
+            [
+                'environment = "production"',
+                'image = "ghcr.io/datahenge/erpnext-btu-v16"',
+                'tag = "production"',
+                'site = "erp.example.com"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    return path
+
+
+def test_reconcile_needs_no_project(target, monkeypatch):
+    """A target has no manifest and no vendored tree — only the descriptor."""
+    state = reconcile.State(desired_digest="sha256:aaa", running_digest=None, stack_up=False)
+    monkeypatch.setattr(
+        reconcile,
+        "run",
+        lambda desc, dry_run=False, report=None: reconcile.Outcome(
+            converged=True, changed=True, state=state, detail="Converged to sha256:aaa."
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(target)])
+
+    assert result.exit_code == 0
+    assert "Converged to sha256:aaa." in result.stdout
+
+
+def test_reconcile_reports_a_no_change_run_without_claiming_a_deploy(target, monkeypatch):
+    """The common case under a timer. It must not read as a deployment having happened."""
+    state = reconcile.State(
+        desired_digest="sha256:aaa", running_digest="sha256:aaa", stack_up=True
+    )
+    monkeypatch.setattr(
+        reconcile,
+        "run",
+        lambda desc, dry_run=False, report=None: reconcile.Outcome(
+            converged=True, changed=False, state=state, detail="Already running sha256:aaa."
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(target)])
+
+    assert result.exit_code == 0
+    assert "Already running" in result.stderr
+    assert "Converged" not in result.stdout
+
+
+def test_reconcile_halts_and_reports_on_failure(target, monkeypatch):
+    """BR-DEPLOY-018: it stops rather than rolling back, and the exit code says so."""
+
+    def _fail(desc, dry_run=False, report=None):
+        raise ReconcileError("Failed while running bench migrate (exit code 1).")
+
+    monkeypatch.setattr(reconcile, "run", _fail)
+
+    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(target)])
+
+    assert result.exit_code == 2
+    assert "Error: Failed while running bench migrate" in result.stderr
+    assert "Timing" in result.stderr  # how long it ran before failing still matters
+
+
+def test_a_missing_descriptor_names_the_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(tmp_path / "absent.toml")])
+
+    assert result.exit_code == 2
+    assert "absent.toml" in result.stderr
+
+
+# --- systemd units (BR-CLI-019) --------------------------------------------
+
+
+def test_systemd_units_are_printed_to_stdout():
+    """Printed, never installed — so stdout must be the units themselves."""
+    result = runner.invoke(cli.app, ["systemd-units"])
+
+    assert result.exit_code == 0
+    assert "[Timer]" in result.stdout
+    assert "Type=oneshot" in result.stdout
+    assert "cairn-reconcile.service" in result.stdout
+
+
+def test_systemd_units_report_what_they_assumed(monkeypatch):
+    """BR-CLI-019: a host-specific guess must be visible before installation, not after."""
+    result = runner.invoke(cli.app, ["systemd-units", "--interval", "15min", "--user", "cairn"])
+
+    assert result.exit_code == 0
+    assert "interval     15min" in result.stderr
+    assert "user         cairn" in result.stderr
+    assert "OnUnitInactiveSec=15min" in result.stdout
+    assert "User=cairn" in result.stdout
 
 
 # --- push (BR-CLI-003) -----------------------------------------------------

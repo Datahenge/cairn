@@ -69,3 +69,28 @@ class TranscriptError(CairnError):
 class VendorInputsMissingError(CairnError):
     """The vendored tree is missing a required build input — the custom
     ``Containerfile`` or a file it copies from the build context (BR-VEND-006)."""
+
+
+class RegistryError(CairnError):
+    """A registry read or a server-side retag could not be completed
+    (BR-DEPLOY-004, BR-DEPLOY-005)."""
+
+
+class UnknownEnvironmentError(CairnError):
+    """The named environment is absent from the declared list, and cairn does not
+    create one implicitly (BR-CLI-009, no auto-vivification)."""
+
+
+class EnvironmentExistsError(CairnError):
+    """``new-tag`` was asked to create an environment that already exists
+    (BR-CLI-009)."""
+
+
+class DescriptorError(CairnError):
+    """The target's environment descriptor is missing or unusable
+    (`BR-DEPLOY-010a`)."""
+
+
+class ReconcileError(CairnError):
+    """Converging the target to its desired state failed; cairn halts and reports
+    rather than rolling back (BR-DEPLOY-018)."""

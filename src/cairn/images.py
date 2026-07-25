@@ -27,8 +27,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from . import registry
 from .build import LABEL_NAMESPACE
-from .errors import ImageQueryError
+from .errors import ImageQueryError, RegistryError
 
 #: The label that marks an image as cairn's, and names the inputs it was built from.
 INPUT_HASH_LABEL = f"{LABEL_NAMESPACE}.input-hash"
@@ -37,6 +38,12 @@ FRAPPE_REF_LABEL = f"{LABEL_NAMESPACE}.frappe.ref"
 FRAPPE_COMMIT_LABEL = f"{LABEL_NAMESPACE}.frappe.commit"
 PIN_REF_LABEL = f"{LABEL_NAMESPACE}.frappe-docker.ref"
 
+#: The standard OCI creation timestamp (`ADR-030`) — the only clock a registry read has.
+CREATED_LABEL = "org.opencontainers.image.created"
+
+#: Sort floor for images whose creation label is absent or unparseable.
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
 #: Ceiling on a listing probe; local storage queries are fast or broken, never slow.
 QUERY_TIMEOUT_SECONDS = 60
 
@@ -44,14 +51,15 @@ QUERY_TIMEOUT_SECONDS = 60
 SHORT_COMMIT = 8
 
 
-@dataclass(frozen=True)
-class LocalImage:
-    """One image in local storage that cairn built."""
+class Provenance:
+    """Reads `BR-BUILD-011`'s labels off an image, wherever the image was found.
 
-    image_id: str
-    tags: tuple[str, ...]
-    created: datetime | None
-    size: int
+    Shared by the local and registry reports so the two answer "why does this exist" from
+    exactly the same label keys. A label absent is reported as unknown rather than guessed:
+    an image cairn did not build has none of these, which is what identifies it as not
+    cairn's in the first place.
+    """
+
     labels: dict[str, str]
 
     @property
@@ -80,8 +88,48 @@ class LocalImage:
         return parsed if isinstance(parsed, list) else []
 
     @property
+    def built_at(self) -> datetime | None:
+        """When the image was built, per its own label.
+
+        The registry does not report a creation time — only the image does, and only because
+        `BR-BUILD-011` stamps it. This is what orders `--latest` and `--previous`.
+        """
+        return _parse_timestamp(self.labels.get(CREATED_LABEL))
+
+
+@dataclass(frozen=True)
+class LocalImage(Provenance):
+    """One image in local storage that cairn built."""
+
+    image_id: str
+    tags: tuple[str, ...]
+    created: datetime | None
+    size: int
+    labels: dict[str, str]
+
+    @property
     def short_id(self) -> str:
         return self.image_id.removeprefix("sha256:")[:12]
+
+
+@dataclass(frozen=True)
+class RegistryImage(Provenance):
+    """One image in a registry that cairn built, read without pulling (`BR-DEPLOY-005`).
+
+    Keyed by **digest**, not by tag: several tags routinely point at one image — its
+    deterministic primary tag, its moving tag, and every environment currently running it —
+    and conflating them would report one image several times and make "which environments
+    run this" unanswerable.
+    """
+
+    digest: str
+    tags: tuple[str, ...]
+    size: int
+    labels: dict[str, str]
+
+    @property
+    def short_digest(self) -> str:
+        return self.digest.removeprefix("sha256:")[:12]
 
 
 @dataclass(frozen=True)
@@ -215,6 +263,143 @@ def as_json(groups: list[ImageGroup], others: int) -> str:
             "other_images": others,
         },
         indent=2,
+    )
+
+
+# --- the registry (BR-CLI-005 default mode, BR-DEPLOY-005) ------------------
+
+
+def inspect_registry(base: registry.ImageRef) -> tuple[list[RegistryImage], int]:
+    """Return (cairn's images in *base*'s repository, count of images cairn did not build).
+
+    One request per tag, because a tag is the only handle the registry offers and provenance
+    lives in each image's config. Tags that resolve to the same digest are folded into one
+    image carrying all of them. Nothing is pulled (`BR-DEPLOY-005`).
+
+    A tag that cannot be read is skipped rather than fatal: a repository shared with another
+    tool may hold manifests cairn has no business understanding, and one of them must not
+    prevent reporting the rest.
+    """
+    by_digest: dict[str, RegistryImage] = {}
+    others = 0
+
+    for tag in registry.tags(base):
+        try:
+            remote = registry.inspect(base.with_tag(tag))
+        except RegistryError:
+            others += 1
+            continue
+
+        if not remote.labels.get(INPUT_HASH_LABEL):
+            others += 1
+            continue
+
+        held = by_digest.get(remote.digest)
+        tags = (*held.tags, tag) if held else (tag,)
+        by_digest[remote.digest] = RegistryImage(
+            digest=remote.digest,
+            tags=tuple(sorted(tags)),
+            size=remote.size,
+            labels=remote.labels,
+        )
+
+    return _newest_built_first(list(by_digest.values())), others
+
+
+def group_registry(images: list[RegistryImage]) -> list[tuple[str, list[RegistryImage]]]:
+    """Group registry images by input hash, newest group first, newest member first."""
+    buckets: dict[str, list[RegistryImage]] = {}
+    for image in images:
+        buckets.setdefault(image.input_hash, []).append(image)
+    return [
+        (input_hash, _newest_built_first(members)) for input_hash, members in buckets.items()
+    ]
+
+
+def render_registry(base: registry.ImageRef, groups, others: int) -> str:
+    """Return the human report for a registry (`BR-CLI-005`).
+
+    Deliberately not the same report as ``--local``. There is no notion of a *superseded*
+    image here: an untagged manifest in a registry is unreferenced, not sitting on someone's
+    disk, so what matters remotely is which tags point at which digest — that is what a
+    target watches and what a rollback moves.
+    """
+    if not groups:
+        return f"No images cairn built were found in {base.base}."
+
+    lines: list[str] = []
+    for input_hash, members in groups:
+        newest = members[0]
+        lines.append(f"input hash {input_hash}")
+        lines.append(
+            f"  frappe       {newest.frappe_ref or '?':<16} "
+            f"{newest.frappe_commit[:SHORT_COMMIT] or '?'}"
+        )
+        for app in newest.apps:
+            lines.append(
+                f"  {app.get('name', '?'):<12} {app.get('ref', '?'):<16} "
+                f"{str(app.get('commit', ''))[:SHORT_COMMIT] or '?'}"
+            )
+        if newest.vendor_pin:
+            lines.append(f"  frappe_docker {newest.vendor_pin}")
+
+        for image in members:
+            lines.append(
+                f"    {image.short_digest}  {format_size(image.size):>9}  "
+                f"{format_age(image.built_at):>8}  {', '.join(image.tags)}"
+            )
+        lines.append("")
+
+    total = sum(len(members) for _, members in groups)
+    lines.append(
+        f"{total} image(s) built by cairn in {base.base} across {len(groups)} input hash(es)."
+    )
+    if others:
+        lines.append(f"{others} other tag(s) in the repository are not cairn's and are not listed.")
+    lines.append("Sizes are the download size from the registry, not unpacked size on disk.")
+    return "\n".join(lines)
+
+
+def registry_as_json(base: registry.ImageRef, groups, others: int) -> str:
+    """Return the machine-readable registry report (`BR-CLI-013`)."""
+    return json.dumps(
+        {
+            "repository": base.base,
+            "groups": [
+                {
+                    "input_hash": input_hash,
+                    "frappe": {
+                        "ref": members[0].frappe_ref,
+                        "commit": members[0].frappe_commit,
+                    },
+                    "apps": members[0].apps,
+                    "images": [
+                        {
+                            "digest": image.digest,
+                            "tags": list(image.tags),
+                            "created": image.built_at.isoformat() if image.built_at else None,
+                            "size": image.size,
+                        }
+                        for image in members
+                    ],
+                }
+                for input_hash, members in groups
+            ],
+            "other_tags": others,
+        },
+        indent=2,
+    )
+
+
+def _newest_built_first(images: list[RegistryImage]) -> list[RegistryImage]:
+    """Order by the image's own creation label; images without one sort last.
+
+    A registry read has no other clock — the registry itself does not say when a manifest was
+    written, and tag order is explicitly not meaningful.
+    """
+    return sorted(
+        images,
+        key=lambda image: (image.built_at is None, -(image.built_at or _EPOCH).timestamp()),
     )
 
 

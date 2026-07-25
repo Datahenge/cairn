@@ -682,6 +682,148 @@ series in the manifest; read the version at the resolved commit; drop the half).
 
 ---
 
+### ADR-033 — The declared environment list is a `[cairn.environments]` table in the manifest
+**Decided:** 2026-07-25
+`BR-DEPLOY-009` settled that an environment has **two halves joined only by the env tag
+name**, and made the control-side declared list the source of truth that gates
+`new-tag`/`retag`/`retire`. It never said where that list lives, and the pointer verbs cannot
+be written without knowing.
+
+**Decision:** it is a `[cairn.environments]` table in `cairn.toml`, mapping environment name
+to registry tag:
+
+```toml
+[cairn.environments]
+dev        = "dev"
+production = "production"
+```
+
+**Why the manifest and not a second file.** The list is portable, shared, and belongs under
+review beside the thing it points at — which is exactly what `cairn.toml` already is. It is
+discovered by machinery that exists (`BR-CFG-012`, upward from the working directory), so the
+common case keeps needing no flags (`BR-CLI-014`). A second file would add a discovery path,
+a second thing to keep in sync, and a new way for the two to disagree.
+
+**Why this does not contradict `BR-BUILD-001`.** That requirement calls the **image**
+environment-agnostic, not the file. Nothing here reaches the image: the table names pointers
+that live in the registry, and no environment name is ever baked into a build. The image
+stays one artifact promoted between environments, which is `ADR-010`'s whole point.
+
+**Why not build config.** `~/.config/cairn/config.toml` and `cairn.local.toml` are explicitly
+machine-local and uncommitted (`BR-CFG-008`). A source of truth that gates a production
+retag cannot live somewhere that differs per laptop and is absent on a colleague's.
+
+**Consequence for the schema:** `[cairn]` accepts a fifth key, and the manifest's
+unknown-key rejection must admit it. The table is optional — a manifest that only ever builds
+declares no environments, and the pointer verbs then report that none exist rather than
+inventing one (`BR-CLI-009`, no auto-vivification).
+*(BR-DEPLOY-009, BR-CLI-004, BR-CLI-009, BR-BUILD-001, BR-CFG-008, ADR-010, ADR-015)*
+
+---
+
+### ADR-034 — The target environment descriptor is `/etc/cairn/environment.toml`, one per host
+**Decided:** 2026-07-25
+`BR-DEPLOY-010` specifies the descriptor's **contents** — image and watched tag, which
+frappe_docker overrides to compose, domain and ports, site name, a *reference* to secrets —
+and `ADR-017` makes it the thing that names the secret mechanism. Neither says what the file
+is called or where it sits, and `cairn reconcile` cannot find it without that.
+
+**Decision:** TOML at a fixed path, `/etc/cairn/environment.toml`, holding **one**
+environment per host.
+
+**Why a fixed path.** `reconcile` runs unattended under a timer, where a flag is a thing
+nobody is present to pass and a search path is a thing that can silently find the wrong file.
+A fixed location also gives `ADR-028` the role signal it needs: the presence of this file
+*is* what makes a machine a target, so `cairn doctor` can pick its branch from context
+without a flag.
+
+**Why TOML.** cairn is TOML throughout (`cairn.toml`, build config, `pyproject.toml`), and
+`tomllib` is in the standard library. YAML beside the compose files would read more naturally
+next to what it renders, but it buys a dependency to express a flat table of scalars.
+
+**Why one environment per host.** `BR-DEPLOY-014` already gives each environment one site,
+and `ADR-002` scopes cairn to a single-host VPS with Compose. One environment per host keeps
+`reconcile` argument-free — it converges *the* environment, not *an* environment — and keeps
+the lock in `BR-DEPLOY-016` a single global one. Several environments on one host would need
+`reconcile <env>`, a lock per environment, and a rendered stack per environment; if that need
+arrives, `/etc/cairn/<env>.toml` extends this cleanly and `reconcile` gains an argument.
+
+**The file holds no secret values** (`BR-DEPLOY-011`) — only the name of the mechanism and
+the references the operator provisioned. It is host state, not deployment state: it is *not*
+committed to the deployment repository, because it describes this box.
+*(BR-DEPLOY-010, BR-DEPLOY-011, BR-DEPLOY-014, BR-DEPLOY-016, BR-CLI-008, ADR-002, ADR-016, ADR-017, ADR-028)*
+
+---
+
+### ADR-035 — cairn emits systemd units; it never installs them
+**Decided:** 2026-07-25
+`BR-DEPLOY-001` requires `reconcile` to run on a systemd timer but does not say who creates
+the unit files. Three options were weighed: cairn ignores them entirely, cairn prints them,
+cairn writes them to `/etc/systemd/system` and reloads the daemon.
+
+**Decision:** a command prints the service and timer to stdout; the operator reviews and
+installs. cairn performs **no privileged host writes**.
+
+**Why not install.** Everything cairn does today is scoped to images, the registry, and a
+compose stack. Writing to `/etc/systemd/system` and running `daemon-reload` is a different
+class of act — it needs root, it changes the host outside cairn's stated boundary, and it is
+the kind of convenience that is discovered later as a surprise. `BR-DEPLOY-008` positions
+cairn as a thin orchestrator over docker, the registry, and systemd; emitting a unit is
+orchestration, adopting the host's init configuration is not.
+
+**Why not ignore them either.** The cadence, the single-flight expectation, and the fact that
+journald owns the log (`BR-DEPLOY-019`) are cairn's knowledge, not the operator's guesswork.
+Printing a correct unit is documentation that cannot drift from the code, and it composes
+with review: `cairn systemd-units | less`, then install deliberately.
+*(BR-DEPLOY-001, BR-DEPLOY-008, BR-DEPLOY-016, BR-DEPLOY-019, BR-CLI-019, ADR-024, ADR-026)*
+
+---
+
+### ADR-036 — cairn speaks the registry API directly, rather than shelling out
+**Decided:** 2026-07-25 · **Decided during implementation — flagged for review**
+Everywhere else cairn delegates to the container engine, so the registry work was expected to
+as well. It cannot, and the reason is measurable rather than aesthetic.
+
+**`BR-DEPLOY-005` requires reading an image's provenance labels *remotely, without pulling*.**
+Checking what is actually available on the control machine (2026-07-25): `podman` 5.4.2 and
+`buildah` 1.39.3 are present; `docker`, `docker buildx`, `skopeo`, `crane`, and `regctl` are
+all absent. **No podman or buildah subcommand reads a remote image's labels.** The two tools
+that can are a Docker plugin (`docker buildx imagetools`) and a separate binary (`skopeo`) —
+so satisfying the requirement by shelling out would mean adding a hard binary dependency that
+this machine does not have, in order to perform one manifest fetch and one blob fetch.
+
+**Decision:** a small stdlib client (`urllib`) implementing exactly what cairn needs — three
+GETs and a PUT. No third-party HTTP library, no new binary on the host.
+
+**Credentials remain the engine's** (`BR-CFG-010`, `BR-DEPLOY-012`). cairn provisions nothing,
+prompts for nothing, and persists nothing. It *reads* the credential file `podman login` or
+`docker login` already wrote, uses it for one command, and forgets it. An unauthenticated
+request is tried first, so a public repository needs no login and the credential file is not
+even opened. This is delegation of *provisioning*, which is what the requirement protects;
+performing the transport was never the engine's exclusive claim — cairn already resolves refs
+with `git ls-remote` rather than asking an engine to do it.
+
+**The retag is genuinely server-side** (`BR-DEPLOY-004`). Within one repository the blobs a
+manifest references already exist, so pointing a new tag at an existing image is a single
+manifest write: one GET, one PUT, no layer transferred in either direction. The manifest bytes
+are written back **verbatim** — re-serializing them would change the digest and so mint a
+second image out of what must be the same one. That property is the most important line in the
+module and is pinned by a test that fails if the bytes are touched.
+
+**What this costs.** cairn now owns a little HTTP: bearer-token negotiation from a
+`WWW-Authenticate` challenge, and the media-type `Accept` set. Both are stable, versioned
+parts of the OCI distribution spec. The alternative — requiring `skopeo` — remains available
+behind the same module boundary if the maintenance ever proves unwelcome.
+
+**One defect this surfaced immediately**, worth recording because it was found by a test
+rather than in production: a root-owned `~/.docker/config.json` (present on this very machine)
+made `Path.is_file()` raise `PermissionError`, which would have turned *every* registry command
+into a traceback where anonymous access would have worked. Absent, unreadable, and malformed
+are now all the same answer — this file has no credential for us.
+*(BR-DEPLOY-004, BR-DEPLOY-005, BR-CFG-009, BR-CFG-010, BR-DEPLOY-012, ADR-027)*
+
+---
+
 ## First-class concepts established (design vocabulary)
 
 These aren't standalone decisions but are settled framing the design depends on:
