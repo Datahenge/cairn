@@ -89,7 +89,6 @@ def _service(executable: str, user: str) -> str:
     return f"""\
 [Unit]
 Description=cairn — converge this host to its environment's desired state
-Documentation=man:cairn(1)
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

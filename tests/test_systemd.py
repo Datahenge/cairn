@@ -109,3 +109,12 @@ def test_an_absent_cairn_on_path_falls_back_to_the_module(monkeypatch):
     monkeypatch.setattr(systemd.shutil, "which", lambda name: None)
 
     assert "-m cairn" in systemd.units().executable
+
+
+def test_the_units_reference_nothing_that_does_not_exist():
+    """An emitted unit must not point at documentation cairn does not ship — a `Documentation=`
+    naming an absent man page is a small lie that survives into every host."""
+    rendered = systemd.units()
+
+    assert "man:" not in rendered.service
+    assert "Documentation=" not in rendered.service

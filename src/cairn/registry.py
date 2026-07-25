@@ -371,22 +371,50 @@ def _token(ref: ImageRef, challenge: str, scope: str) -> str:
         query["service"] = service
 
     headers = {"Accept": "application/json"}
-    if credential := read_credential(ref.registry):
+    credential = read_credential(ref.registry)
+    if credential:
         headers["Authorization"] = f"Basic {credential}"
 
     try:
         body, _ = _send(f"{realm}?{urllib.parse.urlencode(query)}", "GET", None, headers)
     except urllib.error.HTTPError as exc:
-        raise RegistryError(
-            f"{ref.base}: the registry refused to issue a token ({exc.code} {exc.reason}). "
-            f"Run `podman login {ref.registry}` — cairn never stores registry credentials."
-        ) from exc
+        raise RegistryError(_token_refused(ref, exc, credential is not None)) from exc
 
     payload = _decode(ref, body)
     token = payload.get("token") or payload.get("access_token")
     if not isinstance(token, str):
         raise RegistryError(f"{ref.base}: the registry's token response carried no token.")
     return token
+
+
+def _token_refused(ref: ImageRef, exc: urllib.error.HTTPError, had_credential: bool) -> str:
+    """Explain a refused token, naming every cause rather than assuming the likeliest.
+
+    Some registries — GHCR among them — answer a token request for a repository that is
+    private, absent, *or* merely unauthenticated with the same ``403 DENIED``, deliberately, so
+    that a probe cannot discover which repositories exist. A message naming only one of the
+    three sends the operator to fix the wrong thing.
+    """
+    detail = _error_detail(exc) or f"{exc.code} {exc.reason}"
+    causes = [
+        f"  - the repository does not exist (check the namespace: '{ref.repository}')",
+        "  - it is private and this login cannot read it",
+    ]
+    if not had_credential:
+        causes.insert(
+            0,
+            f"  - you are not logged in to {ref.registry} "
+            f"(cairn found no credential the container engine had stored)",
+        )
+    return "\n".join(
+        [
+            f"{ref.base}: the registry would not issue a read token ({detail}).",
+            "This registry answers all of these the same way, so it may be any of:",
+            *causes,
+            f"If a login is needed, run `podman login {ref.registry}` — cairn never stores "
+            f"registry credentials, it only reads what the engine saved.",
+        ]
+    )
 
 
 def _parse_challenge(challenge: str) -> dict[str, str]:

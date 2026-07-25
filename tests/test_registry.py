@@ -438,3 +438,42 @@ def test_a_challenge_is_parsed_into_its_parameters():
     assert parsed["realm"] == "https://ghcr.io/token"
     assert parsed["service"] == "ghcr.io"
     assert parsed["scope"] == "repository:x/y:pull"
+
+
+def test_a_refused_token_names_every_possible_cause(monkeypatch):
+    """GHCR answers "private", "absent", and "not logged in" identically, on purpose, so a
+    message naming only one sends the operator to fix the wrong thing."""
+    monkeypatch.setattr(registry, "read_credential", lambda name: None)
+
+    def _transport(url, method, body, headers):
+        if "/token" in url:
+            raise _http_error(403)
+        raise _http_error(401, headers={"WWW-Authenticate": CHALLENGE})
+
+    monkeypatch.setattr(registry, "_send", _transport)
+
+    with pytest.raises(RegistryError) as caught:
+        registry.tags(REF)
+
+    message = str(caught.value)
+    assert "not logged in" in message
+    assert "does not exist" in message
+    assert "private" in message
+
+
+def test_a_refused_token_with_a_credential_does_not_suggest_logging_in(monkeypatch):
+    """Telling someone to log in when they already are is the least useful thing to say."""
+    monkeypatch.setattr(registry, "read_credential", lambda name: "dXNlcjpwYXNz")
+
+    def _transport(url, method, body, headers):
+        if "/token" in url:
+            raise _http_error(403)
+        raise _http_error(401, headers={"WWW-Authenticate": CHALLENGE})
+
+    monkeypatch.setattr(registry, "_send", _transport)
+
+    with pytest.raises(RegistryError) as caught:
+        registry.tags(REF)
+
+    assert "you are not logged in" not in str(caught.value)
+    assert "cannot read it" in str(caught.value)
