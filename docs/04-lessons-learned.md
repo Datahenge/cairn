@@ -151,6 +151,35 @@ originally warned about turned out to be out of scope by construction rather tha
 to be paid. Two risks carried forward into `ADR-027`: OCI-vs-v2s2 manifest format on push,
 and label readback across engines.
 
+## 11. A convention that lives only in prose will be violated
+
+*Measured the hard way — twice. Illuminates `/CLAUDE.md`._
+
+`/CLAUDE.md` has always said internal docstrings cite `BR` IDs while external descriptions
+omit them. It was violated twice in two days: first every Typer command leaked its `BR` ID
+into `--help` (Typer renders the **docstring** as help text), then eight runtime error
+messages leaked theirs through `Error: …`. Both were caught by a human reading output.
+
+The wording was fine. The **placement and enforcement** were not:
+
+- It sat in workflow step 6, *"User documentation"* — a phase not yet started, so while
+  writing Phase-4 code it read as a future task rather than a present constraint.
+- "External/API descriptions" did not obviously name the channels that actually leak:
+  help text, error messages, warnings, progress output.
+- It was absent from the *"For the AI (operating rules)"* section — the part that binds
+  behaviour.
+- Nothing checked it. Compliance depended on remembering, every time, in every string.
+
+Fixed on all four axes, but the last is the one that matters: `tests/test_conventions.py`
+now parses every non-docstring string literal in the package and fails on any `BR-`/`ADR-`
+identifier. It includes a test that plants a violation and asserts the guard catches it —
+a guard that cannot fail is worse than none, because it manufactures confidence.
+
+Generalizable: **prefer conventions that can fail a test.** For a rule stated in prose,
+the honest question is not "is the wording clear?" but "what would notice if I broke it?"
+If the answer is "a careful reader, eventually", the rule is decorative. This one was
+decorative for two days while being violated in two different channels.
+
 ## 10. The OCI spec sets the label convention; Docker's docs carry the reasoning
 
 *Measured (both documents read, 2026-07-24). Illuminates `ADR-030`, `BR-BUILD-011`._

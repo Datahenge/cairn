@@ -59,8 +59,8 @@ local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` com
 4. **Modular code** — only once requirements are solid; one small module at a time;
    each module cites the `BR` IDs it implements.
 5. **Testing** — tests reference the same `BR` IDs as the code.
-6. **User documentation** — `README.md` / `USAGE.md` last. Internal docstrings cite
-   `BR` IDs; external/API descriptions omit internal identifiers.
+6. **User documentation** — `README.md` / `USAGE.md` last. See the identifier rule below;
+   it applies from the first line of code, not from this phase.
 
 ## For the AI (operating rules)
 
@@ -70,3 +70,12 @@ local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` com
   in the same change.
 - Do **not** begin code for a pillar whose requirements are not yet solid.
 - Never edit the vendored `frappe_docker/` tree; manage it only via ventwig.
+- **`BR`/`ADR` IDs are internal — they never reach a user.** They belong in docstrings,
+  comments, tests, commit messages, and `docs/`. They MUST NOT appear in **anything a
+  user can see**: CLI `--help` text, error messages, warnings, progress output,
+  `README.md`, `USAGE.md`. This binds from the first line of code, not from Phase 6.
+  When tempted to cite an ID in a message, state the *reason* instead — "each app must
+  appear exactly once — the list is an ordered install sequence" tells the user something;
+  "(BR-BUILD-003)" tells them nothing.
+  `tests/test_conventions.py` enforces this by parsing every non-docstring string in the
+  package. If it fails, the **message** is wrong, not the test.

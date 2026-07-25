@@ -11,6 +11,17 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **The identifier rule made enforceable, after being violated twice.** Brian asked
+  whether the rule was strong enough, having watched `BR` IDs reach user-facing output
+  repeatedly. It wasn't — not because the wording was unclear, but because it sat in
+  workflow step 6 (*"User documentation"*, a phase not yet begun), never named the
+  channels that actually leak (`--help`, errors, warnings, progress), was absent from the
+  binding *"For the AI (operating rules)"* section, and **had no enforcement**. Fixed on
+  all four axes in `/CLAUDE.md`, the last via `tests/test_conventions.py`, which parses
+  every non-docstring string literal in the package and fails on any `BR-`/`ADR-`
+  identifier — including a test that plants a violation to prove the guard can fail.
+  Recorded as lessons §11: prefer conventions that can fail a test; for a rule stated in
+  prose, ask not "is the wording clear?" but "what would notice if I broke it?"
 - **`BR-CLI-011` strengthened — "silence cuts both ways".** As written, the requirement
   listed only *destructive* examples (no auto-rollback, no auto-install, no data writes),
   and was implemented as "no silent destructive actions". That reading let `cairn build`
