@@ -49,7 +49,14 @@ def render(manifest: Manifest) -> str:
 
 @contextmanager
 def secret_file(manifest: Manifest) -> Iterator[Path]:
-    """Write ``apps.json`` to a private temporary file for the duration of the build.
+    """Render *manifest* and hold it in a private temporary file (see :func:`written`)."""
+    with written(render(manifest)) as path:
+        yield path
+
+
+@contextmanager
+def written(text: str) -> Iterator[Path]:
+    """Hold *text* in a private temporary file for the duration of the build.
 
     The file lives outside cairn's installation and outside the deployment directory
     (`BR-BUILD-011` — cairn writes no markers into its own tree), and is removed on the
@@ -60,7 +67,7 @@ def secret_file(manifest: Manifest) -> Iterator[Path]:
     path = Path(name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(render(manifest))
+            handle.write(text)
         yield path
     finally:
         path.unlink(missing_ok=True)

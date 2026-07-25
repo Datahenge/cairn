@@ -1,8 +1,11 @@
 """cairn command-line interface — a single Typer application (BR-CLI-001).
 
 Subcommands are added per requirement area. This module currently wires the ``vendor``
-group (BR-CLI-006) and ``doctor`` (BR-CLI-007); further commands (``build``, ``push``,
-``retag``, …) are added as their modules land.
+group (BR-CLI-006), ``doctor`` (BR-CLI-007), and ``build`` (BR-CLI-002); further commands
+(``push``, ``retag``, …) are added as their modules land.
+
+``build --push`` (`BR-CLI-002`) is deliberately absent until the push module exists — an
+accepted flag that errors is worse than one that is not offered yet.
 """
 
 from collections.abc import Callable
@@ -11,7 +14,7 @@ from typing import Annotated
 
 import typer
 
-from . import __version__, doctor, vendor
+from . import __version__, build, config, doctor, resolve, vendor
 from .errors import CairnError
 from .project import find_project_root
 
@@ -83,6 +86,63 @@ def vendor_sync(
 ) -> None:
     """Re-materialize the vendored tree from its pinned ref (BR-CLI-006, BR-VEND-009)."""
     _run_in_project(lambda root: vendor.sync(root, source))
+
+
+@app.command("build")
+def build_command(
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml; default: discovered upward from cwd."),
+    ] = None,
+    no_cache: Annotated[
+        bool, typer.Option("--no-cache", help="Ignore the layer cache (rarely needed).")
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show what would be built, and build nothing."),
+    ] = False,
+) -> None:
+    """Build the image declared by cairn.toml (BR-CLI-002).
+
+    Default is build-only; publishing is a separate `cairn push` (BR-CLI-002).
+    """
+
+    def _action(root: Path) -> int:
+        found = config.find_manifest(explicit=manifest_path)
+        plan = build.plan(
+            root,
+            config.load_manifest(found),
+            config.load_build_config(found),
+            no_cache=no_cache,
+        )
+        _warn_moving_refs(plan)
+        if dry_run:
+            typer.echo(plan.render())
+            return 0
+        build.run(plan)
+        for reference in plan.references:
+            typer.secho(f"Built {reference}", fg=typer.colors.GREEN)
+        return 0
+
+    _run_in_project(_action)
+
+
+def _warn_moving_refs(plan: build.BuildPlan) -> None:
+    """Warn when the manifest pins to a moving branch (BR-BUILD-005).
+
+    The manifest *should* pin to tags; a branch still builds, but the image it produces
+    is not reproducible from the manifest alone — only from the recorded commits.
+    """
+    moving = resolve.moving_refs(plan.resolution)
+    if not moving:
+        return
+    names = ", ".join(f"{ref.name}@{ref.ref}" for ref in moving)
+    typer.secho(
+        f"Warning: pinned to moving branch(es): {names}. "
+        f"Tags are reproducible; branches are not (BR-BUILD-005).",
+        fg=typer.colors.YELLOW,
+        err=True,
+    )
 
 
 @app.command("doctor")

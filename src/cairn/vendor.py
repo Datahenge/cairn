@@ -96,6 +96,34 @@ def assert_build_inputs(root: Path, source_name: str = FRAPPE_DOCKER_SOURCE) -> 
         )
 
 
+def containerfile_path(root: Path, source_name: str = FRAPPE_DOCKER_SOURCE) -> Path:
+    """Return the path to the vendored custom Containerfile (`ADR-004`)."""
+    return root / _source_path(root, source_name) / CUSTOM_CONTAINERFILE
+
+
+def build_context(root: Path, source_name: str = FRAPPE_DOCKER_SOURCE) -> Path:
+    """Return the build context — the vendored source root, per `BR-BUILD-009`."""
+    return root / _source_path(root, source_name)
+
+
+def containerfile_arg_defaults(containerfile: Path) -> dict[str, str]:
+    """Return the ``ARG NAME=default`` pairs declared by *containerfile*.
+
+    `BR-BUILD-010` requires recording **effective** build args, "including Containerfile
+    defaults where unset" — so the defaults are read from the artifact itself rather than
+    transcribed, and a vendored-pin bump that moves a default is picked up automatically.
+    ``ARG`` lines without a default are skipped: they contribute no value.
+    """
+    defaults: dict[str, str] = {}
+    for line in containerfile.read_text(encoding="utf-8").splitlines():
+        tokens = line.strip().split(maxsplit=1)
+        if len(tokens) != 2 or tokens[0].upper() != "ARG" or "=" not in tokens[1]:
+            continue
+        name, _, value = tokens[1].partition("=")
+        defaults[name.strip()] = value.strip().strip('"').strip("'")
+    return defaults
+
+
 def _source_path(root: Path, source_name: str) -> str:
     """Return the declared ``local_path`` of the named vendored source."""
     for src in read_vendor_sources(root):

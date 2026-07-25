@@ -41,6 +41,10 @@ class BuildConfigInvalidError(ConfigError):
     """A build-config file exists but is unparseable or carries an invalid value."""
 
 
+class BuildError(CairnError):
+    """The build engine was invoked and failed (BR-BUILD-009)."""
+
+
 class RefResolutionError(CairnError):
     """A manifest ref could not be resolved to exactly one commit (BR-BUILD-005)."""
 
