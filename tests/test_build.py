@@ -473,3 +473,50 @@ def test_a_hung_tagging_pass_is_abandoned_not_awaited(monkeypatch):
     monkeypatch.setattr(build.subprocess, "run", _timeout)
 
     assert build.tag_cache_stage(_plan()) is None
+
+
+# --- the legible tag half reaches the plan (BR-BUILD-008, `ADR-032`) ---------
+
+
+def test_a_declared_series_names_the_built_image(monkeypatch, containerfile, tmp_path):
+    """The manifest's series must actually reach the tag; otherwise it is a setting that
+    validates, documents itself, and does nothing."""
+    plan = _planned(monkeypatch, containerfile, tmp_path, series="v16")
+
+    assert plan.primary_tag.startswith("v16-")
+
+
+def test_without_a_series_the_ref_still_names_the_image(monkeypatch, containerfile, tmp_path):
+    """The fallback keeps a manifest predating `series` producing the names it always did."""
+    plan = _planned(monkeypatch, containerfile, tmp_path, series=None)
+
+    assert plan.primary_tag.startswith("v16-")  # derived from "version-16"
+
+
+def test_the_series_does_not_change_the_cache_bust(monkeypatch, containerfile, tmp_path):
+    """Renaming a line of images is not a reason to re-clone every app."""
+    named = _planned(monkeypatch, containerfile, tmp_path, series="v16")
+    renamed = _planned(monkeypatch, containerfile, tmp_path, series="erpnext16")
+
+    assert named.cache_bust == renamed.cache_bust
+    assert named.primary_tag.rpartition("-")[2] == renamed.primary_tag.rpartition("-")[2]
+    assert named.primary_tag != renamed.primary_tag
+
+
+def _planned(monkeypatch, containerfile, tmp_path, *, series):
+    """Build a real BuildPlan with the vendor and resolve boundaries stubbed."""
+    manifest = Manifest(
+        image_name="erpnext-btu-v16",
+        frappe=Frappe("https://github.com/frappe/frappe", "version-16"),
+        apps=(App("erpnext", "https://github.com/frappe/erpnext", "version-16"),),
+        build={},
+        series=series,
+    )
+    monkeypatch.setattr(vendor, "assert_clean", lambda root, source=None: None)
+    monkeypatch.setattr(vendor, "assert_no_nested_git", lambda root: None)
+    monkeypatch.setattr(vendor, "assert_build_inputs", lambda root, source_name=None: None)
+    monkeypatch.setattr(vendor, "containerfile_path", lambda root, source_name=None: containerfile)
+    monkeypatch.setattr(vendor, "build_context", lambda root, source_name=None: tmp_path)
+    monkeypatch.setattr(build, "vendor_pin", lambda root, source_name=None: {"ref": "v3.2.1"})
+    monkeypatch.setattr(build.resolve, "resolve_manifest", lambda m: _resolution())
+    return build.plan(tmp_path, manifest, BuildConfig(), engine_name="docker")

@@ -685,11 +685,32 @@ Also decided, and the sharper half:
   `BR-BUILD-011`; `cairn images --local` reads them back and groups by input hash, making
   supersession visible rather than inferred. *(BR-CLI-005)*
 
-**Deferred, not decided:** whether the tag's `<legible>` half should keep deriving from the
-*declared* Frappe ref. It currently does, which means one commit reached by a branch and by
-a tag yields two tag names for one image, and taking `BR-BUILD-005`'s own advice to pin to
-tags renames every image for no change in content. Options are on the table (declare a
-series in the manifest; read the version at the resolved commit; drop the half). Open.
+**Resolved 2026-07-25 — the `<legible>` half is a manifest-declared `series`.** Left deferred
+here: the half derived from the *declared* Frappe ref, so the tag depended on how the ref was
+**spelled** rather than on what was built. One commit reached by a branch and by a tag yielded
+two names for one image, and taking `BR-BUILD-005`'s own advice to pin to tags renamed every
+image though nothing about the content changed.
+
+Decided: `[cairn] series = "v16"`. The manifest states the readable half once, and it stays put
+when the Frappe ref is re-pinned. Brian chose it after the options were laid out; the deciding
+argument for it over **reading the version at the resolved commit** — which sounds strictly more
+truthful — is that the truthful version cannot be obtained provider-neutrally. `git ls-remote`
+returns hashes, not file contents, so reading `frappe/__init__.py` needs either a clone on every
+build or a GitHub-specific API call, and cairn assumes a git host no more than it assumes a
+registry.
+
+Two properties that make this safe:
+
+- **`series` never enters the input hash.** It is a label, not an input. Changing it renames
+  *future* images without invalidating existing ones or provoking a rebuild — exactly the
+  distinction this decision is about.
+- **Absent a declared `series` the old derivation still applies**, so a manifest predating it
+  keeps producing the names it always did.
+
+Accepted cost, stated plainly: nothing validates the declaration. A manifest may say
+`series = "v16"` while building Frappe 15, and cairn will not notice. That is checkable later
+(compare against the resolved version at build time) but not checkable for free — which is the
+entire reason the more truthful option was rejected. Recorded in `BR-BUILD-002`/`BR-BUILD-008`.
 
 *(BR-BUILD-008, BR-BUILD-014, BR-CLI-005, BR-CLI-018, ADR-011, ADR-015)*
 
@@ -834,6 +855,47 @@ made `Path.is_file()` raise `PermissionError`, which would have turned *every* r
 into a traceback where anonymous access would have worked. Absent, unreadable, and malformed
 are now all the same answer — this file has no credential for us.
 *(BR-DEPLOY-004, BR-DEPLOY-005, BR-CFG-009, BR-CFG-010, BR-DEPLOY-012, ADR-027)*
+
+---
+
+### ADR-037 — cairn never installs an app; the `install-app` clause is struck
+**Decided:** 2026-07-25
+`BR-DEPLOY-003` permitted `bench install-app` during a reconcile behind an opt-in directive,
+and `BR-CLI-004` expressed that opt-in as `--install-app <apps>` on the pointer verbs. The
+implementation exposed that nothing carried the directive across: the two halves of an
+environment are joined **only by the tag name** (`BR-DEPLOY-009`), and a tag name has no room
+for a payload.
+
+The obvious response was to invent a transport — a label on the image, a field in the
+descriptor, a second artifact in the registry. Brian leaned toward striking the clause
+instead, and asked for a recommendation. **Struck**, and the reason is structural rather than
+one of convenience:
+
+**A convergence loop cannot host a one-shot mutation.** `reconcile` makes actual state match
+desired state, repeatedly, forever, and is safe precisely because repeating it is a no-op.
+`install-app` is irreversible and must happen exactly once. Hosting it would require cairn to
+remember whether it already had — durable state cairn deliberately does not keep
+(`BR-DEPLOY-019`). Absent that memory it either re-runs on every poll, or depends on a flag
+that goes stale the moment it is used. Every candidate transport was really a proposal for
+where to keep that state.
+
+Two further reasons, either sufficient on its own:
+
+- **It is a second data-plane write.** cairn's sole permitted DB touch is `bench migrate`
+  (`ADR-022`, `BR-DATA-005/006/008`). `install-app` creates DocTypes and inserts records.
+- **It breaks rollback.** Install an app, then move the pointer back (`BR-DEPLOY-004`): the
+  schema remains, the code that understands it is gone — a state cairn would have
+  manufactured. `bench migrate` is safe after every image enable because it reconciles schema
+  to code that *exists*; `install-app` creates schema for code that may vanish.
+
+**Consistency clinches it.** `BR-DEPLOY-007` already makes `bench new-site` the operator's
+job: cairn deploys to environments that already exist. Installing an app is the same class of
+act — it changes what the environment *is*, not which version of the code it runs. So
+`install-app` joins `new-site` on the operator's side of the line, permanently.
+
+Recorded as `BR-DEPLOY-003a`. `--install-app` is removed from `BR-CLI-004`. `reconcile`'s
+behaviour does not change: it never installed.
+*(BR-DEPLOY-003a, BR-DEPLOY-007, BR-CLI-004, BR-DATA-005/006/008, ADR-022, ADR-023, ADR-026)*
 
 ---
 

@@ -272,3 +272,48 @@ def test_unknown_build_config_key_rejected(monkeypatch, tmp_path):
 def test_image_base_resolution(build_config, expected):
     """BR-CFG-011: registry configured -> registry path; absent -> local cairn/<name>."""
     assert build_config.resolve_image_base("erpnext-btu-v16") == expected
+
+
+# --- the legible tag half (BR-BUILD-008, ADR-032) ----------------------------
+
+
+def _with_series(text: str, value: str) -> str:
+    """Insert a `series` key into `[cairn]`, where the tag's readable half is declared."""
+    return text.replace(
+        'image_name = "erpnext-btu-v16"',
+        f'image_name = "erpnext-btu-v16"\nseries = {value}',
+    )
+
+
+def test_series_is_optional(tmp_path):
+    """Absent it, the legible half is derived from the ref as it always was."""
+    assert config.load_manifest(_manifest(tmp_path)).series is None
+
+
+def test_series_is_read_when_declared(tmp_path):
+    text = _with_series(VALID, '"v16"')
+
+    assert config.load_manifest(_manifest(tmp_path, text)).series == "v16"
+
+
+def test_a_series_containing_a_hyphen_is_refused(tmp_path):
+    """The tag reads as '<series>-<hash>', so a hyphen inside the series makes it ambiguous to
+    the human it exists for."""
+    text = _with_series(VALID, '"v16-erp"')
+
+    with pytest.raises(ManifestInvalidError, match="no hyphens"):
+        config.load_manifest(_manifest(tmp_path, text))
+
+
+def test_a_series_that_is_not_a_string_is_refused(tmp_path):
+    text = _with_series(VALID, "16")
+
+    with pytest.raises(ManifestInvalidError, match="series must be a non-empty string"):
+        config.load_manifest(_manifest(tmp_path, text))
+
+
+def test_a_series_with_a_space_is_refused(tmp_path):
+    text = _with_series(VALID, '"v 16"')
+
+    with pytest.raises(ManifestInvalidError, match="cannot be used in an image tag"):
+        config.load_manifest(_manifest(tmp_path, text))

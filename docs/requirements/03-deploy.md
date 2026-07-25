@@ -20,9 +20,30 @@ in the registry (`:dev`/`:test`/`:staging`/`:production`). The target polls that
 **digest** and converges when it changes. *(ADR-010)*
 
 **`BR-DEPLOY-003`** — On a detected change, `cairn reconcile` MUST: pull the image → set
-`CUSTOM_IMAGE`/`CUSTOM_TAG` → `docker compose up -d` → run `bench migrate` → run
-`bench install-app` **only if** an opt-in directive is present → verify health. cairn
-performs no volume or SQL writes of its own (`BR-DATA-005`/`006`/`008`). *(ADR-014, ADR-023)*
+`CUSTOM_IMAGE`/`CUSTOM_TAG` → `docker compose up -d` → run `bench migrate` → verify health.
+cairn performs no volume or SQL writes of its own (`BR-DATA-005`/`006`/`008`).
+*(ADR-014, ADR-023)*
+
+**`BR-DEPLOY-003a`** *(cairn never installs an app)* — `cairn reconcile` MUST NOT run
+`bench install-app`, under any flag or directive. Installing an app is the **operator's**
+act, exactly as site creation is (`BR-DEPLOY-007`). An earlier draft of `BR-DEPLOY-003`
+permitted it behind an opt-in directive; that clause was **struck** 2026-07-25 (`ADR-037`).
+
+Three reasons, of which the first is structural:
+
+1. **A convergence loop cannot host a one-shot mutation.** `reconcile` exists to make actual
+   state match desired state, repeatedly and idempotently. `install-app` is irreversible and
+   must happen exactly once, which would require cairn to remember whether it already had —
+   durable state cairn deliberately does not keep (`BR-DEPLOY-019`, `ADR-026`). Without that
+   memory it either re-runs on every poll or relies on a flag that goes stale on first use.
+2. **It is a second data-plane write.** The sole DB touch cairn is permitted is
+   `bench migrate` (`BR-DATA-005`/`006`/`008`, `ADR-022`). `install-app` creates DocTypes and
+   inserts records — a materially larger claim on the database.
+3. **It breaks rollback.** Install an app, then roll the image back (`BR-DEPLOY-004`): the
+   app's schema remains and the code that understands it is gone. `bench migrate` is safe
+   after **every** image enable precisely because it reconciles schema to code that *exists*;
+   `install-app` would create schema for code that may vanish on the next pointer move.
+*(BR-DEPLOY-007, BR-DATA-005/006/008, ADR-022, ADR-023, ADR-037)*
 
 ## Pointer operations
 

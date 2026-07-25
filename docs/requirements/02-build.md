@@ -19,7 +19,8 @@ list (`name`, `url`, `ref`) for ERPNext + custom apps; and `[cairn.build]` knobs
 (`python_version`, `node_version`, `install_chromium`) with an optional passthrough for the
 long tail (`debian_base`, `wkhtmltopdf_*`). It MAY provide an optional
 `[cairn.environments]` table — the declared environment list of `BR-DEPLOY-009`
-(`ADR-033`), which no build reads. *(ADR-015, ADR-033)*
+(`ADR-033`), which no build reads — and an optional `[cairn] series` naming the legible half
+of the image tag (`BR-BUILD-008`, `ADR-032`). *(ADR-015, ADR-032, ADR-033)*
 
 **`BR-BUILD-003`** — `[[cairn.apps]]` is **order-significant**: cairn MUST preserve manifest
 order into `apps.json` and into the deploy-time install sequence, and MUST NOT reorder or
@@ -48,11 +49,23 @@ included because `FRAPPE_BRANCH` enters the cache key by **name**, so a branch t
 would otherwise reuse a stale `bench init` layer. *(ADR-015)*
 
 **`BR-BUILD-008`** — cairn MUST tag the image with a **deterministic primary tag**
-`<legible>-<inputhash>` — `<legible>` a slug of the resolved Frappe version (e.g.
-`version-16`→`v16`), `<inputhash>` a short hash of *all* resolved inputs (Frappe + app
+`<legible>-<inputhash>` — `<inputhash>` a short hash of *all* resolved inputs (Frappe + app
 commits + effective build args) that alone guarantees uniqueness (e.g.
 `cairn/erpnext-btu-v16:v16-a1b2c3d4`). cairn MUST also apply a moving `latest` tag. The
 image base defaults to `cairn/<image_name>` and MUST be registry-agnostic.
+
+`<legible>` comes from the manifest's declared `[cairn] series` (`ADR-032`, resolved
+2026-07-25); absent one it is derived from the declared Frappe ref as before
+(`version-16`→`v16`). It MUST NOT enter the input hash: it is a **label, not an input**, so
+changing `series` MUST rename future images without invalidating existing ones or provoking a
+rebuild (`BR-BUILD-014`). A declared `series` MUST be a legal tag fragment and MUST NOT contain
+a hyphen, since the tag reads as `<series>-<hash>`.
+
+**Why declared rather than derived.** Deriving it from the ref made the tag a function of how
+the ref was *spelled*: one commit reached by a branch and by a tag produced two names for one
+image, and following `BR-BUILD-005`'s own advice to pin to tags renamed every image for no
+change in content. Reading the true version at the resolved commit was rejected as it cannot be
+done provider-neutrally — `git ls-remote` returns hashes, not file contents. *(ADR-032)*
 
 **"Deterministic", not "immutable"** — the word was corrected 2026-07-25 (`ADR-032`) after
 the original wording invited a false inference. Same inputs always produce the same *name*;

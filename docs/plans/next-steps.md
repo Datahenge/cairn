@@ -12,7 +12,7 @@ guess** — ask.
 
 ## Where things stand
 
-Phase 4 (modular code) is under way. Implemented and tested (444 tests, ruff clean, 92%
+Phase 4 (modular code) is under way. Implemented and tested (462 tests, ruff clean, 92%
 statement coverage; `cli.py` at 99%):
 
 | Command | Requirements | State |
@@ -77,30 +77,20 @@ Record the result in `04-lessons-learned.md` marked *measured*.
 
 ---
 
-## 3. Settle the `<legible>` tag half — an open decision
+## 3. ~~Settle the `<legible>` tag half~~ — decided 2026-07-25
 
-**Do not implement without a decision from Brian.** Recorded in `ADR-032` as deliberately
-open.
+Resolved: `[cairn] series = "v16"` in the manifest. The readable half of the tag is now
+declared once rather than derived from the Frappe ref, so re-pinning the ref from a branch to
+a tag no longer renames every image. The series never enters the input hash — it is a label,
+not an input — so renaming a line of images cannot orphan the ones already built.
 
-`tagging.legible_slug()` derives from the **declared** Frappe ref, so the tag is not a pure
-function of resolved inputs:
+Reading the true version at the resolved commit was the more truthful option and was rejected:
+`git ls-remote` returns hashes, not file contents, so it needs either a clone on every build or
+a provider-specific API call. Full reasoning in `ADR-032`.
 
-```
-same commit, declared as branch:  v16-1b019793dc20
-same commit, declared as tag:     v16.0.1-1b019793dc20
-```
-
-Two consequences: one commit reached two ways yields two tag names for one image; and
-following `BR-BUILD-005`'s own advice to pin to tags **renames every image** though nothing
-about the content changed.
-
-Options on the table, with the prior lean recorded as **(c)**:
-
-- **(a)** status quo — declared ref; informative, but leaks a mutable symbol into identity;
-- **(b)** read the version at the resolved commit (e.g. `frappe/__init__.py`) — truthful and
-  spelling-independent, costs a network read or checkout during resolution;
-- **(c)** a manifest-declared series, e.g. `[cairn] series = "v16"` — cheap, explicit, stable;
-- **(d)** drop the half; the tag becomes `<inputhash>` alone — pure, unreadable.
+Accepted cost: nothing validates the declaration. A manifest may claim `series = "v16"` while
+building Frappe 15. Validating it at build time against the resolved version is possible later
+and is not currently a requirement.
 
 ---
 
@@ -148,9 +138,9 @@ descriptor into a wrong deploy every five minutes.
   systemd, registry reachability. Currently `doctor` only knows the build/control role, so on a
   target it checks for a vendored tree that is not there. This is the most obvious gap the
   first live run will expose.
-- **`ADR-037`** — how an `install-app` opt-in reaches a target. Open, and blocking nothing:
-  `reconcile` deliberately never installs. Decide it the first time an app must be added to a
-  live environment, based on what was actually needed at that moment.
+- **~~`ADR-037`~~ — closed 2026-07-25: cairn never installs an app.** The clause was struck
+  rather than implemented. If an app must be added to a live environment, that is
+  `bench install-app`, run by hand, exactly as site creation already is.
 - **`BR-DEPLOY-006`** — the target-side GC pass (keep last N images, **never** touch volumes).
   `cairn prune` is its build-machine analogue and the same label-scoping applies.
 - **`BR-DEPLOY-020`** — the optional failure webhook. Opt-in, best-effort, must never crash

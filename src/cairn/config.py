@@ -53,6 +53,9 @@ _COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 #: The OCI grammar for a tag: alphanumeric first, then word characters, dots and dashes.
 _TAG_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$")
 
+#: A tag's legible half. As `_TAG_RE`, minus the hyphen that separates it from the hash.
+_SERIES_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9._]{0,63}$")
+
 #: Fallback image base when no registry is configured (BR-BUILD-008, BR-CFG-011).
 LOCAL_IMAGE_PREFIX = "cairn"
 
@@ -82,6 +85,13 @@ class Frappe:
 class Manifest:
     """A validated ``cairn.toml`` — exactly one environment-agnostic image (BR-BUILD-001).
 
+    ``series`` names the human-readable half of the image tag (`BR-BUILD-008`, `ADR-032`) —
+    e.g. ``"v16"``, yielding tags like ``v16-1b019793dc20``. Declaring it is what makes that
+    half stable when the Frappe ref is re-pinned from a branch to a tag; absent it, the half
+    is derived from the declared ref as it always was. It is a **label, not an input**: it
+    never enters the input hash, so changing it renames future images without orphaning
+    existing ones.
+
     ``environments`` is the declared environment list (`BR-DEPLOY-009a`, `ADR-033`): the
     control-side source of truth for which environments exist, mapping environment name to
     the registry tag that serves as its desired-state pointer. No build reads it, and no
@@ -93,6 +103,7 @@ class Manifest:
     frappe: Frappe
     apps: tuple[App, ...]
     build: dict[str, Any] = field(default_factory=dict)
+    series: str | None = None
     environments: dict[str, str] = field(default_factory=dict)
     path: Path | None = None
 
@@ -170,13 +181,14 @@ def load_manifest(path: Path) -> Manifest:
         raise ManifestInvalidError(f"{path}: missing the required [cairn] table.")
 
     _reject_unknown(
-        path, "[cairn]", root, {"image_name", "frappe", "apps", "build", "environments"}
+        path, "[cairn]", root, {"image_name", "frappe", "apps", "build", "series", "environments"}
     )
     return Manifest(
         image_name=_image_name(path, root),
         frappe=_frappe(path, root),
         apps=_apps(path, root),
         build=_build_knobs(path, root),
+        series=_series(path, root),
         environments=_environments(path, root),
         path=path,
     )
@@ -284,6 +296,32 @@ def _apps(path: Path, root: dict) -> tuple[App, ...]:
         seen.add(name)
         apps.append(App(name=name, url=_required_string(path, where, entry, "url"), ref=ref))
     return tuple(apps)
+
+
+def _series(path: Path, root: dict) -> str | None:
+    """Validate the optional ``[cairn] series`` (`BR-BUILD-008`, `ADR-032`).
+
+    It becomes part of an image tag, so it must be a legal tag fragment — and it must not
+    contain a hyphen, because the tag is ``<series>-<inputhash>`` and the input hash is read
+    back by splitting on the *last* hyphen. A series of its own containing one would still
+    parse, but it makes the tag ambiguous to a human, which defeats the only purpose the
+    legible half has.
+    """
+    value = root.get("series")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestInvalidError(
+            f"{path}: [cairn] series must be a non-empty string naming this line of images, "
+            f'e.g. series = "v16".'
+        )
+    if not _SERIES_RE.match(value):
+        raise ManifestInvalidError(
+            f"{path}: [cairn] series '{value}' cannot be used in an image tag. Use letters, "
+            f"digits, dots and underscores — no hyphens, since the tag reads as "
+            f"'<series>-<hash>'."
+        )
+    return value
 
 
 def _environments(path: Path, root: dict) -> dict[str, str]:

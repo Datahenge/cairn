@@ -169,11 +169,13 @@ def converge(
 ) -> None:
     """Pull, recreate the stack in place, migrate, and verify health (`BR-DEPLOY-003`).
 
-    ``bench install-app`` is **not** run. `BR-DEPLOY-003` permits it only behind an explicit
-    opt-in directive, and how that directive reaches a target is not yet decided — the
-    control side names apps at retag time, and nothing carries them here. Installing an app
-    without that decision would be the auto-install `ADR-023` forbids, so cairn does nothing
-    rather than guess.
+    ``bench install-app`` is **never** run, by decision rather than omission (`ADR-037`,
+    `BR-DEPLOY-003a`). This function is a convergence step — safe because repeating it is a
+    no-op — and ``install-app`` is a one-shot irreversible mutation that would have to
+    remember whether it had already happened. It is also a second data-plane write
+    (`ADR-022`), and it breaks rollback: move the pointer back and the app's schema remains
+    while the code that understands it is gone. Installing an app is the operator's act, as
+    site creation already is (`BR-DEPLOY-007`).
     """
     reference = descriptor.reference
 

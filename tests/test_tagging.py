@@ -133,3 +133,80 @@ def test_tag_is_valid_for_an_oci_registry():
     tag = tagging.primary_tag(_resolution(), BUILD_ARGS)
 
     assert re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", tag)
+
+
+# --- the legible half (BR-BUILD-008, `ADR-032`) ------------------------------
+
+
+def test_a_declared_series_names_the_legible_half():
+    tag = tagging.primary_tag(_resolution(), BUILD_ARGS, "v16")
+
+    assert tag.startswith("v16-")
+    assert tag == f"v16-{tagging.input_hash(_resolution(), BUILD_ARGS)}"
+
+
+def test_a_declared_series_survives_re_pinning_the_frappe_ref():
+    """The whole point. Following BR-BUILD-005's advice to pin to a tag must not rename every
+    image, because nothing about the content changed."""
+    as_branch = Resolution(
+        frappe=_ref("frappe", "a" * 40, "version-16", RefKind.BRANCH),
+        apps=(_ref("erpnext", "b" * 40), _ref("btu", "c" * 40)),
+    )
+    as_tag = Resolution(
+        frappe=_ref("frappe", "a" * 40, "v16.0.1", RefKind.TAG),
+        apps=(_ref("erpnext", "b" * 40), _ref("btu", "c" * 40)),
+    )
+
+    assert tagging.legible_slug(as_branch.frappe.ref, "v16") == "v16"
+    assert tagging.legible_slug(as_tag.frappe.ref, "v16") == "v16"
+
+
+def test_without_a_series_the_spelling_still_decides_the_name():
+    """The defect that motivated the change, pinned so the fallback's behaviour is explicit
+    rather than assumed: the same commit reached two ways yields two names."""
+    assert tagging.legible_slug("version-16") == "v16"
+    assert tagging.legible_slug("v16.0.1") == "v16.0.1"
+
+
+def test_the_series_never_enters_the_input_hash():
+    """It is a label, not an input. Renaming a line of images must not invalidate the images
+    already built under the old name, nor provoke a rebuild."""
+    unchanged = tagging.input_hash(_resolution(), BUILD_ARGS)
+
+    for series in (None, "v16", "erpnext-16", "totally-different"):
+        assert tagging.primary_tag(_resolution(), BUILD_ARGS, series).endswith(unchanged)
+
+
+def test_a_series_changes_only_the_readable_half():
+    first = tagging.primary_tag(_resolution(), BUILD_ARGS, "v15")
+    second = tagging.primary_tag(_resolution(), BUILD_ARGS, "v16")
+
+    assert first != second
+    assert first.rpartition("-")[2] == second.rpartition("-")[2]
+
+
+def test_the_series_reaches_the_moving_tag_pair():
+    primary, moving = tagging.tags(_resolution(), BUILD_ARGS, "v16")
+
+    assert primary.startswith("v16-")
+    assert moving == tagging.MOVING_TAG
+
+
+# --- the hash recipe itself --------------------------------------------------
+
+
+def test_the_hash_recipe_is_pinned_across_cairn_versions():
+    """Nothing else in the suite pins the actual digest, and every other test compares one
+    computed hash against another — so a change to *what goes into* the hash would pass them
+    all while silently renaming every image in existence.
+
+    That is not a cosmetic break. A changed recipe means the short-circuit no longer
+    recognises builds it already holds (`BR-BUILD-014`), every deterministic tag in the
+    registry becomes unreachable by name, and rollback targets are addressed by names cairn
+    will never generate again.
+
+    If this test fails, the recipe changed. That may be intended — but it is a breaking
+    change to image identity and must be a deliberate, recorded decision, not a side effect.
+    """
+    assert tagging.input_hash(_resolution(), BUILD_ARGS) == "ea91cb3d37d6"
+    assert tagging.cache_bust(_resolution()) == "8fdc01995a49"

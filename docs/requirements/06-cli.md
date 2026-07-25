@@ -30,8 +30,13 @@ provenance labels). **Default is build-only**; `--push` also uploads. *(BR-BUILD
 - `cairn retire <env>` — **decommission** an environment from cairn (see `BR-CLI-009`).
 
 Selectors for `new-tag`/`retag`: `--latest | --previous | --id <ident> | --from <env>`
-(`--from` points at whatever another env currently runs → cross-env promotion). Both accept
-opt-in **`--install-app <apps>`** (`ADR-023`). *(BR-DEPLOY-004, ADR-023)*
+(`--from` points at whatever another env currently runs → cross-env promotion). Exactly one
+selector MUST be given; two or more is an error naming the conflict, since each selects a
+different image.
+
+An earlier draft added an opt-in `--install-app <apps>` to both verbs. It was **struck**
+2026-07-25 (`ADR-037`, `BR-DEPLOY-003a`): installing an app is the operator's act, and a
+pointer move is not the event that should carry it. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023)*
 
 **`BR-CLI-005`** *(introspection)* — `cairn images [--tags] [--local] [--json]`.
 

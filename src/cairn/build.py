@@ -194,7 +194,7 @@ def plan(
 
     build_args = effective_build_args(manifest, containerfile, resolution)
     recorded = {key: value for key, value in build_args.items() if key != CACHE_BUST_ARG}
-    primary, moving = tagging.tags(resolution, recorded)
+    primary, moving = tagging.tags(resolution, recorded, manifest.series)
 
     return BuildPlan(
         image_base=build_config.resolve_image_base(manifest.image_name),

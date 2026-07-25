@@ -9,6 +9,47 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (night, two decisions closed)
+
+Both Brian's, both closing questions that had been deliberately left open.
+
+- **`ADR-037` closed — cairn never installs an app; the clause is struck.** Brian leaned toward
+  striking and asked for a recommendation; the recommendation was to strike, on a structural
+  argument rather than one of convenience. **A convergence loop cannot host a one-shot
+  mutation.** `reconcile` is safe because repeating it is a no-op; `install-app` is irreversible
+  and must happen exactly once, which would require cairn to remember whether it already had —
+  durable state cairn deliberately does not keep. Every candidate transport (an image label, a
+  descriptor field, a second registry artifact) was really a proposal for *where to keep that
+  state*. Two further reasons, each sufficient alone: it is a second data-plane write beyond the
+  permitted `bench migrate` (`ADR-022`), and it breaks rollback — move the pointer back and the
+  app's schema remains while the code that understands it is gone. What clinched it is
+  consistency: `BR-DEPLOY-007` already makes `bench new-site` the operator's job, and installing
+  an app is the same class of act — it changes what the environment *is*, not which version it
+  runs. Recorded as `BR-DEPLOY-003a`; `--install-app` removed from `BR-CLI-004`. `reconcile`'s
+  behaviour is unchanged: it never installed.
+- **`ADR-032`'s deferred half resolved — the legible tag half is a declared `[cairn] series`.**
+  It had derived from the Frappe *ref*, making the tag a function of how the ref was spelled: one
+  commit reached by a branch and by a tag produced two names for one image, and following
+  `BR-BUILD-005`'s own advice to pin to tags renamed every image for no change in content. Now
+  declared once. The deciding argument against **reading the true version at the resolved
+  commit** — which sounds strictly more correct — is that it cannot be done provider-neutrally:
+  `git ls-remote` returns hashes, not file contents, so it needs either a clone on every build or
+  a GitHub-specific API call, and cairn assumes a git host no more than it assumes a registry.
+  Two safety properties: `series` **never enters the input hash** (a label, not an input, so
+  renaming a line cannot orphan existing images or provoke a rebuild), and absent a declared
+  series the old derivation still applies. Accepted cost, stated rather than hidden: nothing
+  validates the claim — a manifest may say `series = "v16"` while building Frappe 15.
+
+**A test gap worth recording, found by mutation rather than by review.** Two mutations survived
+the first pass. One showed that *nothing pinned the actual hash value*: every existing test
+compared one computed hash against another, so a change to **what goes into** the recipe would
+have passed the entire suite while silently renaming every image in existence — breaking the
+input-hash short-circuit, making every deterministic tag in the registry unreachable by name, and
+addressing rollback targets by names cairn would never generate again. `test_the_hash_recipe_is_pinned_across_cairn_versions`
+now pins both digests as literals. The second showed the manifest→tag wiring for `series` was
+untested — a setting that validated, documented itself, and could have done nothing. Both closed;
+the re-run catches all three.
+
 ## 2026-07-25 (night, naming and GHCR)
 
 - **`ABOUT_GHCR.md` added at project root**, linked from `README.md`. Brian is new to GHCR and

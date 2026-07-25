@@ -151,8 +151,9 @@ def test_the_site_is_named_to_bench(converging, commands):
 
 
 def test_install_app_is_never_run(converging, commands):
-    """ADR-023 forbids auto-install, and how an opt-in directive reaches a target is not yet
-    decided — so cairn does nothing rather than guess."""
+    """Never, by decision (`ADR-037`): a convergence step cannot host a one-shot irreversible
+    mutation, it would be a second data-plane write, and it breaks rollback — move the pointer
+    back and the schema remains while the code that understands it is gone."""
     reconcile.run(_descriptor())
 
     assert not any("install-app" in " ".join(command) for command in commands.run)
