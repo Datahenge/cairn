@@ -9,6 +9,27 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (evening, later)
+
+- **`ADR-021` gains a fork-pressure register.** Brian observed that each pitfall makes an
+  eventual fork of `frappe_docker` feel nearer. The register exists so that judgement rests
+  on evidence rather than accumulated feeling: it admits **only** constraints that are
+  genuinely upstream's, and explicitly excludes cairn's own work (transcripts, timing,
+  tagging, pruning, the short-circuit), none of which a fork would change.
+- **Two entries recorded, both Brian's.** (1) *The atomic `bench init` layer* — sharpened
+  considerably by his actual workflow: a client engagement pins one Frappe/ERPNext version
+  and then iterates on custom apps for weeks, so the unchanged 95% is re-cloned and rebuilt
+  on every custom-app commit. That makes the worst-handled case the **dominant** one, not an
+  edge. Now the strongest argument on the list. (2) *Commit-level pinning is impossible
+  through bench*, which matters more in this ecosystem than most because `version-15` /
+  `version-16` move continuously under backporting. Consequence: an image cannot be rebuilt
+  from its manifest once the branch has moved, so the stored image is the only durable copy.
+- **Countervailing evidence recorded too**, to keep the register honest: the vendored recipe
+  was measured working as designed on the same day.
+- **Trigger set:** revisit when entry 1 is measured — time a rebuild after a single
+  custom-app commit against a first build.
+- **`docs/plans/next-steps.md` added** as a session-resumption point.
+
 ## 2026-07-25 (evening)
 
 - **`BR-BUILD-015` added — name the build-cache stage.** Brian asked whether cairn should

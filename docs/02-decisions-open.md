@@ -4,7 +4,7 @@ Unresolved questions, each with current lean/recommendation where one exists.
 IDs continue the `ADR-00N` sequence; when closed, a decision moves to
 `01-decisions-closed.md` keeping its ID.
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-07-25_
 
 ---
 
@@ -46,3 +46,60 @@ mirror machinery.
 churn — onto us, and forfeits the deliberate drift-checked sync we built with ventwig
 (`ADR-007`). Therefore: **deferred, not a default.** Revisit only against a concrete,
 essential need. _Open._
+
+---
+
+#### Fork pressure register
+
+"Concrete, essential need" is easy to assert and hard to evidence. Accumulated friction is
+*not* evidence — most of what cairn does (transcripts, timing, tagging, pruning, the
+input-hash short-circuit) is cairn's own and a fork would change none of it. Only the
+constraints below are genuinely upstream's, and only these count. Dated as encountered, so
+the eventual decision rests on a list rather than a feeling.
+
+**1. The atomic `bench init` layer — no per-app cache seam.** *(2026-07-25, Brian)*
+
+The vendored Containerfile installs Frappe **and every app** in a single `RUN` guarded by
+one `CACHE_BUST` (`frappe_docker/images/custom/Containerfile`, builder stage). There is no
+seam between Frappe and the apps, or between one app and the next, so changing any one app
+commit re-clones everything and rebuilds all assets.
+
+Why this is more than an inefficiency, in Brian's own workflow: a client engagement pins
+**one** Frappe/ERPNext version and then spends *weeks or months* iterating on custom apps
+without ever bumping it. The unchanged 95% is re-fetched and re-built on every custom-app
+commit — which is not an occasional cost but the **dominant** one, paid several times a
+week for the life of an engagement. The one case the current design handles worst is the
+case that actually recurs.
+
+Mitigations short of a fork, and their ceilings: `BR-BUILD-014`'s short-circuit removes
+*redundant* rebuilds but not *legitimate* ones; registry-backed cache helps cold machines,
+not this. Neither reaches the seam. **This is the strongest single argument on the list.**
+
+**2. Commit-level pinning is impossible through bench.** *(2026-07-25, Brian)*
+
+`bench init --frappe-branch` / `bench get-app` take a branch or tag, never a raw SHA
+(`BR-BUILD-005` records the constraint; `ADR-020` the analogous one for our own vendored
+pin). Brian's point sharpens why that matters in this ecosystem specifically: `version-15`
+and `version-16` are **fast-moving targets**, not stable lines — Frappe maintainers backport
+continuously, so a branch materially changes underneath you within days.
+
+The consequence is narrow but real. cairn resolves-and-records, so *what was built* is
+always known. But an image cannot be **rebuilt** from its manifest once the branch has
+moved: the recorded commit is a fact about the past that the manifest can no longer express.
+Rollback therefore depends on the stored image being retained (`ADR-012`, `ADR-025`), and
+the registry is the only durable copy of a given build. That is a coherent model, not a
+defect — but it is strictly weaker than commit-pinning, and the gap is upstream's.
+
+**3. Upstream changes the recipe in a way that breaks us and won't take a patch.**
+*Not yet encountered.* Recorded here so it is looked for rather than rationalised.
+
+**Countervailing evidence, recorded to keep the register honest.** On 2026-07-25 the
+vendored recipe was measured working exactly as designed: the `base` stage cached across
+builds, the `builder` stage reused in 0.762s, `CACHE_BUST` keying the cache in both
+directions. The 4.63 GB stage that prompted the day's investigation is a *correct, current*
+recipe — Python 3.14, Node 24.13, wkhtmltopdf, Chromium, weasyprint dependencies, non-root
+nginx — and maintaining it is precisely the burden a fork assumes.
+
+**Trigger:** revisit when item 1 is *measured* (time a rebuild after a single custom-app
+commit, against a first build) and the cost is shown to be structural rather than tolerable.
+Until then this remains deferred.
