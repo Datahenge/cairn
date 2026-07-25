@@ -50,7 +50,12 @@ would otherwise reuse a stale `bench init` layer. *(ADR-015)*
 `version-16`→`v16`), `<inputhash>` a short hash of *all* resolved inputs (Frappe + app
 commits + effective build args) that alone guarantees uniqueness (e.g.
 `cairn/erpnext-btu-v16:v16-a1b2c3d4`). cairn MUST also apply a moving `latest` tag. The
-image base defaults to `cairn/<image_name>` and MUST be registry-agnostic. *(ADR-011, ADR-009)*
+image base defaults to `cairn/<image_name>` and MUST be registry-agnostic.
+
+Because the input hash covers **effective** build args (`BR-BUILD-010`), a deliberate
+`frappe_docker` pin bump that changes a Containerfile default changes the tag **even when
+`cairn.toml` is unchanged**. This is intended, not a defect: the image's inputs did change,
+and `BR-VEND-009` already makes pin bumps explicit and reviewable. *(ADR-011, ADR-009)*
 
 ## Build invocation
 
@@ -69,7 +74,7 @@ labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; r
 with their source refs; effective build args; both tags; the `frappe_docker` pin (from
 `.ventwig.lock`); the input-hash; and a timestamp. cairn MAY emit a sidecar marker into the
 deployment working directory, and MUST NOT write markers into its own installation or source
-tree. *(ADR-011)*
+tree. The concrete label schema is `ADR-030`. *(ADR-011, ADR-030)*
 
 **`BR-BUILD-012`** — cairn MUST offer a `--dry-run` that emits the resolved `apps.json`, the
 exact build command, the computed tags, and the intended provenance, without

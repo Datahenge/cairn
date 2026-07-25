@@ -151,6 +151,36 @@ originally warned about turned out to be out of scope by construction rather tha
 to be paid. Two risks carried forward into `ADR-027`: OCI-vs-v2s2 manifest format on push,
 and label readback across engines.
 
+## 10. The OCI spec sets the label convention; Docker's docs carry the reasoning
+
+*Measured (both documents read, 2026-07-24). Illuminates `ADR-030`, `BR-BUILD-011`._
+
+Looking for *why* image labels use reverse-DNS keys, the obvious source is the wrong one.
+The OCI image-spec's `annotations.md` says only:
+
+> Keys SHOULD be named using a reverse domain notation - e.g. `com.example.myKey`.
+> … Consumers MUST NOT generate an error if they encounter an unknown annotation key.
+
+**SHOULD**, not MUST; `org.opencontainers` reserved; **no rationale given**, and **nothing
+at all about domain ownership**. Both of the things one actually needs to decide a
+namespace live in *Docker's* label documentation:
+
+> Authors of third-party tools should prefix each label key with the reverse DNS notation
+> of a domain **they own** … Don't use a domain in your label key without the domain
+> owner's permission.
+
+with the purpose stated as preventing "inadvertent duplication of labels across objects,
+especially if you plan to use labels as a mechanism for automation."
+
+Two consequences worth keeping: a non-conforming key is *tolerated* by the spec (consumers
+must not error), so bare `cairn.*` would have worked mechanically — the reason to conform
+is collision safety for automation, not validation. And the ownership norm is what rules
+out a namespace like `io.cairn` for anyone who does not own `cairn.io`.
+
+Generalizable: when a standard is terse, the operative guidance often sits in a dominant
+implementer's documentation rather than in the standard. Read both before concluding a
+spec is silent on something.
+
 ## 9. A pattern-filtered `git ls-remote` omits the peeled ref
 
 *Measured, 2026-07-24. Illuminates `BR-BUILD-005`, `BR-BUILD-011`._

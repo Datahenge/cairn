@@ -11,6 +11,37 @@ code changes live in git history.
 
 ## 2026-07-24
 
+- **`ADR-030` records a rejected alternative: a per-deployment label namespace**
+  (`com.microsoft.cairn.*` for a client Microsoft). Brian raised it and spotted the risk;
+  the decisive objection is that **cairn reads these labels, not just writes them** — a
+  target running `reconcile` holds an environment descriptor, not the build manifest, so
+  it cannot know which prefix its own images used. The bootstrap never closes either:
+  discovering a configured namespace still requires one fixed key to look it up under.
+  Also recorded: a typo produces a perfectly valid label that fails silently, surfacing at
+  rollback; and a namespace names *who defines the keys*, not who owns the image. The
+  legitimate need underneath — recording whose image it is — belongs in
+  `org.opencontainers.image.vendor`/`.title`/`.url`, which cairn could make settable later.
+  Blast radius clarified: a wrong namespace does not make an image incompatible; it blinds
+  cairn's own introspection, promotion, and rollback.
+- **`ADR-030` — provenance label schema settled before the first push.** cairn-specific
+  keys use **`com.datahenge.cairn.*`**, alongside standard `org.opencontainers.image.*`
+  where one already fits. Reasoning was checked against the primary sources rather than
+  convention-by-memory: the OCI image-spec only says keys **SHOULD** use reverse-DNS and
+  is silent on both rationale and domain ownership, while **Docker's** documentation
+  supplies both ("a domain **they own**"; "Don't use a domain … without the domain
+  owner's permission"; the purpose being collision safety for automation). `io.cairn` /
+  `dev.cairn` were **rejected as domains owned by others**; bare `cairn.*` was considered
+  and rejected for forfeiting the collision protection cairn actually relies on, since it
+  keys behavior off these labels. cairn deliberately does **not** set
+  `org.opencontainers.image.vendor` — the distributing entity of a client's image is the
+  client's to declare. Recorded in lessons §10 that a terse standard's operative guidance
+  often lives in a dominant implementer's docs.
+- **`BR-BUILD-008` clarified — a pin bump can change the tag with an unchanged manifest.**
+  Affirmed by Brian as intended: the input hash covers *effective* build args
+  (`BR-BUILD-010`), so a `frappe_docker` bump that moves a Containerfile default changes
+  the image's inputs and therefore its tag. Stated explicitly because it will otherwise
+  read as a defect to whoever meets it first; `BR-VEND-009` already makes pin bumps
+  deliberate.
 - **`BR-BUILD-007` revised — `CACHE_BUST` hashes *all* resolved commits, Frappe included.**
   As written it covered "the resolved app commits" only, which cannot satisfy its own goal
   ("a correct build MUST NOT require `--no-cache`"): `FRAPPE_BRANCH` enters the layer cache
