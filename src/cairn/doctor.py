@@ -6,9 +6,9 @@ reports the full picture; each failure names its fix (BR-CLI-015) and any failur
 the exit code non-zero (BR-CLI-012).
 
 Checks: config valid (`BR-CFG-012`); a usable build engine — docker or podman
-(`ADR-027`) — plus buildx when the engine is docker; and the vendored tree clean
-(BR-VEND-005), free of upstream git metadata (BR-VEND-007), and complete in its build
-inputs (BR-VEND-006).
+(`ADR-027`) — plus buildx when the engine is docker; ``git``, which every manifest ref is
+resolved with (`BR-BUILD-005`); and the vendored tree clean (BR-VEND-005), free of
+upstream git metadata (BR-VEND-007), and complete in its build inputs (BR-VEND-006).
 
 A **missing** manifest is a warning, not a failure: doctor is a machine preflight, run
 legitimately on a target or before a manifest exists. A **malformed** one fails.
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import typer
 
-from . import config, engine, vendor
+from . import config, engine, resolve, vendor
 from .errors import BuildEngineError, CairnError, ManifestNotFoundError
 
 _LABEL_WIDTH = 16
@@ -85,6 +85,7 @@ def run_checks(root: Path, preferred_engine: str | None = None) -> list[CheckRes
         results.append(check_buildx())
     return [
         *results,
+        check_git(),
         _guard("vendored tree", lambda: vendor.assert_clean(root), "matches .ventwig.lock"),
         _guard("vendor .git", lambda: vendor.assert_no_nested_git(root), "no nested .git"),
         _guard("build inputs", lambda: vendor.assert_build_inputs(root), "Containerfile complete"),
@@ -160,6 +161,18 @@ def check_buildx() -> CheckResult:
     try:
         return CheckResult.of(label, True, _first_line(engine.buildx_version()) or "present")
     except BuildEngineError as exc:
+        return CheckResult.of(label, False, _first_line(str(exc)))
+
+
+def check_git() -> CheckResult:
+    """Check that git is installed — every manifest ref is resolved with it (BR-CLI-007).
+
+    A machine without git would otherwise fail at ref resolution, well into a build.
+    """
+    label = "git"
+    try:
+        return CheckResult.of(label, True, f"v{resolve.git_version()}")
+    except CairnError as exc:
         return CheckResult.of(label, False, _first_line(str(exc)))
 
 

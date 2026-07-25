@@ -16,6 +16,7 @@ from cairn.errors import (
     BuildEngineError,
     ManifestInvalidError,
     ManifestNotFoundError,
+    RefResolutionError,
     VendorDriftError,
 )
 
@@ -34,6 +35,12 @@ def all_vendor_checks_pass(monkeypatch):
 def config_ok(monkeypatch):
     """A discoverable, valid manifest with all-default build config."""
     _stub_config(monkeypatch, config_module.BuildConfig())
+
+
+@pytest.fixture(autouse=True)
+def git_present(monkeypatch):
+    """Composition tests must not depend on the host having git installed."""
+    monkeypatch.setattr(doctor.resolve, "git_version", lambda: "2.47.1")
 
 
 def _stub_config(monkeypatch, build_config, apps=()):
@@ -108,6 +115,29 @@ def test_warning_does_not_affect_exit_code(monkeypatch):
     assert doctor.report(results) == 0
 
 
+# --- git (BR-CLI-007, BR-BUILD-005) -----------------------------------------
+
+
+def test_git_present_is_reported_with_version(monkeypatch):
+    monkeypatch.setattr(doctor.resolve, "git_version", lambda: "2.47.1")
+
+    assert doctor.check_git() == doctor.CheckResult.of("git", True, "v2.47.1")
+
+
+def test_missing_git_fails_the_preflight(monkeypatch):
+    """BR-CLI-007: without git, ref resolution would fail well into a build."""
+
+    def _absent():
+        raise RefResolutionError("`git` not found on PATH; cairn resolves every manifest ref…")
+
+    monkeypatch.setattr(doctor.resolve, "git_version", _absent)
+
+    result = doctor.check_git()
+
+    assert result.status is doctor.Status.FAIL
+    assert "not found on PATH" in result.detail
+
+
 # --- engine reporting -------------------------------------------------------
 
 
@@ -150,6 +180,7 @@ def test_buildx_checked_only_for_docker(monkeypatch, tmp_path, all_vendor_checks
         "config",
         "build engine",
         "docker buildx",
+        "git",
         "vendored tree",
         "vendor .git",
         "build inputs",
@@ -163,7 +194,14 @@ def test_buildx_not_checked_for_podman(monkeypatch, tmp_path, all_vendor_checks_
     labels = [r.label for r in doctor.run_checks(tmp_path)]
 
     assert "docker buildx" not in labels
-    assert labels == ["config", "build engine", "vendored tree", "vendor .git", "build inputs"]
+    assert labels == [
+        "config",
+        "build engine",
+        "git",
+        "vendored tree",
+        "vendor .git",
+        "build inputs",
+    ]
 
 
 def test_configured_engine_reaches_detection(monkeypatch, tmp_path, all_vendor_checks_pass):
@@ -211,8 +249,9 @@ def test_all_checks_run_even_after_a_failure(monkeypatch, tmp_path, config_ok):
     results = doctor.run_checks(tmp_path)
 
     assert [r.status for r in results] == [
-        doctor.Status.OK,
-        doctor.Status.OK,
+        doctor.Status.OK,  # config
+        doctor.Status.OK,  # build engine
+        doctor.Status.OK,  # git
         doctor.Status.FAIL,
         doctor.Status.FAIL,
         doctor.Status.FAIL,

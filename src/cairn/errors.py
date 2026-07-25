@@ -41,6 +41,10 @@ class BuildConfigInvalidError(ConfigError):
     """A build-config file exists but is unparseable or carries an invalid value."""
 
 
+class RefResolutionError(CairnError):
+    """A manifest ref could not be resolved to exactly one commit (BR-BUILD-005)."""
+
+
 class BuildEngineError(CairnError):
     """No usable build engine was found, or the requested one is unavailable
     or too old (`ADR-027`)."""
