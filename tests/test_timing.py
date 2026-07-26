@@ -68,8 +68,9 @@ def test_summary_reports_start_end_and_total():
     assert "total" in rendered
 
 
-def test_duration_never_reaches_provenance_labels(tmp_path):
+def test_duration_never_reaches_provenance_labels(monkeypatch):
     """Elapsed time is a property of a run, not of the image's inputs (BR-BUILD-013)."""
+    monkeypatch.setattr(build.vendor, "read_pin", lambda: {})
     manifest = Manifest(
         image_name="erpnext-btu-v16",
         frappe=Frappe("https://github.com/frappe/frappe", "version-16"),
@@ -86,7 +87,7 @@ def test_duration_never_reaches_provenance_labels(tmp_path):
         apps=(),
     )
     labels = build.provenance_labels(
-        tmp_path, manifest, resolution, {"PYTHON_VERSION": "3.14.2"}, "v16-abcd1234", "latest"
+        manifest, resolution, {"PYTHON_VERSION": "3.14.2"}, "v16-abcd1234", "latest"
     )
 
     joined = " ".join(labels).lower()

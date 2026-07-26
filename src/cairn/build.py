@@ -27,7 +27,6 @@ import json
 import shlex
 import subprocess
 import sys
-import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,13 +34,9 @@ from typing import Any
 
 from . import __version__, appsjson, engine, resolve, tagging, vendor
 from .config import BuildConfig, Manifest
-from .errors import BuildError, ProjectRootNotFoundError
-from .project import read_vendor_sources
+from .errors import BuildError
 from .resolve import Resolution
 from .transcript import Transcript
-
-#: ventwig's committed anchor — the synced commit/tree of the vendored tree (`BR-VEND-003`).
-LOCK_NAME = ".ventwig.lock"
 
 #: Manifest knob -> Containerfile build-arg (`BR-BUILD-002`, `BR-BUILD-010`).
 KNOB_TO_BUILD_ARG = {
@@ -171,7 +166,6 @@ class BuildPlan:
 
 
 def plan(
-    root: Path,
     manifest: Manifest,
     build_config: BuildConfig,
     *,
@@ -184,11 +178,11 @@ def plan(
     Enforces the `VEND` preconditions first (`BR-BUILD-009`), then resolves refs, so a
     drifted tree fails before any network work.
     """
-    vendor.assert_clean(root)
-    vendor.assert_no_nested_git(root)
-    vendor.assert_build_inputs(root)
+    vendor.assert_clean()
+    vendor.assert_no_nested_git()
+    vendor.assert_build_inputs()
 
-    containerfile = vendor.containerfile_path(root)
+    containerfile = vendor.containerfile_path()
     selected = engine_name or engine.detect(build_config.engine).name
     resolution = resolve.resolve_manifest(manifest)
 
@@ -202,10 +196,10 @@ def plan(
         moving_tag=moving,
         build_args=build_args,
         cache_bust=tagging.cache_bust(resolution),
-        labels=provenance_labels(root, manifest, resolution, recorded, primary, moving),
+        labels=provenance_labels(manifest, resolution, recorded, primary, moving),
         resolution=resolution,
         apps_json=appsjson.render(manifest),
-        context=vendor.build_context(root),
+        context=vendor.build_context(),
         containerfile=containerfile,
         engine_name=selected,
         no_cache=no_cache,
@@ -237,7 +231,6 @@ def effective_build_args(
 
 
 def provenance_labels(
-    root: Path,
     manifest: Manifest,
     resolution: Resolution,
     build_args: dict[str, str],
@@ -249,7 +242,7 @@ def provenance_labels(
     ``org.opencontainers.image.vendor`` is deliberately unset: the distributing entity of
     the operator's image is theirs to declare, not cairn's.
     """
-    pin = vendor_pin(root)
+    pin = vendor.read_pin()
     return {
         f"{OCI_NAMESPACE}.created": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         f"{OCI_NAMESPACE}.title": manifest.image_name,
@@ -275,30 +268,6 @@ def provenance_labels(
         f"{LABEL_NAMESPACE}.frappe-docker.ref": pin.get("ref", ""),
         f"{LABEL_NAMESPACE}.frappe-docker.commit": pin.get("commit", ""),
     }
-
-
-def vendor_pin(root: Path, source_name: str = vendor.FRAPPE_DOCKER_SOURCE) -> dict[str, str]:
-    """Return the vendored upstream's pin: declared ``ref`` plus synced ``commit``.
-
-    The two halves live in different files by design — ``pyproject.toml`` declares the
-    immutable-intent ref (`BR-VEND-002`) while ``.ventwig.lock`` records what was actually
-    synced (`BR-VEND-003`) — so provenance records both. Missing values degrade to empty
-    strings rather than failing a build: the integrity check that matters is
-    `BR-VEND-005`, already enforced before this is called.
-    """
-    try:
-        sources = read_vendor_sources(root)
-    except ProjectRootNotFoundError:
-        sources = []
-    ref = next((s.ref or "" for s in sources if s.name == source_name), "")
-
-    try:
-        with (root / LOCK_NAME).open("rb") as handle:
-            locked = tomllib.load(handle).get(source_name, {})
-    except (OSError, tomllib.TOMLDecodeError):
-        locked = {}
-
-    return {"ref": ref, "commit": str(locked.get("synced_commit", ""))}
 
 
 def run(build_plan: BuildPlan, sink: Transcript | None = None) -> None:

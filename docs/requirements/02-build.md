@@ -1,6 +1,6 @@
 # BR-BUILD — Image Build Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
 
 Requirements for building a custom ERPNext image from a manifest, using the vendored
 `frappe_docker` `custom/Containerfile`. Conventions: see `/CLAUDE.md`. Decisions cited:
@@ -144,9 +144,10 @@ Constraints, each load-bearing:
 **`BR-BUILD-011`** — On a successful build, cairn MUST stamp provenance onto the image as OCI
 labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; resolved Frappe + app commits
 with their source refs; effective build args; both tags; the `frappe_docker` pin (from
-`.ventwig.lock`); the input-hash; and a timestamp. cairn MAY emit a sidecar marker into the
-deployment working directory, and MUST NOT write markers into its own installation or source
-tree. The concrete label schema is `ADR-030`. *(ADR-011, ADR-030)*
+`src/cairn/vendored/frappe_docker.pin.toml`, `BR-VEND-003`); the input-hash; and a timestamp.
+cairn MAY emit a sidecar marker into the deployment working directory, and MUST NOT write
+markers into its own installation or source tree. The concrete label schema is `ADR-030`.
+*(ADR-011, ADR-030)*
 
 **`BR-BUILD-012`** — cairn MUST offer a `--dry-run` that emits the resolved `apps.json`, the
 exact build command, the computed tags, and the intended provenance, without

@@ -9,6 +9,78 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (later — the installer moves into the package as `cairn-provision`)
+
+Follows directly from the PyPI-install fix earlier the same day: once `cairn` itself is fully
+functional from a bare `pip install`, the installer's original reason for living outside the
+package (it ran before cairn's virtualenv existed) no longer holds.
+
+- **`ADR-040` amended.** `install/bootstrap.py` moved to `src/cairn/provision.py`, with its own
+  console-script entry point, `cairn-provision` (`pyproject.toml`'s `[project.scripts]`,
+  alongside `cairn` and `datahenge-cairn`). It is never installed apart from `cairn` — same
+  distribution, same install. It stays out of the `cairn` command tree regardless: `ADR-035`
+  (cairn never installs systemd units) and `ADR-022` (cairn never writes to the data plane) are
+  about what `cairn` itself may do, not about packaging, and those hold unchanged.
+- **`stage_cairn` removed.** It used to create a fresh virtualenv and `pip install` cairn into
+  it from a checkout — meaningless now that `cairn-provision` running at all means cairn is
+  already installed. `--source` (the checkout directory) is gone with it, replaced by
+  `--workdir` (the deployment directory: where `cairn.toml` lives and the build timer runs
+  from) — a genuinely different concept that the old design had conflated with "where cairn
+  itself lives."
+- **Locating `cairn` from `cairn-provision`.** Resolved as a sibling in the same install
+  (`Path(sys.argv[0]).parent / "cairn"`), falling back to a `PATH` lookup — not a checkout path,
+  which no longer exists as a concept here.
+- **Systemd units, TLS certs, and the pre-install backup are still written directly**, not
+  printed for the operator to type — considered and reaffirmed, not a default. Direct-write
+  guarded by `--dry-run` and idempotency turned out to be the more common pattern among
+  comparable tools (`certbot`, `mkcert`, `k3s`'s installer) than print-and-transcribe, and cairn's
+  installer already had that safety net for every other stage.
+- **Recommended install changed for anything a client depends on**: `sudo pipx install --global
+  datahenge-cairn` rather than a personal `pip install`. The concrete risk: a consultant's own
+  Linux account is not something a client's production systemd timers should depend on
+  outliving. `--global` installs to a shared system location, not a personal home directory.
+- **`BR-DEPLOY-021` reworded** — "shipped alongside the CLI" now means the same package's
+  second entry point, not a separate file in the repo.
+
+---
+
+## 2026-07-25 (the PyPI-install blockers close — vendoring moves inside the package)
+
+Resolving `ADR-018`'s three recorded reasons `pip install datahenge-cairn && cairn build`
+could not work, found while auditing the project for its first real PyPI publish.
+
+- **`ADR-007` amended, `ADR-018` and `ADR-029` resolved.** The vendored `frappe_docker` tree
+  moved from the repo root to `src/cairn/vendored/frappe_docker` — *inside* the `cairn`
+  package — on Brian's framing that vendoring is a fetch mechanism, not an ongoing
+  relationship: once fetched, the tree is an ordinary part of cairn's own source, and
+  `ventwig` has no further business with it. `packages = ["src/cairn"]` now ships it in the
+  wheel with no special packaging step. Every vendor-tree lookup resolves package-relatively
+  from cairn's own installed location, never by searching the filesystem for a project root.
+- **`BR-VEND-003`/`BR-VEND-005` amended.** `cairn vendor sync` now writes a companion
+  `src/cairn/vendored/frappe_docker.pin.toml` (ref, commit, tree hash, synced-at) from
+  ventwig's own `.ventwig.lock`. `vendor.assert_clean()` verifies against that file instead
+  of shelling out to the `ventwig` CLI — it recomputes the same git tree-hash ventwig uses
+  (a scratch `git init`/`add -A`/`write-tree`), needing only the `git` binary cairn already
+  requires unconditionally. `ventwig` is now touched by nothing except `cairn vendor
+  sync`/`status`, run deliberately from a checkout.
+- **`BR-BUILD-011` / `ADR-030` amended.** The `com.datahenge.cairn.frappe-docker.*`
+  provenance labels now read from the pin file instead of `.ventwig.lock` directly.
+- **`cli.py` simplified.** `find_project_root()` is needed only by `vendor status`/`vendor
+  sync` now — every other command (`build`, `push`, `images`, `prune`, `new-tag`, `retag`,
+  `retire`, `doctor`) no longer threads a project root through at all. This incidentally
+  fixes `cairn doctor` raising a raw `ProjectRootNotFoundError` on a target-only install —
+  doctor no longer needs a project to run.
+- **Verified, not assumed.** A wheel built from the new layout, installed into a clean venv
+  with no checkout and no `[dev]` extra, ran `cairn doctor` and `cairn build --dry-run`
+  through to build-engine invocation with no project-root or vendoring error. The builder
+  role no longer strictly requires a checkout — a consequence beyond what was asked, recorded
+  in `ADR-018` rather than acted on unilaterally in the installer (`ADR-040`), since that
+  installer still provisions from a checkout by default for other reasons (dev tooling).
+- **Version.** `pyproject.toml` moved off the `0.0.0` placeholder to `0.1.0`, a second
+  independent blocker to a real publish (PyPI versions cannot be reused).
+
+---
+
 ## 2026-07-25 (night, provisioning — a tool instead of a runbook)
 
 Standing up a builder VPS is a dozen steps. Brian rejected documenting them as a runbook: a

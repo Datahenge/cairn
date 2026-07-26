@@ -107,16 +107,15 @@ def _done(message: str) -> None:
     transcript.record(message)
 
 
-def _run_in_project(action: Callable[[Path], int]) -> None:
-    """Resolve the project root, run ``action(root)``, and exit with its return code.
+def _run(action: Callable[[], int]) -> None:
+    """Run *action*, and exit with its return code.
 
     A :class:`CairnError` is rendered as a clean, actionable message with exit code 2
     rather than a traceback (BR-CLI-015). Anything else is re-raised with a note naming
     it as unexpected, so an unhandled failure is never mistaken for silent success.
     """
     try:
-        root = find_project_root()
-        code = action(root)
+        code = action()
     except CairnError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(2) from exc
@@ -132,6 +131,17 @@ def _run_in_project(action: Callable[[Path], int]) -> None:
         )
         raise
     raise typer.Exit(code)
+
+
+def _run_in_project(action: Callable[[Path], int]) -> None:
+    """Resolve cairn's project root, run ``action(root)``, and exit with its return code.
+
+    Reserved for the two commands that actually shell out to ``ventwig`` (`vendor status`/
+    `vendor sync`) — the only operations that need a development checkout with a
+    ``pyproject.toml``. Everything else resolves the vendored tree package-relatively and
+    uses :func:`_run` directly.
+    """
+    _run(lambda: action(find_project_root()))
 
 
 @vendor_app.command(
@@ -223,7 +233,7 @@ def build_command(
     if transcript_path is not None and no_transcript:
         raise typer.BadParameter("--transcript and --no-transcript contradict each other.")
 
-    def _action(root: Path) -> int:
+    def _action() -> int:
         watch = timing.Stopwatch()
         found = config.find_manifest(explicit=manifest_path)
         build_config = config.load_build_config(found)
@@ -231,7 +241,7 @@ def build_command(
 
         keep = not dry_run and transcript.wanted(explicit=transcript_path, disabled=no_transcript)
         if not keep:
-            return _build(root, found, manifest, build_config, watch)
+            return _build(found, manifest, build_config, watch)
 
         destination = transcript_path or transcript.path_for(
             transcript.resolve_dir(build_config.transcript_dir), manifest.image_name
@@ -239,7 +249,7 @@ def build_command(
         with transcript.recording(destination) as recorder:
             _note(f"Transcript {destination}")
             try:
-                return _build(root, found, manifest, build_config, watch, sink=recorder)
+                return _build(found, manifest, build_config, watch, sink=recorder)
             finally:
                 # Said a second time on the way out, success or failure: the first
                 # mention scrolled past minutes of engine output long ago, and this is
@@ -247,7 +257,6 @@ def build_command(
                 _note(f"Transcript {destination}")
 
     def _build(
-        root: Path,
         found: Path,
         manifest: config.Manifest,
         build_config: config.BuildConfig,
@@ -256,7 +265,7 @@ def build_command(
         sink: transcript.Transcript | None = None,
     ) -> int:
         try:
-            return _steps(root, found, manifest, build_config, watch, sink)
+            return _steps(found, manifest, build_config, watch, sink)
         finally:
             # In a finally, because "it failed after nine minutes" is at least as worth
             # knowing as how long a success took (BR-CLI-017).
@@ -264,7 +273,6 @@ def build_command(
                 _report_timing(watch)
 
     def _steps(
-        root: Path,
         found: Path,
         manifest: config.Manifest,
         build_config: config.BuildConfig,
@@ -278,7 +286,6 @@ def build_command(
         _step("Checking vendored tree and resolving refs (contacts each app's remote)…")
         with watch.phase("checks + ref resolution"):
             plan = build.plan(
-                root,
                 manifest,
                 build_config,
                 no_cache=no_cache,
@@ -329,7 +336,7 @@ def build_command(
 
         return 0
 
-    _run_in_project(_action)
+    _run(_action)
 
 
 @app.command(
@@ -354,7 +361,7 @@ def images_command(
     read remotely, with nothing pulled.
     """
 
-    def _action(root: Path) -> int:
+    def _action() -> int:
         found_manifest = config.find_manifest_or_none()
         build_config = config.load_build_config(found_manifest)
 
@@ -378,7 +385,7 @@ def images_command(
         )
         return 0
 
-    _run_in_project(_action)
+    _run(_action)
 
 
 @app.command(
@@ -401,7 +408,7 @@ def prune_command(
 ) -> None:
     """Remove superseded images on the build machine (BR-CLI-018, `ADR-032`)."""
 
-    def _action(root: Path) -> int:
+    def _action() -> int:
         build_config = config.load_build_config(config.find_manifest_or_none())
         engine_name = engine.detect(build_config.engine).name
         found, others = images.inspect_local(engine_name)
@@ -424,7 +431,7 @@ def prune_command(
         )
         return 1 if failures else 0
 
-    _run_in_project(_action)
+    _run(_action)
 
 
 def _tag_cache_stage(plan: build.BuildPlan, watch: timing.Stopwatch) -> None:
@@ -497,7 +504,7 @@ def push_command(
     those `cairn build` would produce for the current inputs.
     """
 
-    def _action(root: Path) -> int:
+    def _action() -> int:
         found = config.find_manifest(explicit=manifest_path)
         manifest = config.load_manifest(found)
         build_config = config.load_build_config(found)
@@ -507,14 +514,14 @@ def push_command(
         if identifier:
             targets: tuple[str, ...] = (push.reference(manifest, build_config, identifier),)
         else:
-            targets = build.plan(root, manifest, build_config).references
+            targets = build.plan(manifest, build_config).references
 
         for target in targets:
             push.push(target, engine_name)
             typer.secho(f"Pushed {target}", fg=typer.colors.GREEN)
         return 0
 
-    _run_in_project(_action)
+    _run(_action)
 
 
 def _registry_repository(
@@ -674,8 +681,8 @@ def new_tag_command(
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
 ) -> None:
     """Create an environment's pointer (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004)."""
-    _run_in_project(
-        lambda root: _pointer_move(
+    _run(
+        lambda: _pointer_move(
             environment,
             creating=True,
             latest=latest,
@@ -718,8 +725,8 @@ def retag_command(
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
 ) -> None:
     """Move an environment's pointer (BR-CLI-004, BR-CLI-010, BR-DEPLOY-004)."""
-    _run_in_project(
-        lambda root: _pointer_move(
+    _run(
+        lambda: _pointer_move(
             environment,
             creating=False,
             latest=latest,
@@ -748,7 +755,7 @@ def retire_command(
 ) -> None:
     """Decommission an environment at cairn's layer only (BR-CLI-009)."""
 
-    def _action(root: Path) -> int:
+    def _action() -> int:
         found = config.find_manifest(explicit=manifest_path)
         manifest = config.load_manifest(found)
         build_config = config.load_build_config(found)
@@ -773,7 +780,7 @@ def retire_command(
         )
         return 0
 
-    _run_in_project(_action)
+    _run(_action)
 
 
 @app.command(
@@ -923,7 +930,7 @@ def doctor_command() -> None:
 
     Reports every check before exiting non-zero on any failure (BR-CLI-007, BR-CLI-012).
     """
-    _run_in_project(doctor.run)
+    _run(doctor.run)
 
 
 def run() -> None:

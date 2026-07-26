@@ -1,18 +1,24 @@
-#!/usr/bin/env python3
 """Provision a cairn build machine or deploy target (`BR-DEPLOY-021`, `ADR-040`).
 
-    sudo python3 install/bootstrap.py --role builder --dry-run
-    sudo python3 install/bootstrap.py --role builder
+    sudo cairn-provision --role builder --dry-run
+    sudo cairn-provision --role builder
+
+Installed the same way as `cairn` itself — `pip install datahenge-cairn`, or for a machine
+meant to outlive any one operator's own account, `sudo pipx install --global
+datahenge-cairn` (installs to a shared system location, not tied to a personal login that
+might one day be deactivated).
 
 **Why this is a separate program and not a `cairn` subcommand.** Two decisions would break if
 it were one: cairn *emits* systemd units and never installs them (`ADR-035`), and cairn writes
 nothing to a data-plane volume (`ADR-022`) — a pre-install `bench backup` writes into the sites
-volume. An operator running an installer with explicit privilege *is* the operator doing those
-things. cairn's own boundary stays exactly where it was drawn, and the invariant across the CLI
-holds: **cairn prints host configuration; the operator installs it.**
+volume. An operator running `cairn-provision` with explicit privilege *is* the operator doing
+those things. cairn's own boundary stays exactly where it was drawn, and the invariant across
+the CLI holds: **cairn prints host configuration; the operator installs it — cairn-provision is
+the one exception, and it exists precisely so that exception never has to live inside cairn.**
 
-It is stdlib-only and imports nothing from cairn, because it runs *before* cairn's virtualenv
-exists. That is forced, not chosen.
+It shells out to `cairn` for the read-only and print-only work (`doctor`, `adopt`,
+`systemd-units`) rather than reaching into cairn's internals, so provisioning always reflects
+exactly what a human running those commands by hand would see.
 
 **The contract it keeps** (`BR-DEPLOY-021`), which is also why it is Python rather than shell —
 this runs as root on client infrastructure and therefore has to be testable:
@@ -68,16 +74,16 @@ CERT_DAYS = 825
 #: A **builder** builds images and serves them. It has a manifest, a vendored tree, and a
 #: registry. It has no ERPNext site — so nothing to reconnoitre, nothing to back up, and no
 #: environment descriptor, which describes a *running* deployment.
-BUILDER_STAGES = ("preflight", "cairn", "registry", "timers")
+BUILDER_STAGES = ("preflight", "registry", "timers")
 
 #: A **target** runs ERPNext and converges to whatever its pointer says. It has a site — so it
 #: is the only role with an existing stack to survey, a database to back up, and a descriptor.
 #: It pulls from the builder's registry and hosts none of its own.
-TARGET_STAGES = ("preflight", "recon", "backup", "cairn", "descriptor", "timers")
+TARGET_STAGES = ("preflight", "recon", "backup", "descriptor", "timers")
 
 #: Both roles on one box. Today's case while builder and target are the same machine; the union
 #: in dependency order, so the backup still happens before anything is installed.
-BOTH_STAGES = ("preflight", "recon", "backup", "cairn", "registry", "descriptor", "timers")
+BOTH_STAGES = ("preflight", "recon", "backup", "registry", "descriptor", "timers")
 
 ROLE_STAGES = {"builder": BUILDER_STAGES, "target": TARGET_STAGES, "both": BOTH_STAGES}
 
@@ -112,7 +118,7 @@ class Aborted(Exception):
 
 
 def builds(options: argparse.Namespace) -> bool:
-    """Whether this host builds images — needs buildx, git, the vendored tree, a registry."""
+    """Whether this host builds images — needs buildx, git, a container engine, a registry."""
     return options.role in ("builder", "both")
 
 
@@ -217,12 +223,11 @@ def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
     ]
     if builds(options):
         # Only a builder needs these: buildx for the secret-mount build, git for ref
-        # resolution, openssl for the registry certificate, and the checkout for the
-        # vendored Containerfile. A target has no use for any of them.
+        # resolution, openssl for the registry certificate. A target has no use for any of
+        # them.
         checks.append(_check_command(runner, "docker buildx", ["docker", "buildx", "version"]))
         checks.append(_check_command(runner, "git", ["git", "--version"]))
         checks.append(_check_command(runner, "openssl", ["openssl", "version"]))
-        checks.append(_check_checkout(options.source))
 
     for check in checks:
         runner.say(check.render())
@@ -287,24 +292,6 @@ def read_available_memory_gb(meminfo: Path) -> float | None:
     except (OSError, IndexError, ValueError):
         return None
     return None
-
-
-def _check_checkout(source: Path) -> Check:
-    """A builder needs the vendored tree, which a pip install does not currently carry.
-
-    `ADR-018` records why: the wheel excludes `frappe_docker/`, the project root is found by
-    looking for a `pyproject.toml` with `[tool.ventwig]`, and the drift check needs the ventwig
-    CLI. Until that is fixed, a builder is a checkout.
-    """
-    containerfile = source / "frappe_docker" / "images" / "custom" / "Containerfile"
-    if containerfile.is_file():
-        return Check("cairn checkout", True, f"vendored tree present at {source}")
-    return Check(
-        "cairn checkout",
-        False,
-        f"{source} has no vendored frappe_docker — a builder needs the checkout, not a "
-        f"pip install",
-    )
 
 
 def stage_recon(runner: Runner, options: argparse.Namespace) -> None:
@@ -437,36 +424,6 @@ def _only_project(runner: Runner) -> str | None:
     return str(projects[0]["Name"]) if len(projects) == 1 else None
 
 
-def stage_cairn(runner: Runner, options: argparse.Namespace) -> None:
-    """Create the virtualenv and install cairn from the checkout, then prove it works."""
-    venv = options.source / ".venv"
-    if not (venv / "bin" / "python").exists():
-        runner.run([sys.executable, "-m", "venv", str(venv)], what="creating the virtualenv")
-        runner.report.done.append(f"created {venv}")
-    else:
-        runner.say(f"    {venv} already exists — reusing it")
-        runner.report.skipped.append("virtualenv (already present)")
-
-    # Only a builder needs the dev extra: it carries ventwig, which the drift check shells to
-    # (`BR-VEND-005`). A target neither has a vendored tree nor checks one.
-    target = f"{options.source}[dev]" if builds(options) else str(options.source)
-    pip = venv / "bin" / "pip"
-    runner.run(
-        [str(pip), "install", "--quiet", "--editable", target],
-        what="installing cairn",
-        timeout=900,
-    )
-
-    if builds(options):
-        runner.run(
-            [str(venv / "bin" / "ventwig"), "status"],
-            what="verifying the vendored tree matches its lock",
-        )
-        runner.report.done.append("installed cairn and verified the vendored tree")
-    else:
-        runner.report.done.append("installed cairn")
-
-
 def stage_registry(runner: Runner, options: argparse.Namespace) -> None:
     """Run a local registry over self-signed TLS, trusted by both Python and Docker.
 
@@ -560,7 +517,7 @@ def registry_compose() -> str:
     version at all.
     """
     return f"""\
-# Written by cairn's installer. A local OCI registry over self-signed TLS.
+# Written by cairn-provision. A local OCI registry over self-signed TLS.
 services:
   registry:
     image: docker.io/library/registry:2
@@ -591,7 +548,7 @@ def stage_descriptor(runner: Runner, options: argparse.Namespace) -> None:
             "Use --role target or --role both."
         )
 
-    cairn = options.source / ".venv" / "bin" / "cairn"
+    cairn = _cairn_executable()
     command = [str(cairn), "adopt", "--environment", options.environment]
     if options.project:
         command += ["--project", options.project]
@@ -622,7 +579,7 @@ def stage_timers(runner: Runner, options: argparse.Namespace) -> None:
     anyone has confirmed the manifest turns one wrong configuration into a wrong deploy every
     quarter of an hour.
     """
-    cairn = options.source / ".venv" / "bin" / "cairn"
+    cairn = _cairn_executable()
     enable = []
 
     # Each role gets only the timer it actually runs. A builder converges nothing; a target
@@ -638,14 +595,16 @@ def stage_timers(runner: Runner, options: argparse.Namespace) -> None:
                 "could not split `cairn systemd-units` output into a service and a timer"
             )
 
-        # cairn resolves its own path with shutil.which, which will not find a venv binary.
+        # cairn resolves its own path with shutil.which, which will not find a sibling
+        # binary under sudo unless it happens to be on root's PATH — write the resolved
+        # path we already located instead.
         service = service.replace("ExecStart=cairn ", f"ExecStart={cairn} ")
         runner.write(SYSTEMD_DIR / "cairn-reconcile.service", service, what="reconcile service")
         runner.write(SYSTEMD_DIR / "cairn-reconcile.timer", timer, what="reconcile timer")
         enable.append("cairn-reconcile.timer")
 
     if builds(options):
-        script = options.source / "build-and-advance.sh"
+        script = options.workdir / "build-and-advance.sh"
         runner.write(
             script,
             build_script(options),
@@ -668,6 +627,26 @@ def stage_timers(runner: Runner, options: argparse.Namespace) -> None:
     runner.report.warnings.append(
         "timers are enabled but NOT started — run the first build and reconcile by hand first, "
         f"then `systemctl start {' '.join(enable)}`"
+    )
+
+
+def _cairn_executable() -> Path:
+    """Locate the `cairn` executable installed alongside this one.
+
+    `cairn-provision` and `cairn` are always installed together, by the same distribution
+    (`pip install` / `pipx install --global datahenge-cairn`) — so the reliable way to find
+    one from the other is as a sibling in the same ``bin/`` directory, not a `PATH` lookup,
+    which depends on how the operator happened to invoke `sudo`.
+    """
+    sibling = Path(sys.argv[0]).resolve().parent / "cairn"
+    if sibling.is_file():
+        return sibling
+    found = shutil.which("cairn")
+    if found:
+        return Path(found)
+    raise Aborted(
+        "cannot find the `cairn` executable next to this one, or on PATH. Is datahenge-cairn "
+        "installed? (`pipx install --global datahenge-cairn`)"
     )
 
 
@@ -695,12 +674,12 @@ def build_script(options: argparse.Namespace) -> str:
     the input hash, and short-circuits when that hash is already built. So a timer is the whole
     of the trigger; no watcher is needed and a no-op poll costs three `git ls-remote` calls.
     """
-    cairn = options.source / ".venv" / "bin" / "cairn"
+    cairn = _cairn_executable()
     return f"""\
 #!/bin/bash -e
-# Written by cairn's installer. `cairn build --push` is idempotent: with no new commits it
+# Written by cairn-provision. `cairn build --push` is idempotent: with no new commits it
 # resolves refs, sees the input hash is already built, and exits without building.
-cd {options.source}
+cd {options.workdir}
 MANIFEST={shlex.quote(str(options.manifest))}
 {cairn} build --manifest "$MANIFEST" --push
 {cairn} retag {shlex.quote(options.environment)} --latest --yes --manifest "$MANIFEST"
@@ -710,8 +689,8 @@ MANIFEST={shlex.quote(str(options.manifest))}
 def build_service(options: argparse.Namespace, script: Path) -> str:
     """The build unit.
 
-    ``WorkingDirectory`` is required, not decoration: cairn finds its project root — and hence
-    the vendored tree — by searching upward from the working directory.
+    ``WorkingDirectory`` is required, not decoration: cairn finds a manifest not given
+    explicitly by searching upward from the working directory.
     """
     return f"""\
 [Unit]
@@ -722,7 +701,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory={options.source}
+WorkingDirectory={options.workdir}
 ExecStart={script}
 # A build that cannot finish in 90 minutes is stuck, not slow.
 TimeoutStartSec=5400
@@ -761,7 +740,6 @@ STAGES: dict[str, Callable[[Runner, argparse.Namespace], None]] = {
     "preflight": stage_preflight,
     "recon": stage_recon,
     "backup": stage_backup,
-    "cairn": stage_cairn,
     "registry": stage_registry,
     "descriptor": stage_descriptor,
     "timers": stage_timers,
@@ -782,7 +760,7 @@ def stages_for(role: str, only: str | None) -> tuple[str, ...]:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="bootstrap.py",
+        prog="cairn-provision",
         description="Provision a cairn build machine or deploy target.",
     )
     parser.add_argument(
@@ -802,8 +780,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--force", action="store_true", help="replace existing files (the old ones are kept)"
     )
     parser.add_argument(
-        "--source", type=Path, default=Path(__file__).resolve().parent.parent,
-        help="the cairn checkout (default: the one containing this script)",
+        "--workdir", type=Path, default=Path.cwd(),
+        help="the deployment directory: cairn.toml and the build timer live here "
+        "(default: the current directory)",
     )
     parser.add_argument("--manifest", type=Path, help="deployment manifest for the build timer")
     parser.add_argument("--environment", default="production", help="environment name")
@@ -816,7 +795,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     options = parser.parse_args(argv)
     if options.manifest is None:
-        options.manifest = options.source / "cairn.toml"
+        options.manifest = options.workdir / "cairn.toml"
     return options
 
 
@@ -824,8 +803,8 @@ def main(argv: list[str] | None = None) -> int:
     options = parse_args(argv)
     runner = Runner(dry_run=options.dry_run, force=options.force)
 
-    runner.say(f"cairn installer — role {options.role}" + (" (dry run)" if options.dry_run else ""))
-    runner.say(f"source {options.source}")
+    runner.say(f"cairn-provision — role {options.role}" + (" (dry run)" if options.dry_run else ""))
+    runner.say(f"workdir {options.workdir}")
     runner.say("")
 
     try:

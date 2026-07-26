@@ -168,10 +168,11 @@ deploy behavior. *(ADR-026)*
 ## Provisioning (the installer)
 
 **`BR-DEPLOY-021`** *(installer contract)* — Provisioning a build machine or a target MAY be
-performed by an installer **shipped alongside** the CLI, never by a verb inside it (`ADR-040`).
-That separation exists to preserve two boundaries: cairn emits systemd units and never installs
-them (`ADR-035`), and cairn writes nothing to a data-plane volume (`ADR-022`, `BR-DATA-006`) — a
-pre-install `bench backup` writes into the sites volume and is therefore the operator's act.
+performed by an installer **distributed alongside** the CLI — the same package, a separate
+entry point — never by a verb inside `cairn` itself (`ADR-040`). That separation exists to
+preserve two boundaries: cairn emits systemd units and never installs them (`ADR-035`), and
+cairn writes nothing to a data-plane volume (`ADR-022`, `BR-DATA-006`) — a pre-install `bench
+backup` writes into the sites volume and is therefore the operator's act.
 
 Where an installer is provided it MUST:
 

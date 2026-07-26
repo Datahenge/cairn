@@ -1,5 +1,5 @@
-# NOTE: frappe_docker/ is intentionally NOT ignored — it is the ventwig-managed,
-# pinned, drift-checked vendored copy of upstream, committed as plain files (D-007).
+# NOTE: src/cairn/vendored/frappe_docker/ is intentionally NOT ignored — it is the
+# ventwig-managed, pinned copy of upstream, committed as plain files (D-007).
 
 # Local scratch deployments used to exercise the CLI end-to-end (manifest discovery,
 # build config layering). Real deployments live outside this repo (ADR-029).

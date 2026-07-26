@@ -145,13 +145,12 @@ def stubs(project, monkeypatch) -> BuildStubs:
         state.seen["manifest_flag"] = explicit
         return explicit or state.manifest_path
 
-    def _plan_stub(root, manifest, build_config, *, no_cache=False, plain_progress=False):
+    def _plan_stub(manifest, build_config, *, no_cache=False, plain_progress=False):
         state.seen["plan"] = {
-            "root": root,
             "no_cache": no_cache,
             "plain_progress": plain_progress,
         }
-        return _plan(root, no_cache=no_cache)
+        return _plan(state.root, no_cache=no_cache)
 
     def _run_stub(build_plan, sink=None):
         state.seen["run"] = {"plan": build_plan, "sink": sink}
@@ -288,7 +287,7 @@ def pointers(registry_repo, monkeypatch) -> PointerStubs:
 
 
 def test_success_exits_zero(project, monkeypatch):
-    monkeypatch.setattr(doctor, "run", lambda root, preferred_engine=None: 0)
+    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None: 0)
 
     result = runner.invoke(cli.app, ["doctor"])
 
@@ -297,7 +296,7 @@ def test_success_exits_zero(project, monkeypatch):
 
 def test_exit_code_is_the_actions_own_return_value(project, monkeypatch):
     """BR-CLI-012: a failed check must be detectable, so the code is forwarded, not flattened."""
-    monkeypatch.setattr(doctor, "run", lambda root, preferred_engine=None: 1)
+    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None: 1)
 
     result = runner.invoke(cli.app, ["doctor"])
 
@@ -308,7 +307,7 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
     """BR-CLI-015: an expected failure names the fix; exit 2 distinguishes it from a check
     that merely reported a problem."""
 
-    def _fail(root, preferred_engine=None):
+    def _fail(preferred_engine=None):
         raise PushError("No registry configured, so images remain local.")
 
     monkeypatch.setattr(doctor, "run", _fail)
@@ -324,7 +323,7 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
 def test_interrupt_exits_130(project, monkeypatch):
     """The shell's convention for SIGINT — a cancelled build is not a failed build."""
 
-    def _interrupt(root, preferred_engine=None):
+    def _interrupt(preferred_engine=None):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(doctor, "run", _interrupt)
@@ -339,7 +338,7 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
     """An internal error must never be mistaken for silent success, so it is announced
     and then allowed to print its traceback."""
 
-    def _bug(root, preferred_engine=None):
+    def _bug(preferred_engine=None):
         raise ValueError("off by one")
 
     monkeypatch.setattr(doctor, "run", _bug)
@@ -351,11 +350,23 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
     assert isinstance(result.exception, ValueError)
 
 
-def test_running_outside_a_project_exits_two(tmp_path, monkeypatch):
-    """Project discovery failing is an ordinary, actionable error — not a traceback."""
+def test_doctor_needs_no_project_root(tmp_path, monkeypatch):
+    """The vendored tree is package-relative now — doctor works from anywhere."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None: 0)
 
     result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0
+
+
+def test_vendor_status_outside_a_project_exits_two(tmp_path, monkeypatch):
+    """Unlike every other command, `vendor status`/`sync` shell out to ventwig itself,
+    which needs a real checkout — project discovery failing there is an ordinary,
+    actionable error, not a traceback."""
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(cli.app, ["vendor", "status"])
 
     assert result.exit_code == 2
     assert "No cairn project found" in result.stderr
@@ -508,7 +519,7 @@ def test_failing_to_name_the_cache_stage_does_not_fail_the_build(stubs, monkeypa
     monkeypatch.setattr(
         build,
         "plan",
-        lambda root, manifest, build_config, **kwargs: _plan(root, engine_name=engine.PODMAN),
+        lambda manifest, build_config, **kwargs: _plan(stubs.root, engine_name=engine.PODMAN),
     )
     monkeypatch.setattr(build, "tag_cache_stage", lambda build_plan: None)
 
@@ -524,8 +535,8 @@ def test_a_moving_branch_is_warned_about(stubs, monkeypatch):
     monkeypatch.setattr(
         build,
         "plan",
-        lambda root, manifest, build_config, **kwargs: _plan(
-            root, resolution=_resolution(RefKind.BRANCH)
+        lambda manifest, build_config, **kwargs: _plan(
+            stubs.root, resolution=_resolution(RefKind.BRANCH)
         ),
     )
 

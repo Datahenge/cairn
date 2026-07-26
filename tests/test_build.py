@@ -124,29 +124,32 @@ def test_passthrough_knob_is_upper_cased(containerfile):
 # --- provenance (BR-BUILD-011, ADR-030) -------------------------------------
 
 
-def _labels(tmp_path):
+def _labels(monkeypatch, pin=None):
+    if pin is None:
+        pin = {"ref": "v3.2.1", "commit": "d4a3100"}
+    monkeypatch.setattr(vendor, "read_pin", lambda: pin)
     return build.provenance_labels(
-        tmp_path, _manifest(), _resolution(), {"PYTHON_VERSION": "3.13.1"}, "v16-abc123", "latest"
+        _manifest(), _resolution(), {"PYTHON_VERSION": "3.13.1"}, "v16-abc123", "latest"
     )
 
 
-def test_labels_use_the_decided_namespaces(tmp_path):
+def test_labels_use_the_decided_namespaces(monkeypatch):
     """ADR-030: cairn keys under com.datahenge.cairn.*, standard fields under OCI."""
-    labels = _labels(tmp_path)
+    labels = _labels(monkeypatch)
 
     assert labels["org.opencontainers.image.title"] == "erpnext-btu-v16"
     assert labels["org.opencontainers.image.version"] == "v16-abc123"
     assert labels["com.datahenge.cairn.input-hash"] == "abc123"
 
 
-def test_vendor_label_is_not_set(tmp_path):
+def test_vendor_label_is_not_set(monkeypatch):
     """ADR-030: the distributing entity of the operator's image is theirs to declare."""
-    assert "org.opencontainers.image.vendor" not in _labels(tmp_path)
+    assert "org.opencontainers.image.vendor" not in _labels(monkeypatch)
 
 
-def test_apps_label_is_json_in_manifest_order(tmp_path):
+def test_apps_label_is_json_in_manifest_order(monkeypatch):
     """BR-BUILD-011 + BR-BUILD-003: apps travel with refs and commits, ordered."""
-    apps = json.loads(_labels(tmp_path)["com.datahenge.cairn.apps"])
+    apps = json.loads(_labels(monkeypatch)["com.datahenge.cairn.apps"])
 
     assert apps == [
         {
@@ -158,25 +161,20 @@ def test_apps_label_is_json_in_manifest_order(tmp_path):
     ]
 
 
-def test_vendor_pin_reads_ref_and_synced_commit(tmp_path):
-    """The pin's halves live in two files by design (BR-VEND-002 / BR-VEND-003)."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[tool.ventwig]\n[[tool.ventwig.sources]]\nname = "frappe_docker"\n'
-        'local_path = "frappe_docker"\nref = "v3.2.1"\n',
-        encoding="utf-8",
-    )
-    (tmp_path / build.LOCK_NAME).write_text(
-        '[frappe_docker]\nsynced_commit = "d4a3100"\n', encoding="utf-8"
-    )
+def test_frappe_docker_pin_reaches_the_labels(monkeypatch):
+    """BR-BUILD-011: the frappe_docker pin (ADR-030) comes from vendor.read_pin()."""
+    labels = _labels(monkeypatch, pin={"ref": "v3.2.1", "commit": "d4a3100"})
 
-    assert build.vendor_pin(tmp_path) == {"ref": "v3.2.1", "commit": "d4a3100"}
+    assert labels["com.datahenge.cairn.frappe-docker.ref"] == "v3.2.1"
+    assert labels["com.datahenge.cairn.frappe-docker.commit"] == "d4a3100"
 
 
-def test_missing_lock_degrades_to_empty(tmp_path):
+def test_missing_pin_degrades_to_empty(monkeypatch):
     """Provenance is best-effort here; BR-VEND-005 is the check that actually gates."""
-    (tmp_path / "pyproject.toml").write_text("[tool.ventwig]\n", encoding="utf-8")
+    labels = _labels(monkeypatch, pin={})
 
-    assert build.vendor_pin(tmp_path) == {"ref": "", "commit": ""}
+    assert labels["com.datahenge.cairn.frappe-docker.ref"] == ""
+    assert labels["com.datahenge.cairn.frappe-docker.commit"] == ""
 
 
 # --- the command (BR-BUILD-006, BR-BUILD-009) -------------------------------
@@ -253,18 +251,18 @@ def test_dry_run_render_shows_everything_without_building():
 # --- preconditions and failure (BR-BUILD-009) -------------------------------
 
 
-def test_plan_enforces_vendor_preconditions_before_resolving(monkeypatch, tmp_path):
+def test_plan_enforces_vendor_preconditions_before_resolving(monkeypatch):
     """BR-BUILD-009: drift is a hard stop, checked before any network work."""
     called: list[str] = []
     monkeypatch.setattr(build.resolve, "resolve_manifest", lambda m: called.append("resolved"))
 
-    def _drifted(root):
+    def _drifted():
         raise VendorDriftError("drifted")
 
     monkeypatch.setattr(build.vendor, "assert_clean", _drifted)
 
     with pytest.raises(VendorDriftError):
-        build.plan(tmp_path, _manifest(), BuildConfig())
+        build.plan(_manifest(), BuildConfig())
 
     assert called == []
 
@@ -512,11 +510,11 @@ def _planned(monkeypatch, containerfile, tmp_path, *, series):
         build={},
         series=series,
     )
-    monkeypatch.setattr(vendor, "assert_clean", lambda root, source=None: None)
-    monkeypatch.setattr(vendor, "assert_no_nested_git", lambda root: None)
-    monkeypatch.setattr(vendor, "assert_build_inputs", lambda root, source_name=None: None)
-    monkeypatch.setattr(vendor, "containerfile_path", lambda root, source_name=None: containerfile)
-    monkeypatch.setattr(vendor, "build_context", lambda root, source_name=None: tmp_path)
-    monkeypatch.setattr(build, "vendor_pin", lambda root, source_name=None: {"ref": "v3.2.1"})
+    monkeypatch.setattr(vendor, "assert_clean", lambda: None)
+    monkeypatch.setattr(vendor, "assert_no_nested_git", lambda: None)
+    monkeypatch.setattr(vendor, "assert_build_inputs", lambda: None)
+    monkeypatch.setattr(vendor, "containerfile_path", lambda: containerfile)
+    monkeypatch.setattr(vendor, "build_context", lambda: tmp_path)
+    monkeypatch.setattr(vendor, "read_pin", lambda: {"ref": "v3.2.1"})
     monkeypatch.setattr(build.resolve, "resolve_manifest", lambda m: _resolution())
-    return build.plan(tmp_path, manifest, BuildConfig(), engine_name="docker")
+    return build.plan(manifest, BuildConfig(), engine_name="docker")

@@ -26,9 +26,9 @@ PODMAN = engine.BuildEngine(name="podman", version="5.4.2")
 
 @pytest.fixture
 def all_vendor_checks_pass(monkeypatch):
-    monkeypatch.setattr(doctor.vendor, "assert_clean", lambda root: None)
-    monkeypatch.setattr(doctor.vendor, "assert_no_nested_git", lambda root: None)
-    monkeypatch.setattr(doctor.vendor, "assert_build_inputs", lambda root: None)
+    monkeypatch.setattr(doctor.vendor, "assert_clean", lambda: None)
+    monkeypatch.setattr(doctor.vendor, "assert_no_nested_git", lambda: None)
+    monkeypatch.setattr(doctor.vendor, "assert_build_inputs", lambda: None)
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def _stub_config(monkeypatch, build_config, apps=()):
     monkeypatch.setattr(doctor.config, "load_build_config", lambda path: build_config)
 
 
-def _boom(root):
+def _boom():
     raise VendorDriftError("nope")
 
 
@@ -167,14 +167,14 @@ def test_engine_failure_is_reported_not_raised(monkeypatch):
 # --- check composition (ADR-027) --------------------------------------------
 
 
-def test_buildx_checked_only_for_docker(monkeypatch, tmp_path, all_vendor_checks_pass, config_ok):
+def test_buildx_checked_only_for_docker(monkeypatch, all_vendor_checks_pass, config_ok):
     """ADR-027: a docker machine is checked for the buildx plugin."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: DOCKER)
     monkeypatch.setattr(
         doctor, "check_buildx", lambda: doctor.CheckResult.of("docker buildx", True, "x")
     )
 
-    labels = [r.label for r in doctor.run_checks(tmp_path)]
+    labels = [r.label for r in doctor.run_checks()]
 
     assert labels == [
         "config",
@@ -187,11 +187,11 @@ def test_buildx_checked_only_for_docker(monkeypatch, tmp_path, all_vendor_checks
     ]
 
 
-def test_buildx_not_checked_for_podman(monkeypatch, tmp_path, all_vendor_checks_pass, config_ok):
+def test_buildx_not_checked_for_podman(monkeypatch, all_vendor_checks_pass, config_ok):
     """ADR-027: a podman machine is never told to install a Docker plugin it won't use."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
 
-    labels = [r.label for r in doctor.run_checks(tmp_path)]
+    labels = [r.label for r in doctor.run_checks()]
 
     assert "docker buildx" not in labels
     assert labels == [
@@ -204,7 +204,7 @@ def test_buildx_not_checked_for_podman(monkeypatch, tmp_path, all_vendor_checks_
     ]
 
 
-def test_configured_engine_reaches_detection(monkeypatch, tmp_path, all_vendor_checks_pass):
+def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass):
     """BR-CFG-008: `engine =` from build config drives detection with no flag."""
     seen: list[str | None] = []
     _stub_config(monkeypatch, config_module.BuildConfig(engine="podman"))
@@ -215,12 +215,12 @@ def test_configured_engine_reaches_detection(monkeypatch, tmp_path, all_vendor_c
 
     monkeypatch.setattr(doctor.engine, "detect", _detect)
 
-    doctor.run_checks(tmp_path)
+    doctor.run_checks()
 
     assert seen == ["podman"]
 
 
-def test_explicit_engine_overrides_configured_one(monkeypatch, tmp_path, all_vendor_checks_pass):
+def test_explicit_engine_overrides_configured_one(monkeypatch, all_vendor_checks_pass):
     """An explicit argument wins over the configured preference."""
     seen: list[str | None] = []
     _stub_config(monkeypatch, config_module.BuildConfig(engine="podman"))
@@ -234,19 +234,19 @@ def test_explicit_engine_overrides_configured_one(monkeypatch, tmp_path, all_ven
         doctor, "check_buildx", lambda: doctor.CheckResult.of("docker buildx", True, "x")
     )
 
-    doctor.run_checks(tmp_path, preferred_engine="docker")
+    doctor.run_checks(preferred_engine="docker")
 
     assert seen == ["docker"]
 
 
-def test_all_checks_run_even_after_a_failure(monkeypatch, tmp_path, config_ok):
+def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok):
     """BR-CLI-007: one invocation reports the full picture; no short-circuit."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
     monkeypatch.setattr(doctor.vendor, "assert_clean", _boom)
     monkeypatch.setattr(doctor.vendor, "assert_no_nested_git", _boom)
     monkeypatch.setattr(doctor.vendor, "assert_build_inputs", _boom)
 
-    results = doctor.run_checks(tmp_path)
+    results = doctor.run_checks()
 
     assert [r.status for r in results] == [
         doctor.Status.OK,  # config

@@ -94,6 +94,23 @@ Upgrades become deliberate, reviewable acts (`ventwig sync` → diff → test).
 `frappe_docker` root, not a Python `src/` subdir — no `__init__.py` in the Docker
 build context). ventwig requires the consumer to be a git working tree → see ADR-008.
 
+**Amended 2026-07-25 — `ventwig` is fetch-time only; the tree lives inside the package.**
+`local_path` moved from `frappe_docker` (repo root) to `src/cairn/vendored/frappe_docker`
+— *inside* the `cairn` package itself, so it ships in the wheel via the existing
+`packages = ["src/cairn"]`, no special packaging step (closes the gap `ADR-018` and
+`ADR-029` recorded). `.ventwig.lock` still exists — it's ventwig's own bookkeeping,
+written next to `pyproject.toml` — but cairn's runtime no longer reads it. `cairn vendor
+sync` now also regenerates a companion `src/cairn/vendored/frappe_docker.pin.toml` (ref,
+commit, tree hash, synced-at) from the freshly-written lock, and that file — package-
+relative, shipped in the wheel — is what `BR-VEND-005`'s drift check and `BR-BUILD-011`'s
+provenance labels read from then on. The drift check itself no longer shells out to the
+`ventwig` CLI: it recomputes the same git tree-hash ventwig computes (a scratch `git
+init`/`add -A`/`write-tree`) and compares it to the pin's `synced_tree`, needing only the
+`git` binary cairn already requires unconditionally. The result: `ventwig` is a true
+fetch-time-only dependency — touched by nothing except `cairn vendor sync`/`status`, run
+deliberately from a checkout — exactly the role vendoring was meant to play, not a
+build-time or install-time dependency.
+
 ---
 
 ### ADR-008 — `cairn` is itself a git repository
@@ -480,9 +497,9 @@ machine-wide defaults (e.g. `engine`, `ADR-027`), and an optional `cairn.local.t
 **beside the manifest** overrides it key-by-key, so per-deployment settings travel with
 the deployment while the portable `cairn.toml` stays free of them (`BR-CFG-008`).
 
-**Known gap, deferred:** the wheel currently packages only `src/cairn`, so a
-`pip install`-ed cairn has no vendored tree to build from. Packaging `frappe_docker/`
-into the distribution is a `BUILD`-phase concern, not blocked by this decision.
+**Closed 2026-07-25:** the vendored tree now lives at `src/cairn/vendored/frappe_docker` —
+inside `src/cairn` — so the wheel carries it without any special packaging step (`ADR-007`,
+`ADR-018`). A `pip install`-ed cairn has a vendored tree to build from.
 *(BR-CFG-012, BR-CLI-014, BR-BUILD-011)*
 
 ---
@@ -529,7 +546,7 @@ distributing entity of a client's image is the client's to declare, not cairn's.
 | `com.datahenge.cairn.frappe.url` / `.ref` / `.commit` | Frappe source, declared ref, resolved commit |
 | `com.datahenge.cairn.apps` | JSON array of `{name, url, ref, commit}`, **manifest order** |
 | `com.datahenge.cairn.build-args` | JSON object of **effective** build args (`BR-BUILD-010`) |
-| `com.datahenge.cairn.frappe-docker.ref` / `.commit` | the vendored upstream pin, from `.ventwig.lock` |
+| `com.datahenge.cairn.frappe-docker.ref` / `.commit` | the vendored upstream pin, from `frappe_docker.pin.toml` (`ADR-007`) |
 
 Apps and build args are single JSON labels because their cardinality varies; everything
 else is scalar so it can be read without parsing.
@@ -649,24 +666,42 @@ builder's code *cannot* (a minimal or immutable OS), or when a security requirem
 target be physically incapable of push/retag rather than merely uncredentialed. Conceptual tidiness
 is explicitly **not** a trigger.
 
-**One claim above is currently false and is corrected here.** "A pip-installable wheel" holds for the
-consumer role only. `pip install datahenge-cairn && cairn build` **cannot work today**, for three
-independent reasons found while planning the builder VPS:
+**Resolved 2026-07-25 — all three reasons closed by moving the vendored tree inside the
+package.** This section originally recorded three independent reasons `pip install
+datahenge-cairn && cairn build` could not work: the wheel excluded the vendored tree
+(`packages = ["src/cairn"]`, `frappe_docker/` at the repo root); `project.find_project_root()`
+locates a project by searching upward for a `pyproject.toml`, which does not exist in
+`site-packages`; and `vendor.assert_clean()` ran on every build and required the `ventwig`
+CLI, a dev-only dependency.
 
-1. the wheel excludes the vendored tree — `[tool.hatch.build.targets.wheel] packages = ["src/cairn"]`
-   and `frappe_docker/` sits at the repo root;
-2. `project.find_project_root()` locates the tree by searching upward for a `pyproject.toml`
-   containing `[tool.ventwig]`, which does not exist in `site-packages`;
-3. `vendor.assert_clean()` runs on **every** build (`BR-VEND-005`, a hard stop with no override) and
-   requires the `ventwig` CLI, which is a **dev-only** dependency.
+Brian's framing, revisited while resolving this for a PyPI publish: vendoring is a fetch
+mechanism, not an ongoing relationship. Once `frappe_docker` is fetched it is part of cairn
+the same way any other committed source file is — it belongs in cairn's own git history and
+in anything cairn ships, PyPI included. `ventwig` should never be thought about again after
+the fetch.
 
-None of this is a vendoring defect — the vendored tree is correct and only 1.1 MB. It is that the
-builder role was designed around a *checkout* while the ADR claimed a *wheel*. Fixing it is deferred
-rather than patched, because item 3 means deciding what anchors the tree's immutability when it ships
-inside a wheel — the wheel itself, most likely, which makes ventwig's drift check inapplicable rather
-than merely absent. That amends `BR-VEND-005` and `ADR-007` and is a requirements conversation. **It
-must be settled before publishing to PyPI**, or the published builder will be broken on arrival.
-*(BR-VEND-005, ADR-007, ADR-028, ADR-034, ADR-040)*
+That reframing dissolves all three reasons at once, rather than requiring three separate
+fixes: the vendored tree moved to `src/cairn/vendored/frappe_docker` — *inside* the `cairn`
+package — so `packages = ["src/cairn"]` ships it in the wheel automatically (closes 1).
+Every vendor-tree lookup (`vendor.build_context`, `vendor.containerfile_path`, the `assert_*`
+preconditions) resolves package-relatively from cairn's own `__file__`, never by searching
+the filesystem for a project root — so it works identically in a checkout and an installed
+wheel, and `find_project_root()` is needed only by `cairn vendor status`/`sync` themselves,
+the two commands that actually shell out to `ventwig` (closes 2). `cairn vendor sync` now
+also writes a companion `src/cairn/vendored/frappe_docker.pin.toml` (ref, commit, tree hash)
+from ventwig's own `.ventwig.lock`, and `assert_clean()` verifies against *that* — recomputing
+the same git tree-hash ventwig computes, using only the `git` binary cairn already requires,
+never `ventwig` itself (closes 3). Verified 2026-07-25: a wheel built from the new layout,
+installed into a clean venv with no checkout and no `[dev]` extra, ran `cairn doctor` and
+`cairn build --dry-run` through to build-engine invocation with no project-root or vendoring
+error of any kind.
+
+One consequence worth naming: the builder role no longer *requires* a checkout — a bare
+`pip install datahenge-cairn` now carries everything `cairn build` needs. The installer
+(`ADR-040`) still provisions a builder from a checkout by default, since that is also how an
+operator gets `ventwig`/`ruff`/`pytest` for local development — but that is now a choice, not
+a hard requirement imposed by packaging.
+*(BR-VEND-002/003/005, ADR-007, ADR-028, ADR-029, ADR-034, ADR-040)*
 
 ---
 
@@ -1091,10 +1126,10 @@ deliberately days earlier:**
 - `ADR-022` / `BR-DATA-006` — cairn performs **no writes to data-plane volumes**. A pre-install
   `bench backup` writes a dump into the sites volume. Useful, and not cairn's to do.
 
-**Decision:** the installer is a **separate program shipped in the repo** — `install/bootstrap.py`,
-stdlib-only, run with `sudo` by the operator. It *calls* cairn for the read-only and print-only work
-(`doctor`, `adopt`, `systemd-units`) and performs the privileged writes itself. cairn's boundary is
-untouched: the CLI still writes nothing to `/etc`, nothing to systemd, and nothing to a volume.
+**Decision:** the installer is a **separate program**, run with `sudo` by the operator. It *calls*
+cairn for the read-only and print-only work (`doctor`, `adopt`, `systemd-units`) and performs the
+privileged writes itself. cairn's boundary is untouched: the CLI still writes nothing to `/etc`,
+nothing to systemd, and nothing to a volume.
 
 This is not a loophole. The operator invoking an installer *is* the operator doing it; `ADR-035`'s
 objection was to cairn taking that act on itself, silently, as a side effect of some other command.
@@ -1109,11 +1144,40 @@ the same boundary.
 installer is what turns printed configuration into installed configuration, and it can be replaced by
 hand at any point — which `BR-DEPLOY-021` requires.
 
-**Why stdlib-only Python rather than bash.** The installer runs *before* cairn's virtualenv exists,
-so it cannot import cairn — self-containment is forced, not chosen. Python over bash because this
-code runs as root on client infrastructure and therefore has to be **testable**, which is the same
-argument that produced this project's suite everywhere else. Bash would have been marginally easier
-to audit line-by-line and impossible to test.
+**Amended 2026-07-25 — the installer moved inside the package (`src/cairn/provision.py`), with its
+own entry point, `cairn-provision`.** The original reason for a stdlib-only *separate program* was
+that it ran before cairn's virtualenv existed and could not import cairn — forced, not chosen. That
+premise is gone: once the PyPI-install blockers closed (see the `ADR-018` resolution above), the
+same `pip install datahenge-cairn` that gives you `cairn` also gives you `cairn-provision` — they are
+never installed apart. What does **not** change: `cairn-provision` still stays out of the `cairn`
+command tree, for the same two reasons as before (`ADR-035`, `ADR-022`) — those are about what
+`cairn` itself is allowed to do, not about how the installer is distributed. It still writes
+systemd units, TLS material, and runs `bench backup` directly, guarded by the same seven-point
+contract (`BR-DEPLOY-021`) — `--dry-run`, idempotent, never-silently-overwrite — rather than
+printing instructions for the operator to type by hand; comparable tools (`certbot`, `mkcert`,
+`k3s`'s installer) lean on the same dry-run-plus-idempotency safety net rather than requiring manual
+transcription, and requiring it here would have added a transcription-error opportunity without a
+matching safety gain, given the operator already granted root to run it.
+
+**Consequence for how it locates `cairn`.** With no checkout to anchor to, `cairn-provision`
+resolves `cairn` as its own sibling in the same install (`Path(sys.argv[0]).parent / "cairn"`),
+falling back to a `PATH` lookup — never a `--source` checkout directory, which no longer exists as a
+concept for provisioning. The stage that used to create a fresh virtualenv and `pip install` cairn
+into it (`stage_cairn`) is gone entirely: there is nothing left to install by the time
+`cairn-provision` runs, since it's already part of the same distribution.
+
+**Recommended install for anything a client depends on**: `sudo pipx install --global
+datahenge-cairn`, not a personal `pip install`/`pipx install`. `pipx --global` installs to a shared
+system location (`/opt/pipx` by default) rather than under an individual operator's home directory —
+which matters specifically because the people running this tool are frequently consultants, and a
+consultant's own account is not something a client's production systemd timers should depend on
+being able to execute. A personal install still works and is fine for a builder one operator solely
+uses; it stops being fine the moment someone else's infrastructure depends on it outliving that
+operator's account.
+
+**Why Python rather than bash.** This code runs as root on client infrastructure and therefore has
+to be **testable**, which is the same argument that produced this project's suite everywhere else.
+Bash would have been marginally easier to audit line-by-line and impossible to test.
 
 **Consequence for `BR-DEPLOY-007`.** That requirement makes initial site/volume/database creation the
 operator's responsibility. The installer does not change it — it provisions the *build and deploy

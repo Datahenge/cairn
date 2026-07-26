@@ -7,4 +7,12 @@ implements.
 
 from __future__ import annotations
 
-__version__ = "0.0.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("datahenge-cairn")
+except PackageNotFoundError:
+    # Not installed at all — e.g. `python -m pytest` against a bare checkout with
+    # neither a regular nor an editable install. pyproject.toml is the single source
+    # of truth for the real version; this is a placeholder, never a second copy of it.
+    __version__ = "0.0.0+unknown"

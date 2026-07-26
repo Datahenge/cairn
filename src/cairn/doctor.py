@@ -23,7 +23,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 
 import typer
 
@@ -62,12 +61,12 @@ class CheckResult:
         return cls(label, Status.OK if ok else Status.FAIL, detail)
 
 
-def run(root: Path, preferred_engine: str | None = None) -> int:
-    """Run every check under *root*, report the results, and return the exit code."""
-    return report(run_checks(root, preferred_engine))
+def run(preferred_engine: str | None = None) -> int:
+    """Run every check, report the results, and return the exit code."""
+    return report(run_checks(preferred_engine))
 
 
-def run_checks(root: Path, preferred_engine: str | None = None) -> list[CheckResult]:
+def run_checks(preferred_engine: str | None = None) -> list[CheckResult]:
     """Run all build-role preflight checks in order and return their results (BR-CLI-007).
 
     Config is checked first because it supplies the engine preference (`BR-CFG-008`);
@@ -86,9 +85,9 @@ def run_checks(root: Path, preferred_engine: str | None = None) -> list[CheckRes
     return [
         *results,
         check_git(),
-        _guard("vendored tree", lambda: vendor.assert_clean(root), "matches .ventwig.lock"),
-        _guard("vendor .git", lambda: vendor.assert_no_nested_git(root), "no nested .git"),
-        _guard("build inputs", lambda: vendor.assert_build_inputs(root), "Containerfile complete"),
+        _guard("vendored tree", vendor.assert_clean, "matches its recorded pin"),
+        _guard("vendor .git", vendor.assert_no_nested_git, "no nested .git"),
+        _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
     ]
 
 

@@ -47,7 +47,7 @@ local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` com
 | `docs/04-lessons-learned.md` | Durable technical findings about the tools we build on; each marked *measured* or *reasoned* | — |
 | `docs/CHANGELOG.md` | Living-documentation revisions | — |
 | `docs/plans/` | Implementation plans, downstream of requirements | — |
-| `frappe_docker/` | Vendored upstream, **read-only** (ventwig, `ADR-007`) — never edit | — |
+| `src/cairn/vendored/frappe_docker/` | Vendored upstream, **read-only** (ventwig, `ADR-007`) — never edit | — |
 
 ## Workflow (Scribe Coding phases)
 
@@ -69,7 +69,8 @@ local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` com
 - When a design changes, update the affected requirements **and** `docs/CHANGELOG.md`
   in the same change.
 - Do **not** begin code for a pillar whose requirements are not yet solid.
-- Never edit the vendored `frappe_docker/` tree; manage it only via ventwig.
+- Never edit the vendored `src/cairn/vendored/frappe_docker/` tree; manage it only via
+  `cairn vendor sync` (which wraps ventwig).
 - **`BR`/`ADR` IDs are internal — they never reach a user.** They belong in docstrings,
   comments, tests, commit messages, and `docs/`. They MUST NOT appear in **anything a
   user can see**: CLI `--help` text, error messages, warnings, progress output,
