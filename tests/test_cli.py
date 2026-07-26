@@ -28,6 +28,7 @@ import pytest
 from typer.testing import CliRunner
 
 from cairn import (
+    adopt,
     build,
     cli,
     config,
@@ -939,6 +940,95 @@ def test_systemd_units_report_what_they_assumed(monkeypatch):
     assert "OnUnitInactiveSec=15min" in result.stdout
     assert "User=cairn" in result.stdout
 
+
+# --- adopt (BR-CLI-020) ----------------------------------------------------
+
+
+def _survey(sites=("erp.acme.test",), apps=("frappe", "erpnext"), image="localhost:5000/erp"):
+    return adopt.Survey(
+        project="erp-acme",
+        directory=Path("/opt/frappe_docker"),
+        overrides=("mariadb", "redis"),
+        sites=tuple(sites),
+        apps=tuple(apps),
+        image=image,
+        tag="test",
+    )
+
+
+def test_adopt_needs_no_project_and_prints_a_descriptor(tmp_path, monkeypatch):
+    """A host being adopted has neither a cairn project nor a manifest yet."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey())
+
+    result = runner.invoke(cli.app, ["adopt", "--environment", "test"])
+
+    assert result.exit_code == 0
+    assert 'environment = "test"' in result.stdout
+    assert 'site        = "erp.acme.test"' in result.stdout
+
+
+def test_adopt_writes_nothing(tmp_path, monkeypatch):
+    """BR-CLI-020: it reads and prints. The descriptor goes to stdout, never to disk."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey())
+
+    runner.invoke(cli.app, ["adopt"])
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_adopt_refuses_a_multi_site_host(tmp_path, monkeypatch):
+    """Converging it would drop the other sites from the proxy config, so this is a stop."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        adopt, "survey", lambda project=None: _survey(sites=("a.test", "b.test"))
+    )
+
+    result = runner.invoke(cli.app, ["adopt"])
+
+    assert result.exit_code == 2
+    assert "serves 2 sites" in result.stderr
+    assert "environment =" not in result.stdout
+
+
+def test_adopt_reports_what_it_could_not_determine(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    incomplete = adopt.Survey(
+        findings=[adopt.Finding("compose project", "`docker compose ls` did not answer")]
+    )
+    monkeypatch.setattr(adopt, "survey", lambda project=None: incomplete)
+
+    result = runner.invoke(cli.app, ["adopt"])
+
+    assert result.exit_code == 2
+    assert "did not answer" in result.stderr
+    assert "Not enough could be determined" in result.stderr
+
+
+def test_adopt_cross_checks_the_manifest_when_given_one(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey(apps=("frappe", "erpnext")))
+    manifest = tmp_path / "cairn.toml"
+    manifest.touch()
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest())
+
+    result = runner.invoke(cli.app, ["adopt", "--manifest", str(manifest)])
+
+    assert result.exit_code == 0
+    assert "Manifest matches" in result.stderr
+
+
+def test_adopt_forwards_the_project_name(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        adopt, "survey", lambda project=None: (seen.update(project=project), _survey())[1]
+    )
+
+    runner.invoke(cli.app, ["adopt", "--project", "erp-other"])
+
+    assert seen["project"] == "erp-other"
 
 # --- push (BR-CLI-003) -----------------------------------------------------
 

@@ -181,3 +181,35 @@ log file (journald owns the record, `BR-DEPLOY-019`), and a cadence consistent w
 stack. Because a unit is host-specific, the command MUST report the values it assumed
 (binary path, user, cadence) rather than silently choosing them. *(BR-DEPLOY-001,
 BR-DEPLOY-008, BR-DEPLOY-016, BR-DEPLOY-019, ADR-035)*
+
+**`BR-CLI-020`** *(adopt — derive a descriptor from a running deployment)* — `cairn adopt` MUST read
+an **existing** frappe_docker deployment on this host and **print** a draft environment descriptor
+(`BR-DEPLOY-010a`). It MUST NOT write any file, install anything, or alter the running stack — it is
+a read-and-print command, exactly as `BR-CLI-019` is.
+
+Together those two commands fix cairn's rule for host configuration:
+
+> **cairn prints host configuration; the operator installs it.**
+
+It MUST derive, from the live stack rather than from anything the operator states:
+
+- the compose **project** and the compose **files in use**, and from those the frappe_docker
+  directory and which `overrides/compose.*.yaml` are layered;
+- the **site name(s)** and each site's **installed apps**;
+- the **image and tag currently running**;
+- the `.env` in use.
+
+It MUST **report gaps rather than guess**: anything it cannot determine is named, with the reason,
+and left absent from the output. A plausible default silently inserted here becomes a wrong deploy
+later.
+
+Given a manifest it MUST **cross-check** the manifest's ordered app list (`BR-BUILD-003`) against the
+site's installed apps and report disagreement — a mismatch means `bench migrate` would run against
+code the site does not expect, which is the likeliest way a first deploy fails.
+
+It MUST report when the deployment serves **more than one site**, because `reconcile` sets `SITES`
+from a descriptor naming exactly one (`BR-DEPLOY-014`), and converging such a host would drop the
+others. That condition is a **stop**, not a warning to be worked around.
+
+The emitted descriptor MUST be **loadable**: whatever `adopt` prints, `BR-DEPLOY-010a`'s reader must
+accept. *(BR-DEPLOY-010a, BR-DEPLOY-014, BR-BUILD-003, BR-CLI-019, ADR-034, ADR-040)*

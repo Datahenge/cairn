@@ -164,3 +164,34 @@ deploy behavior. *(ADR-026)*
   with **>5,000 downloads cannot be deleted**. Consequence: an env tag cannot be removed
   without destroying the shared image — hence `cairn retire` decommissions at cairn's layer
   only (`BR-CLI-009`).
+
+## Provisioning (the installer)
+
+**`BR-DEPLOY-021`** *(installer contract)* — Provisioning a build machine or a target MAY be
+performed by an installer **shipped alongside** the CLI, never by a verb inside it (`ADR-040`).
+That separation exists to preserve two boundaries: cairn emits systemd units and never installs
+them (`ADR-035`), and cairn writes nothing to a data-plane volume (`ADR-022`, `BR-DATA-006`) — a
+pre-install `bench backup` writes into the sites volume and is therefore the operator's act.
+
+Where an installer is provided it MUST:
+
+1. **Be idempotent.** Re-running it MUST converge rather than duplicate or fail. This is what makes
+   the second and third machine cheap, which is the reason it exists at all.
+2. **Offer a dry run** that prints every action, including every command it would run, and writes
+   nothing.
+3. **Never silently overwrite.** An existing file it would replace MUST be preserved and named, and
+   replacing it MUST require an explicit flag.
+4. **Handle no secrets** (`BR-CFG-010`, `BR-DEPLOY-011`). It MUST NOT prompt for, generate, store, or
+   log a credential value. Key material it creates for transport security MUST be created with
+   owner-only permissions.
+5. **Gate before acting.** Host prerequisites — engine, plugins, free disk, available memory — MUST be
+   checked and *all* results reported before any change is made, and a failure MUST stop the run.
+6. **Verify what it claims.** A step reporting success MUST have confirmed its post-condition: a
+   backup is confirmed to exist and be non-empty, a registry is confirmed reachable, a written
+   descriptor is confirmed to parse. This is `BR-CLI-011`'s rule applied to provisioning.
+7. **Not be the only path.** Every action it takes MUST be documented such that an operator can
+   perform it by hand. The installer is a convenience, never a dependency.
+
+An installer MUST NOT create sites, volumes, or databases: `BR-DEPLOY-007` keeps that the operator's
+responsibility, and provisioning the *plumbing* does not change it.
+*(ADR-040, ADR-035, ADR-022, BR-DATA-006, BR-DEPLOY-007, BR-DEPLOY-011, BR-CFG-010, BR-CLI-011)*

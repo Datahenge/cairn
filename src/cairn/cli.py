@@ -14,6 +14,7 @@ import typer
 
 from . import (
     __version__,
+    adopt,
     build,
     config,
     descriptor,
@@ -822,6 +823,64 @@ def reconcile_command(
     except KeyboardInterrupt:
         typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(130) from None
+
+
+@app.command(
+    "adopt",
+    help=(
+        "Read the frappe_docker deployment already running on this host and print an "
+        "environment descriptor for it. Writes nothing — review the output, then install it. "
+        "With --manifest, also checks that the manifest's apps match the site's."
+    ),
+)
+def adopt_command(
+    environment: Annotated[
+        str, typer.Option("--environment", help="Name for this environment in the descriptor.")
+    ] = "production",
+    project: Annotated[
+        str | None,
+        typer.Option("--project", help="Compose project to read; default: the only one running."),
+    ] = None,
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Cross-check this manifest's apps against the site."),
+    ] = None,
+) -> None:
+    """Print a descriptor derived from the running deployment (BR-CLI-020).
+
+    Deliberately outside `_run_in_project`: a host being adopted has neither a cairn project nor
+    a manifest yet, and requiring either would make the command useless exactly when it is
+    needed. The manifest is read only when asked for, purely to cross-check.
+    """
+    try:
+        found = adopt.survey(project)
+
+        manifest = config.load_manifest(manifest_path) if manifest_path is not None else None
+        for line in adopt.report(found, manifest):
+            _note(line)
+        _note("")
+
+        if found.is_multi_site:
+            raise CairnError(
+                f"This host serves {len(found.sites)} sites and a descriptor names one. "
+                f"No descriptor was generated — decide how multiple sites should be handled "
+                f"first."
+            )
+
+        try:
+            rendered = adopt.render(found, environment)
+            adopt.validate(rendered)
+        except ValueError as exc:
+            raise CairnError(
+                f"Not enough could be determined to describe this host: {exc}. The findings "
+                f"above say what is missing."
+            ) from exc
+
+        typer.echo(rendered, nl=False)
+        _note(f"Review the above, then install it as {descriptor.DESCRIPTOR_PATH}.")
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
 
 
 @app.command(

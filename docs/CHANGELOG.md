@@ -9,6 +9,63 @@ code changes live in git history.
 
 ---
 
+## 2026-07-25 (night, provisioning — a tool instead of a runbook)
+
+Standing up a builder VPS is a dozen steps. Brian rejected documenting them as a runbook: a
+procedure pasted command-by-command is not idempotent, not testable, and does not get cheaper for
+builder VPS #2 and #3 — which, for a multi-client practice, is the case that matters. *"If it's
+worth doing for safety/checks, it's worth building it as a reusable installer."*
+
+- **`ADR-040` — provisioning is an installer beside the CLI, never a verb inside it.** The obvious
+  home was `cairn bootstrap`, and it would have breached two decisions made days earlier:
+  `ADR-035` (cairn emits systemd units and never installs them) and `ADR-022`/`BR-DATA-006` (cairn
+  writes nothing to a data-plane volume — a pre-install `bench backup` writes into the sites
+  volume). A separate program, run with explicit privilege by the operator, is the honest
+  expression of the same boundary rather than a loophole around it. Recorded as `BR-DEPLOY-021`
+  with a seven-point contract: idempotent, truthful `--dry-run`, never silently overwrites, no
+  secrets, gates before acting, verifies its own claims, and is **never the only path**.
+- **The invariant this completes, now true across the whole CLI:** *cairn prints host
+  configuration; the operator installs it.* `systemd-units` prints units; `adopt` prints a
+  descriptor; neither writes.
+- **`BR-CLI-020` — `cairn adopt`.** Reads a running frappe_docker deployment and prints a
+  descriptor for it. This is the piece that earns its keep: three of the sharpest risks in adopting
+  an existing stack existed **only** because a human transcribes facts off a running box into a
+  TOML file. It reads the compose project and its file set, the sites and their installed apps, and
+  the image actually running — and **reports gaps rather than filling them**, because a plausible
+  default inserted here surfaces weeks later as a stack composed from the wrong files. What it
+  prints is round-tripped through the descriptor reader, so it cannot emit something `reconcile`
+  would reject.
+- **Two stop conditions it exists to catch.** It cross-checks the manifest's *ordered* app list
+  against what the site has installed — a mismatch means `bench migrate` meets code the site does
+  not expect — and it detects a **multi-site** host, which `BR-DEPLOY-014` does not support and
+  which `reconcile` would silently narrow. Both are stops, not warnings.
+- **`install/bootstrap.py`** — stdlib-only, sudo-run, seven `--only`-able stages. It cannot import
+  cairn because it runs *before* the virtualenv exists; that self-containment is forced, not
+  chosen. Python rather than shell because this runs as root on client infrastructure and therefore
+  has to be testable.
+
+**A role error Brian caught mid-implementation, and it was broader than he flagged.** He pointed
+out that `bench backup` cannot run on a builder — a build machine has no site. True, and the same
+reasoning condemned two more stages: **`recon`** (nothing to survey) and **`descriptor`** (which
+describes a *running* deployment), while **`registry`** is builder-only since a target pulls from
+the builder's. The stage lists are now role-derived — builder: preflight, cairn, registry, timers;
+target: preflight, recon, backup, cairn, descriptor, timers — with a `--role both` for the
+bootstrap case where one box does each. Every stage also refuses the wrong role *itself*, since
+`--only` can invoke one directly. The original single list happened to work only because today's
+box is both.
+
+**Verified the same way as the rest.** 27 mutations applied one at a time — a builder allowed to
+back up, a target allowed to host a registry, the dry run writing files, an existing file
+overwritten without `--force`, preflight stopping at the first failure, the disk gate dropped,
+memory read as `MemFree` instead of `MemAvailable`, the certificate key made world-readable, the
+registry bound to `0.0.0.0`, an empty backup accepted as verified, timers started rather than
+merely enabled, multi-site detection removed, frappe counted as a manifest app, app order stopped
+mattering. **Every one was caught by a named test.** One initial mutation was invalid — it broke
+the syntax rather than the behaviour, which catches trivially and proves nothing — so it was
+rewritten as a real reordering and re-run.
+
+568 tests, ruff clean.
+
 ## 2026-07-25 (night, image ownership — a requirement that should have existed first)
 
 Brian raised a problem with the registry design that **should have been addressed far earlier**,

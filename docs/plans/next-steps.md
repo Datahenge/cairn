@@ -12,7 +12,7 @@ guess** — ask.
 
 ## Where things stand
 
-Phase 4 (modular code) is under way. Implemented and tested (473 tests, ruff clean, 92%
+Phase 4 (modular code) is under way. Implemented and tested (568 tests, ruff clean, 92%
 statement coverage; `cli.py` at 99%):
 
 | Command | Requirements | State |
@@ -28,6 +28,8 @@ statement coverage; `cli.py` at 99%):
 | `retire` | `BR-CLI-009` | Written; reports only — edits no manifest, deletes no tag |
 | `reconcile` | `BR-CLI-008`, `BR-DEPLOY-003` | Written; **never run on a real target** |
 | `systemd-units` | `BR-CLI-019` | Written; prints units, installs nothing |
+| `adopt` | `BR-CLI-020` | Written; prints a descriptor read off a running stack |
+| `install/bootstrap.py` | `BR-DEPLOY-021` | Written; **never run on a real host** |
 
 **Everything in the deploy path is unexercised against real infrastructure.** It is heavily
 tested and mutation-checked, which establishes that it does what it was written to do — not
@@ -103,10 +105,22 @@ chosen so that each step is reversible until the last one.
 is fine and already declared in the scratch manifest. For a client, the registry must be an account
 they own, with a push credential scoped to that one repository (`BR-CFG-013`).
 
+**Provision the machine with the installer** rather than by hand (`ADR-040`):
+
+```
+rsync -a --exclude .venv --exclude .git ~/erpnext_projects/datahenge-cairn/ vps:/opt/cairn/
+sudo python3 /opt/cairn/install/bootstrap.py --role both --dry-run   # review every action
+sudo python3 /opt/cairn/install/bootstrap.py --role both --private-ip <ip>
+```
+
+`--role both` is today's case, one box building and serving. When they split it becomes
+`--role builder` on one and `--role target` on the other; the stage lists differ accordingly and
+each stage refuses the wrong role.
+
 **On the control machine:**
 
 ```
-podman login <registry>            # nothing works before this
+podman login <registry>            # only if using a remote registry
 cairn images                       # does the registry read work at all?
 cairn build --push                 # if no image is in the registry yet
 cairn new-tag production --latest --dry-run

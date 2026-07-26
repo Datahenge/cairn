@@ -605,6 +605,71 @@ heavy *build-only* dependency appears, or a hard requirement emerges that target
 
 ---
 
+**Re-examined 2026-07-25, at Brian's request, with the deploy path now written.** He observed that
+cairn increasingly reads as a *toolkit of two tools* — a **builder** that waits for triggers, builds,
+stores and serves images, and a **consumer** that polls for images and relaunches its stack — and
+asked whether one repo and one PyPI distribution still serves both, or whether it wants
+`[build]`/`[consume]` extras, or two applications.
+
+**Measured before answering.** The consumer's dependency graph is a **closed island of five
+modules** — `errors`, `registry`, `descriptor`, `reconcile`, `systemd` — with **zero** imports from
+`config`, `build`, `vendor`, `project`, or `images`. The builder half is the opposite: `build`
+reaches into seven modules, `images` borrows `LABEL_NAMESPACE` from `build`, and `environments`
+pulls `config` + `images` + `registry`.
+
+**Decision: the split stays deferred, and the cleanliness is the reason.** A seam this sharp remains
+cheap to cut whenever a concrete need appears. Nothing is eroding it — `reconcile` was deliberately
+built to require no manifest and no project root, and the descriptor's presence is the role signal
+(`ADR-028`, `ADR-034`). Splitting pre-emptively buys a version-compatibility matrix between builder
+and agent and nothing else. Had the halves been entangled, the answer would be the reverse: separate
+now, before it worsens.
+
+**`[build]` / `[consume]` extras are rejected on mechanism, not on taste.** Extras gate
+**dependencies**. Both roles need exactly one — `typer`. An empty extra advertises a separation the
+wheel does not contain, which is worse than having none. The differences that *are* real — a
+container engine with buildx, `git`, ~30 GB of disk, the vendored tree — cannot be expressed as pip
+extras. They belong in `doctor`'s role detection and the installer's `--role`.
+
+**How "one package" actually works in the field**, since that was the substance of the question:
+installation is *identical* on both machines, and the role is decided by which configuration exists
+and which timer is enabled — not by what was installed.
+
+| | Builder | Target |
+| --- | --- | --- |
+| Install | one distribution | the same distribution |
+| Config present | `cairn.toml` + vendored tree | `/etc/cairn/environment.toml` |
+| Timer enabled | build | reconcile |
+| Registry credential | push | **pull-only** |
+
+A target therefore carries build code it never invokes, and its pull-only credential means it could
+not push or retag if asked — which is `ADR-018`'s original argument, still holding.
+
+**Sharper split trigger, replacing the vaguer one above:** split when a target must run somewhere the
+builder's code *cannot* (a minimal or immutable OS), or when a security requirement demands the
+target be physically incapable of push/retag rather than merely uncredentialed. Conceptual tidiness
+is explicitly **not** a trigger.
+
+**One claim above is currently false and is corrected here.** "A pip-installable wheel" holds for the
+consumer role only. `pip install datahenge-cairn && cairn build` **cannot work today**, for three
+independent reasons found while planning the builder VPS:
+
+1. the wheel excludes the vendored tree — `[tool.hatch.build.targets.wheel] packages = ["src/cairn"]`
+   and `frappe_docker/` sits at the repo root;
+2. `project.find_project_root()` locates the tree by searching upward for a `pyproject.toml`
+   containing `[tool.ventwig]`, which does not exist in `site-packages`;
+3. `vendor.assert_clean()` runs on **every** build (`BR-VEND-005`, a hard stop with no override) and
+   requires the `ventwig` CLI, which is a **dev-only** dependency.
+
+None of this is a vendoring defect — the vendored tree is correct and only 1.1 MB. It is that the
+builder role was designed around a *checkout* while the ADR claimed a *wheel*. Fixing it is deferred
+rather than patched, because item 3 means deciding what anchors the tree's immutability when it ships
+inside a wheel — the wheel itself, most likely, which makes ventwig's drift check inapplicable rather
+than merely absent. That amends `BR-VEND-005` and `ADR-007` and is a requirements conversation. **It
+must be settled before publishing to PyPI**, or the published builder will be broken on arrival.
+*(BR-VEND-005, ADR-007, ADR-028, ADR-034, ADR-040)*
+
+---
+
 ### ADR-031 — Three execution contexts; a build transcript only when nobody else owns the record
 **Decided:** 2026-07-25
 `ADR-026` forbade custom log files outright. Brian's first real `cairn build` showed the
@@ -1006,6 +1071,54 @@ their file.
 machine, not the deployment. `[cairn.registry]` accepts only `host` and `namespace`, and rejects
 anything else as an unknown key, so the boundary cannot erode by accident.
 *(BR-CFG-014, BR-CFG-008, BR-CFG-012, BR-CFG-013, ADR-029, ADR-038)*
+
+---
+
+### ADR-040 — Provisioning is an installer beside the CLI, never a verb inside it
+**Decided:** 2026-07-25
+Standing up a builder VPS is a dozen steps: gate the host, capture what is already running, back up
+the site, install cairn, generate a TLS certificate, run a registry, write a descriptor, install
+timers. Brian rejected documenting that as a runbook — a procedure he pastes command-by-command is
+not idempotent, not testable, and does not get cheaper for builder VPS #2 and #3, which for a
+multi-client practice is the case that matters. His framing: "If it's worth doing for safety/checks,
+it's worth building it as a reusable installer."
+
+The obvious home was a `cairn bootstrap` subcommand. **That would breach two decisions made
+deliberately days earlier:**
+
+- `ADR-035` — cairn **emits** systemd units and never installs them, because writing to
+  `/etc/systemd/system` needs root and changes the host outside cairn's stated boundary.
+- `ADR-022` / `BR-DATA-006` — cairn performs **no writes to data-plane volumes**. A pre-install
+  `bench backup` writes a dump into the sites volume. Useful, and not cairn's to do.
+
+**Decision:** the installer is a **separate program shipped in the repo** — `install/bootstrap.py`,
+stdlib-only, run with `sudo` by the operator. It *calls* cairn for the read-only and print-only work
+(`doctor`, `adopt`, `systemd-units`) and performs the privileged writes itself. cairn's boundary is
+untouched: the CLI still writes nothing to `/etc`, nothing to systemd, and nothing to a volume.
+
+This is not a loophole. The operator invoking an installer *is* the operator doing it; `ADR-035`'s
+objection was to cairn taking that act on itself, silently, as a side effect of some other command.
+A separate program, named as an installer, run with explicit privilege, is the honest expression of
+the same boundary.
+
+**The invariant this establishes, now true across the whole CLI:**
+
+> **cairn prints host configuration. The operator installs it.**
+
+`systemd-units` prints units. `adopt` (`BR-CLI-020`) prints a descriptor. Neither writes. The
+installer is what turns printed configuration into installed configuration, and it can be replaced by
+hand at any point — which `BR-DEPLOY-021` requires.
+
+**Why stdlib-only Python rather than bash.** The installer runs *before* cairn's virtualenv exists,
+so it cannot import cairn — self-containment is forced, not chosen. Python over bash because this
+code runs as root on client infrastructure and therefore has to be **testable**, which is the same
+argument that produced this project's suite everywhere else. Bash would have been marginally easier
+to audit line-by-line and impossible to test.
+
+**Consequence for `BR-DEPLOY-007`.** That requirement makes initial site/volume/database creation the
+operator's responsibility. The installer does not change it — it provisions the *build and deploy
+plumbing*, never a site. `bench new-site` remains outside every tool cairn ships.
+*(BR-DEPLOY-021, BR-CLI-020, BR-DEPLOY-007, ADR-022, ADR-035, ADR-018)*
 
 ---
 

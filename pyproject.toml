@@ -55,3 +55,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# `install/bootstrap.py` is not part of the wheel — it runs before cairn is installed and
+# imports nothing from it (ADR-040). Putting it on the path lets the suite import and test it
+# anyway, which matters because it runs as root on client machines (BR-DEPLOY-021).
+pythonpath = ["install"]
