@@ -1,7 +1,11 @@
 # Next Steps
 
 _Written 2026-07-25, at the end of the session that produced `ADR-031` and `ADR-032`.
-Revised later the same day: `cairn prune` verified on the machine, and the CLI layer tested._
+Revised later the same day: `cairn prune` verified on the machine, and the CLI layer tested.
+Revised again 2026-07-25: the PyPI-install blockers closed, `README.md` written, and the
+installer moved into the package as `cairn-provision` — see `docs/CHANGELOG.md` for the full
+account. The table and §4 below are updated accordingly; §1–3 and the lessons-learned section
+are untouched and still current._
 
 A resumption point for a fresh session. Read `/CLAUDE.md` first (the working agreement),
 then this. Everything below is downstream of requirements that are already written; where a
@@ -29,7 +33,7 @@ statement coverage; `cli.py` at 99%):
 | `reconcile` | `BR-CLI-008`, `BR-DEPLOY-003` | Written; **never run on a real target** |
 | `systemd-units` | `BR-CLI-019` | Written; prints units, installs nothing |
 | `adopt` | `BR-CLI-020` | Written; prints a descriptor read off a running stack |
-| `install/bootstrap.py` | `BR-DEPLOY-021` | Written; **never run on a real host** |
+| `cairn-provision` | `BR-DEPLOY-021` | Written; **never run on a real host** |
 
 **Everything in the deploy path is unexercised against real infrastructure.** It is heavily
 tested and mutation-checked, which establishes that it does what it was written to do — not
@@ -105,17 +109,21 @@ chosen so that each step is reversible until the last one.
 is fine and already declared in the scratch manifest. For a client, the registry must be an account
 they own, with a push credential scoped to that one repository (`BR-CFG-013`).
 
-**Provision the machine with the installer** rather than by hand (`ADR-040`):
+**Provision the machine with the installer** rather than by hand (`ADR-040`, amended 2026-07-25).
+There is no checkout to rsync anymore — `cairn-provision` installs alongside `cairn` from PyPI:
 
 ```
-rsync -a --exclude .venv --exclude .git ~/erpnext_projects/datahenge-cairn/ vps:/opt/cairn/
-sudo python3 /opt/cairn/install/bootstrap.py --role both --dry-run   # review every action
-sudo python3 /opt/cairn/install/bootstrap.py --role both --private-ip <ip>
+sudo pipx install --global datahenge-cairn   # shared system install, not tied to one account
+cd /opt/deployments/<client>                 # or wherever cairn.toml will live
+sudo cairn-provision --role both --dry-run   # review every action
+sudo cairn-provision --role both --private-ip <ip>
 ```
 
 `--role both` is today's case, one box building and serving. When they split it becomes
 `--role builder` on one and `--role target` on the other; the stage lists differ accordingly and
-each stage refuses the wrong role.
+each stage refuses the wrong role. This is also the first real (non-dry-run) execution of
+`cairn-provision` against live infrastructure — everything about it so far is unit-tested and
+dry-run-verified against a wheel install, never against real docker/systemd/openssl.
 
 **On the control machine:**
 
@@ -157,9 +165,11 @@ descriptor into a wrong deploy every five minutes.
 ## 4a. After the first deployment
 
 - **`cairn doctor`'s target-role branch** (`ADR-028`, `BR-CLI-007`) — Docker + Compose,
-  systemd, registry reachability. Currently `doctor` only knows the build/control role, so on a
-  target it checks for a vendored tree that is not there. This is the most obvious gap the
-  first live run will expose.
+  systemd, registry reachability. Currently `doctor` only runs the build/control checks
+  regardless of role; since the vendored tree now ships inside every install (2026-07-25), those
+  checks no longer fail outright on a target, they just ask the wrong questions of it (git,
+  build engine) instead of the right ones (systemd, registry reachability). Still the most
+  obvious gap the first live run will expose, just a quieter one now than a crash.
 - **~~`ADR-037`~~ — closed 2026-07-25: cairn never installs an app.** The clause was struck
   rather than implemented. If an app must be added to a live environment, that is
   `bench install-app`, run by hand, exactly as site creation already is.
@@ -184,8 +194,15 @@ descriptor into a wrong deploy every five minutes.
   remote image's labels. It is the one decision in the deploy path he did not choose, and the
   module boundary is drawn so that swapping in `skopeo` later would touch nothing else.
 - **`ADR-020`** — ventwig pin immutability. Brian owns ventwig; not a cairn blocker.
-- **Phase 6** — `README.md` / `USAGE.md`. Note that the identifier rule binds from the first
-  line of code, not from Phase 6, and `tests/test_conventions.py` enforces it.
+- **Phase 6** — `README.md` done 2026-07-25 (Installation, Configuration, How-To-Use, grounded
+  in the real CLI surface). `USAGE.md` not started; unclear whether it's still needed
+  separately from the README or was superseded by it — decide before writing one.
+- **A dedicated service account for `reconcile`**, instead of the default `root`. Raised
+  2026-07-25 while deciding the recommended install method; deliberately not built — it
+  addresses least-privilege/audit-trail, not the account-independence risk that motivated
+  `sudo pipx install --global` (root already has that property). Needs `docker` group
+  membership either way, which is itself close to root-equivalent, so the security delta is
+  smaller than it looks. Worth a documented "hardening" option, not a default.
 
 ---
 
@@ -204,7 +221,9 @@ These were learned expensively in this session; the full versions are in
   multi-stage stage images, and true orphans, and the engine's listing cannot tell them
   apart. Never scope destructive work by danglingness; scope it by cairn's own labels, which
   are applied at the final commit and so never appear on a stage.
-- **`frappe_docker/` is read-only** (`ADR-001`, `BR-VEND-004`). Manage it only via ventwig.
+- **`src/cairn/vendored/frappe_docker/` is read-only** (`ADR-001`, `BR-VEND-004`). Manage it only
+  via `cairn vendor sync` — never touch `ventwig` directly, and never at build time (2026-07-25:
+  it moved inside the package specifically so nothing outside `vendor sync`/`status` needs it).
 - **`BR`/`ADR` IDs must never reach user-visible output.** `tests/test_conventions.py` parses
   every non-docstring string in the package. If it fails, the *message* is wrong, not the
   test.
