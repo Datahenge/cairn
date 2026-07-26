@@ -65,8 +65,8 @@ never committed.
 
 Absent a `[cairn.registry]`, images stay local and cairn never guesses a registry.
 
-To publish somewhere else temporarily without editing a client's file, a `cairn.local.toml` beside
-the manifest overrides it.
+To publish somewhere else temporarily without editing a client's file, set `$CAIRN_REGISTRY`
+(and usually `$CAIRN_NAMESPACE`) for that invocation or session — it overrides the manifest.
 
 ---
 

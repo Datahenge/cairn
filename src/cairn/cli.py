@@ -184,7 +184,7 @@ def vendor_sync(
 def build_command(
     manifest_path: Annotated[
         Path | None,
-        typer.Option("--manifest", help="Path to cairn.toml; default: discovered upward from cwd."),
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
     no_cache: Annotated[
         bool, typer.Option("--no-cache", help="Ignore the layer cache (rarely needed).")
@@ -353,6 +353,10 @@ def images_command(
         typer.Option("--local", help="Report this machine's images instead of the registry."),
     ] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Emit machine-readable output.")] = False,
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
+    ] = None,
 ) -> None:
     """Report images and their provenance, locally or from the registry (BR-CLI-005).
 
@@ -362,7 +366,7 @@ def images_command(
     """
 
     def _action() -> int:
-        found_manifest = config.find_manifest_or_none()
+        found_manifest = config.find_manifest_or_none(explicit=manifest_path)
         build_config = config.load_build_config(found_manifest)
 
         if local:
@@ -405,11 +409,17 @@ def prune_command(
         bool, typer.Option("--dry-run", help="Show what would be removed, and remove nothing.")
     ] = False,
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
+    ] = None,
 ) -> None:
     """Remove superseded images on the build machine (BR-CLI-018, `ADR-032`)."""
 
     def _action() -> int:
-        build_config = config.load_build_config(config.find_manifest_or_none())
+        build_config = config.load_build_config(
+            config.find_manifest_or_none(explicit=manifest_path)
+        )
         engine_name = engine.detect(build_config.engine).name
         found, others = images.inspect_local(engine_name)
         plan = prune.select(images.group(found), keep)
@@ -495,7 +505,7 @@ def push_command(
     ] = None,
     manifest_path: Annotated[
         Path | None,
-        typer.Option("--manifest", help="Path to cairn.toml; default: discovered upward from cwd."),
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
 ) -> None:
     """Upload a built image to the configured registry (BR-CLI-003).
@@ -535,16 +545,16 @@ def _registry_repository(
     """
     if manifest_path is None:
         raise CairnError(
-            "No manifest found, so cairn does not know which repository to read. Run this "
-            "from a deployment directory, or pass --manifest."
+            "No manifest given, so cairn does not know which repository to read. Pass "
+            "--manifest, set $CAIRN_MANIFEST, or use --local."
         )
     manifest = config.load_manifest(manifest_path)
     base = build_config.resolve_image_base(manifest.image_name)
     if not build_config.registry and not build_config.image_base:
         raise CairnError(
             "No registry is configured, so images stay local and there is no registry to "
-            "read. Set `registry` (and usually `namespace`) in ~/.config/cairn/config.toml "
-            "or cairn.local.toml, or use --local."
+            "read. Set `registry` (and usually `namespace`) in /etc/cairn/builder.toml, "
+            "or set $CAIRN_REGISTRY (and usually $CAIRN_NAMESPACE), or use --local."
         )
     return registry.parse_ref(f"{base}:latest")
 
@@ -673,7 +683,8 @@ def new_tag_command(
         str | None, typer.Option("--from", help="Whatever another environment runs now.")
     ] = None,
     manifest_path: Annotated[
-        Path | None, typer.Option("--manifest", help="Path to cairn.toml.")
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show the move, and make none.")
@@ -717,7 +728,8 @@ def retag_command(
         str | None, typer.Option("--from", help="Whatever another environment runs now.")
     ] = None,
     manifest_path: Annotated[
-        Path | None, typer.Option("--manifest", help="Path to cairn.toml.")
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show the move, and make none.")
@@ -750,7 +762,8 @@ def retag_command(
 def retire_command(
     environment: Annotated[str, typer.Argument(help="The declared environment to retire.")],
     manifest_path: Annotated[
-        Path | None, typer.Option("--manifest", help="Path to cairn.toml.")
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
 ) -> None:
     """Decommission an environment at cairn's layer only (BR-CLI-009)."""
@@ -925,12 +938,18 @@ def systemd_units_command(
         "check, then exits non-zero if any failed."
     ),
 )
-def doctor_command() -> None:
+def doctor_command(
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
+    ] = None,
+) -> None:
     """Check that this machine can build: Docker Engine v23+/buildx, vendored tree sound.
 
     Reports every check before exiting non-zero on any failure (BR-CLI-007, BR-CLI-012).
+    A missing manifest only warns here (`doctor` legitimately runs before one exists).
     """
-    _run(doctor.run)
+    _run(lambda: doctor.run(manifest_path=manifest_path))
 
 
 def run() -> None:

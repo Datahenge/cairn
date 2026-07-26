@@ -141,7 +141,7 @@ def stubs(project, monkeypatch) -> BuildStubs:
     state.manifest_path.touch()
     state.seen["pushed"] = []
 
-    def _find_manifest(start=None, explicit=None):
+    def _find_manifest(explicit=None):
         state.seen["manifest_flag"] = explicit
         return explicit or state.manifest_path
 
@@ -187,7 +187,7 @@ def stubs(project, monkeypatch) -> BuildStubs:
 @pytest.fixture
 def local(project, monkeypatch):
     """Machine-scoped commands: a detected engine and a fixed set of local images."""
-    monkeypatch.setattr(config, "find_manifest_or_none", lambda start=None: None)
+    monkeypatch.setattr(config, "find_manifest_or_none", lambda explicit=None: None)
     monkeypatch.setattr(config, "load_build_config", lambda path=None: BuildConfig())
     monkeypatch.setattr(
         engine, "detect", lambda preferred=None: engine.BuildEngine(engine.PODMAN, "5.4.2")
@@ -226,9 +226,9 @@ def registry_repo(project, monkeypatch):
     """A configured registry and a discovered manifest, for the registry-side commands."""
     manifest_path = project / "cairn.toml"
     manifest_path.touch()
-    monkeypatch.setattr(config, "find_manifest_or_none", lambda start=None: manifest_path)
+    monkeypatch.setattr(config, "find_manifest_or_none", lambda explicit=None: manifest_path)
     monkeypatch.setattr(
-        config, "find_manifest", lambda start=None, explicit=None: explicit or manifest_path
+        config, "find_manifest", lambda explicit=None: explicit or manifest_path
     )
     monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environments())
     monkeypatch.setattr(
@@ -287,7 +287,7 @@ def pointers(registry_repo, monkeypatch) -> PointerStubs:
 
 
 def test_success_exits_zero(project, monkeypatch):
-    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None: 0)
+    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None, manifest_path=None: 0)
 
     result = runner.invoke(cli.app, ["doctor"])
 
@@ -296,7 +296,7 @@ def test_success_exits_zero(project, monkeypatch):
 
 def test_exit_code_is_the_actions_own_return_value(project, monkeypatch):
     """BR-CLI-012: a failed check must be detectable, so the code is forwarded, not flattened."""
-    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None: 1)
+    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None, manifest_path=None: 1)
 
     result = runner.invoke(cli.app, ["doctor"])
 
@@ -307,7 +307,7 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
     """BR-CLI-015: an expected failure names the fix; exit 2 distinguishes it from a check
     that merely reported a problem."""
 
-    def _fail(preferred_engine=None):
+    def _fail(preferred_engine=None, manifest_path=None):
         raise PushError("No registry configured, so images remain local.")
 
     monkeypatch.setattr(doctor, "run", _fail)
@@ -323,7 +323,7 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
 def test_interrupt_exits_130(project, monkeypatch):
     """The shell's convention for SIGINT — a cancelled build is not a failed build."""
 
-    def _interrupt(preferred_engine=None):
+    def _interrupt(preferred_engine=None, manifest_path=None):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(doctor, "run", _interrupt)
@@ -338,7 +338,7 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
     """An internal error must never be mistaken for silent success, so it is announced
     and then allowed to print its traceback."""
 
-    def _bug(preferred_engine=None):
+    def _bug(preferred_engine=None, manifest_path=None):
         raise ValueError("off by one")
 
     monkeypatch.setattr(doctor, "run", _bug)
@@ -353,7 +353,7 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
 def test_doctor_needs_no_project_root(tmp_path, monkeypatch):
     """The vendored tree is package-relative now — doctor works from anywhere."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None: 0)
+    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None, manifest_path=None: 0)
 
     result = runner.invoke(cli.app, ["doctor"])
 
@@ -1076,7 +1076,7 @@ def test_without_id_the_manifests_own_tags_are_pushed(stubs, monkeypatch):
 
 
 def test_a_missing_manifest_is_an_actionable_error(project, monkeypatch):
-    def _missing(start=None, explicit=None):
+    def _missing(explicit=None):
         raise ManifestNotFoundError("No cairn.toml found at or above here.")
 
     monkeypatch.setattr(config, "find_manifest", _missing)

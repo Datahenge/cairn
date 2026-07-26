@@ -20,6 +20,10 @@ It shells out to `cairn` for the read-only and print-only work (`doctor`, `adopt
 `systemd-units`) rather than reaching into cairn's internals, so provisioning always reflects
 exactly what a human running those commands by hand would see.
 
+It also shares `/etc/cairn` with a group (`--admin-group`, default `cairn-admins`, `ADR-043`) so
+`builder.toml` and the environment descriptor can be edited by every operator on a multi-login
+box without sudo — `--no-admin-group` skips this and leaves the directory exactly as found.
+
 **The contract it keeps** (`BR-DEPLOY-021`), which is also why it is Python rather than shell —
 this runs as root on client infrastructure and therefore has to be testable:
 
@@ -39,6 +43,7 @@ It creates no site, volume, or database: `BR-DEPLOY-007` keeps that the operator
 from __future__ import annotations
 
 import argparse
+import grp
 import json
 import os
 import shlex
@@ -71,19 +76,30 @@ SYSTEMD_DIR = Path("/etc/systemd/system")
 #: How long the self-signed certificate lasts. 825 days is the longest most clients accept.
 CERT_DAYS = 825
 
+#: Default name for the group `/etc/cairn` is shared with (`ADR-043`). Just a starting point
+#: — `--admin-group` renames it, and an operator who prefers their own scheme can chown the
+#: directory however they like; cairn never checks for this name specifically.
+DEFAULT_ADMIN_GROUP = "cairn-admins"
+
+#: rwxrws r-x + setgid: owner and group get full access (setgid so files later created
+#: inside inherit the group, not the creating process's own primary group); world keeps
+#: read/traverse but not write — nothing under /etc/cairn is a secret (`BR-CFG-010`), only
+#: writes are meant to be restricted to the shared group.
+SHARED_CONFIG_MODE = 0o2775
+
 #: A **builder** builds images and serves them. It has a manifest, a vendored tree, and a
 #: registry. It has no ERPNext site — so nothing to reconnoitre, nothing to back up, and no
 #: environment descriptor, which describes a *running* deployment.
-BUILDER_STAGES = ("preflight", "registry", "timers")
+BUILDER_STAGES = ("preflight", "admin-group", "registry", "timers")
 
 #: A **target** runs ERPNext and converges to whatever its pointer says. It has a site — so it
 #: is the only role with an existing stack to survey, a database to back up, and a descriptor.
 #: It pulls from the builder's registry and hosts none of its own.
-TARGET_STAGES = ("preflight", "recon", "backup", "descriptor", "timers")
+TARGET_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "timers")
 
 #: Both roles on one box. Today's case while builder and target are the same machine; the union
 #: in dependency order, so the backup still happens before anything is installed.
-BOTH_STAGES = ("preflight", "recon", "backup", "registry", "descriptor", "timers")
+BOTH_STAGES = ("preflight", "admin-group", "recon", "backup", "registry", "descriptor", "timers")
 
 ROLE_STAGES = {"builder": BUILDER_STAGES, "target": TARGET_STAGES, "both": BOTH_STAGES}
 
@@ -424,6 +440,70 @@ def _only_project(runner: Runner) -> str | None:
     return str(projects[0]["Name"]) if len(projects) == 1 else None
 
 
+def stage_admin_group(runner: Runner, options: argparse.Namespace) -> None:
+    """Share `/etc/cairn` with a group, so every operator can edit `builder.toml` without
+    root (`ADR-043`).
+
+    `/etc/cairn` holds `builder.toml` (`ADR-041`, `ADR-042`) and, on a target, the
+    environment descriptor — both machine-scoped facts a multi-operator VPS needs every
+    login to see identically (`ADR-042` rejected per-user home-directory config for
+    exactly this reason). Left root-only, every edit needs sudo; this stage makes that
+    optional rather than mandatory, without prescribing who ends up in the group.
+
+    Runs before `registry`/`descriptor` so the setgid bit is already set when those
+    stages create their own files underneath — a file written by root after this point
+    still lands in the shared group, not root's own.
+
+    ``--no-admin-group`` skips this entirely: the directory is left however it already
+    is, and every subsequent stage still works root-only, exactly as before this existed.
+    """
+    name = options.admin_group
+    if not name:
+        runner.report.skipped.append("admin group (skipped: --no-admin-group)")
+        return
+
+    gid = _group_gid(name)
+    if gid is None:
+        runner.run(["groupadd", name], what=f"create group '{name}'")
+        runner.report.done.append(f"created group '{name}'")
+    else:
+        runner.say(f"    group '{name}' already exists (gid {gid})")
+        runner.report.skipped.append(f"group '{name}' (already exists)")
+
+    if runner.dry_run:
+        runner.say(
+            f"    share {CERT_DIR}: group '{name}', mode {SHARED_CONFIG_MODE:04o} "
+            f"(rwxrws r-x, setgid)"
+        )
+        return
+
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
+    gid = _group_gid(name)  # re-read: may have just been created above
+    current = CERT_DIR.stat()
+    if (
+        gid is not None
+        and current.st_gid == gid
+        and (current.st_mode & 0o7777) == SHARED_CONFIG_MODE
+    ):
+        runner.say(f"    {CERT_DIR} already shared with group '{name}' — leaving it")
+        runner.report.skipped.append(f"{CERT_DIR} sharing (already correct)")
+        return
+
+    if gid is not None:
+        os.chown(CERT_DIR, -1, gid)
+    os.chmod(CERT_DIR, SHARED_CONFIG_MODE)
+    runner.report.done.append(
+        f"{CERT_DIR} shared with group '{name}' (mode {SHARED_CONFIG_MODE:04o})"
+    )
+
+
+def _group_gid(name: str) -> int | None:
+    try:
+        return grp.getgrnam(name).gr_gid
+    except KeyError:
+        return None
+
+
 def stage_registry(runner: Runner, options: argparse.Namespace) -> None:
     """Run a local registry over self-signed TLS, trusted by both Python and Docker.
 
@@ -689,8 +769,10 @@ MANIFEST={shlex.quote(str(options.manifest))}
 def build_service(options: argparse.Namespace, script: Path) -> str:
     """The build unit.
 
-    ``WorkingDirectory`` is required, not decoration: cairn finds a manifest not given
-    explicitly by searching upward from the working directory.
+    The script itself always passes `--manifest` explicitly (`ADR-042` — cairn never
+    searches for one); ``WorkingDirectory`` is set so relative paths inside the script,
+    and the deployment directory the operator finds if they inspect the unit, still land
+    in the right place.
     """
     return f"""\
 [Unit]
@@ -738,6 +820,7 @@ WantedBy=timers.target
 
 STAGES: dict[str, Callable[[Runner, argparse.Namespace], None]] = {
     "preflight": stage_preflight,
+    "admin-group": stage_admin_group,
     "recon": stage_recon,
     "backup": stage_backup,
     "registry": stage_registry,
@@ -793,9 +876,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--skip-backup", action="store_true", help="do not back up before changing anything"
     )
+    parser.add_argument(
+        "--admin-group", default=DEFAULT_ADMIN_GROUP,
+        help=f"group /etc/cairn is shared with, created if absent (default: "
+        f"{DEFAULT_ADMIN_GROUP})",
+    )
+    parser.add_argument(
+        "--no-admin-group", action="store_true",
+        help="skip sharing /etc/cairn with a group; leave it exactly as found",
+    )
     options = parser.parse_args(argv)
     if options.manifest is None:
         options.manifest = options.workdir / "cairn.toml"
+    if options.no_admin_group:
+        options.admin_group = None
     return options
 
 

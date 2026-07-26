@@ -5,13 +5,21 @@ Two orthogonal files, deliberately kept apart (`BR-CFG-008`):
 * **`cairn.toml`** — the portable manifest. *What image to build*: one
   environment-agnostic image, its Frappe source, its ordered app list, and the build
   knobs (`BR-BUILD-001/002/003`). Shareable; carries no registry or machine settings.
-* **build config** — `~/.config/cairn/config.toml`, optionally overridden key-by-key by
-  a `cairn.local.toml` beside the manifest. *Where and how this machine builds*: engine
+  Never discovered implicitly — an invocation always names it, via ``--manifest`` or
+  ``$CAIRN_MANIFEST`` (`ADR-042`).
+* **build config** — `/etc/cairn/builder.toml`, optionally overridden key-by-key by
+  ``CAIRN_*`` environment variables. *Where and how this machine builds*: engine
   (`ADR-027`), registry, namespace (`BR-CFG-009/011`). Never committed with a shared
-  deployment.
+  deployment. Named for the **Builder** role (`ADR-041`) — only builder-side commands
+  and `doctor` ever read it. It lives under `/etc/cairn`, not a per-user home directory
+  (`ADR-042`): a shared multi-operator host has no single home directory to hold a fact
+  every operator needs identically.
 
-Discovery precedence is `BR-CFG-012`; the manifest root is resolved independently of
-cairn's own project root (`ADR-029`).
+Discovery precedence is `BR-CFG-012`. There is no filesystem search of any kind — not
+for the manifest, not for build config (`ADR-042`, superseding `ADR-029`'s walk-up):
+a shared host or a container has no working directory or home directory that means
+anything reliable, and an implicit "nearest match" is exactly the kind of silent
+per-directory drift `BR-CFG-013` already forbids for registry defaults.
 
 Validation is strict on purpose: every table but ``[cairn.build]`` rejects unknown keys,
 so a typo fails at parse time with a message naming the key rather than producing a
@@ -22,6 +30,7 @@ subtly wrong image an hour later. ``[cairn.build]`` is the documented exception 
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -35,8 +44,12 @@ from .errors import (
 )
 
 MANIFEST_NAME = "cairn.toml"
-LOCAL_CONFIG_NAME = "cairn.local.toml"
-USER_CONFIG_PATH = Path("~/.config/cairn/config.toml")
+MANIFEST_ENV_VAR = "CAIRN_MANIFEST"
+BUILDER_CONFIG_PATH = Path("/etc/cairn/builder.toml")
+
+#: Prefix for the per-key build-config override (`ADR-042`): ``CAIRN_ENGINE``,
+#: ``CAIRN_REGISTRY``, and so on, one per `BUILD_CONFIG_KEYS` entry.
+BUILD_CONFIG_ENV_PREFIX = "CAIRN_"
 
 #: Build knobs cairn maps to named build-args; anything else rides the passthrough.
 KNOWN_BUILD_KNOBS = ("python_version", "node_version", "install_chromium")
@@ -117,7 +130,7 @@ class BuildConfig:
     namespace: str | None = None
     image_base: str | None = None
     transcript_dir: str | None = None
-    sources: tuple[Path, ...] = ()
+    sources: tuple[str, ...] = ()
 
     def resolve_image_base(self, image_name: str) -> str:
         """Return the image base for *image_name* (`BR-CFG-011`, `BR-BUILD-008`).
@@ -134,14 +147,15 @@ class BuildConfig:
         return f"{LOCAL_IMAGE_PREFIX}/{image_name}"
 
 
-# --- discovery (BR-CFG-012) -------------------------------------------------
+# --- discovery (BR-CFG-012, ADR-042) -----------------------------------------
 
 
-def find_manifest(start: Path | None = None, explicit: Path | None = None) -> Path:
-    """Locate the manifest: *explicit* if given, else the nearest ``cairn.toml`` upward.
+def find_manifest(explicit: Path | None = None) -> Path:
+    """Locate the manifest: *explicit* if given, else ``$CAIRN_MANIFEST``. Nothing else.
 
-    Searching upward from the working directory — not from cairn's own project root —
-    is what lets a `pip install`-ed cairn operate on a deployment directory (`ADR-029`).
+    No directory is ever searched (`ADR-042`). An invocation always states which
+    deployment it means, one of two ways — the second exists for the case a flag can't
+    reach, like a systemd unit's ``Environment=`` or a container's own environment.
     """
     if explicit is not None:
         path = explicit.expanduser()
@@ -149,26 +163,29 @@ def find_manifest(start: Path | None = None, explicit: Path | None = None) -> Pa
             raise ManifestNotFoundError(f"No manifest at {path}.")
         return path
 
-    start = (start or Path.cwd()).resolve()
-    for directory in (start, *start.parents):
-        candidate = directory / MANIFEST_NAME
-        if candidate.is_file():
-            return candidate
+    env_value = os.environ.get(MANIFEST_ENV_VAR)
+    if env_value:
+        path = Path(env_value).expanduser()
+        if not path.is_file():
+            raise ManifestNotFoundError(
+                f"${MANIFEST_ENV_VAR} names {path}, but it is not a file."
+            )
+        return path
+
     raise ManifestNotFoundError(
-        f"No {MANIFEST_NAME} found at or above {start}. "
-        f"Create one, or point at it with --manifest <path>."
+        f"No manifest given. Pass --manifest <path>, or set ${MANIFEST_ENV_VAR}."
     )
 
 
-def find_manifest_or_none(start: Path | None = None) -> Path | None:
-    """Return the nearest manifest, or None where a command does not require one.
+def find_manifest_or_none(explicit: Path | None = None) -> Path | None:
+    """Return the resolved manifest, or None where a command does not require one.
 
     Machine-scoped commands (`BR-CLI-005`'s ``--local``) still want build config, whose
-    lower layer is the user file and whose upper layer is a ``cairn.local.toml`` beside a
-    manifest. Missing the manifest costs only that upper layer, not the command.
+    base layer is `builder.toml` and whose override layer is ``CAIRN_*`` environment
+    variables — neither depends on a manifest existing.
     """
     try:
-        return find_manifest(start)
+        return find_manifest(explicit)
     except ManifestNotFoundError:
         return None
 
@@ -198,42 +215,46 @@ def load_manifest(path: Path) -> Manifest:
 
 
 def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
-    """Layer machine defaults, the manifest's registry, then ``cairn.local.toml``.
+    """Layer machine defaults, the manifest's registry, then ``CAIRN_*`` env vars.
 
-    Three layers, lowest precedence first (`BR-CFG-012`, `ADR-039`):
+    Three layers, lowest precedence first (`BR-CFG-012`, `ADR-039`, `ADR-042`):
 
-    1. ``~/.config/cairn/config.toml`` — machine-wide defaults, e.g. the engine.
+    1. ``/etc/cairn/builder.toml`` — machine-wide defaults, e.g. the engine. Shared by
+       every login on the host; who may write it is a matter of its own filesystem
+       permissions, not something cairn assumes (`ADR-042`, `ADR-043`).
     2. the manifest's ``[cairn.registry]`` — **where this deployment's images belong**.
        Committed with the deployment, because under `BR-CFG-013` that registry is usually
-       the *client's*, and a coordinate known only to one laptop is a coordinate the client
-       cannot take over.
-    3. ``cairn.local.toml`` beside the manifest — the deliberate local override, for
-       experiments and for publishing a client's deployment somewhere else temporarily.
+       the *client's*, and a coordinate known only to one machine is a coordinate the
+       client cannot take over.
+    3. ``CAIRN_ENGINE`` / ``CAIRN_REGISTRY`` / ``CAIRN_NAMESPACE`` / ``CAIRN_IMAGE_BASE`` /
+       ``CAIRN_TRANSCRIPT_DIR`` — the deliberate override, for experiments and for
+       publishing a client's deployment somewhere else temporarily. Replaces what used to
+       be a ``cairn.local.toml`` file (`ADR-042`): the same one-invocation-or-session
+       override, without a file to create, gitignore, or forget beside the manifest.
 
     All three are optional; with none present the config is all-defaults and images stay
-    local (`BR-CFG-011`). Every override is key-by-key, so a local file naming only
-    ``namespace`` keeps the engine from layer 1 and the host from layer 2.
+    local (`BR-CFG-011`). Every override is key-by-key, so setting only
+    ``CAIRN_NAMESPACE`` keeps the engine from layer 1 and the host from layer 2.
     """
     merged: dict[str, Any] = {}
-    sources: list[Path] = []
+    sources: list[str] = []
 
-    user_config = USER_CONFIG_PATH.expanduser()
-    if _readable(user_config):
-        merged.update(_build_config_values(user_config))
-        sources.append(user_config)
+    if _readable(BUILDER_CONFIG_PATH):
+        merged.update(_build_config_values(BUILDER_CONFIG_PATH))
+        sources.append(str(BUILDER_CONFIG_PATH))
 
-    if manifest_path is not None:
-        # The registry layer needs the manifest itself; the local file needs only its
-        # directory. Keeping these separate matters: `cairn.local.toml` beside a manifest
-        # that does not exist yet is still the machine's configuration for that directory.
-        if _readable(manifest_path) and (registry := _manifest_registry(manifest_path)):
-            merged.update(registry)
-            sources.append(manifest_path)
+    if (
+        manifest_path is not None
+        and _readable(manifest_path)
+        and (registry := _manifest_registry(manifest_path))
+    ):
+        merged.update(registry)
+        sources.append(str(manifest_path))
 
-        local = manifest_path.parent / LOCAL_CONFIG_NAME
-        if _readable(local):
-            merged.update(_build_config_values(local))
-            sources.append(local)
+    env_overrides = _build_config_env()
+    if env_overrides:
+        merged.update(env_overrides)
+        sources.append(f"environment ({', '.join(sorted(env_overrides))})")
 
     return BuildConfig(
         engine=merged.get("engine"),
@@ -243,6 +264,20 @@ def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
         transcript_dir=merged.get("transcript_dir"),
         sources=tuple(sources),
     )
+
+
+def _build_config_env() -> dict[str, str]:
+    """Read ``CAIRN_<KEY>`` for each of `BUILD_CONFIG_KEYS` (`ADR-042`).
+
+    An unset or empty variable is absent, same as a key missing from a file — no
+    validation beyond that is needed, since only recognized keys are ever read.
+    """
+    values: dict[str, str] = {}
+    for key in BUILD_CONFIG_KEYS:
+        raw = os.environ.get(f"{BUILD_CONFIG_ENV_PREFIX}{key.upper()}")
+        if raw:
+            values[key] = raw
+    return values
 
 
 def _manifest_registry(manifest_path: Path) -> dict[str, str]:

@@ -10,6 +10,7 @@ seams every command goes through, so substituting them covers the whole surface.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -138,6 +139,16 @@ def test_a_stage_run_against_the_wrong_role_says_why(stage, role, expected):
 
     with pytest.raises(provision.Aborted, match=expected):
         provision.STAGES[stage](runner, _options(role=role))
+
+
+def test_admin_group_stage_runs_before_registry_and_descriptor():
+    """The setgid bit must predate every file those stages write (`ADR-043`)."""
+    for stages in (provision.BUILDER_STAGES, provision.TARGET_STAGES, provision.BOTH_STAGES):
+        assert stages.index("admin-group") < stages.index("timers")
+        if "registry" in stages:
+            assert stages.index("admin-group") < stages.index("registry")
+        if "descriptor" in stages:
+            assert stages.index("admin-group") < stages.index("descriptor")
 
 
 def test_an_unknown_stage_lists_the_real_ones():
@@ -336,6 +347,94 @@ def test_the_registry_has_no_credentials_to_leak():
     assert "PASSWORD" not in rendered.upper()
     assert "htpasswd" not in rendered
     assert "AUTH" not in rendered.upper()
+
+
+# --- the shared admin group (BR-CFG-015, BR-DEPLOY-022, ADR-043) -------------
+
+
+def test_admin_group_is_created_when_absent(sandbox, monkeypatch):
+    gids = iter([None, 4242])  # absent, then present after "creation"
+    monkeypatch.setattr(provision, "_group_gid", lambda name: next(gids))
+    monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
+    runner = Recorder()
+
+    provision.stage_admin_group(runner, _options(role="both"))
+
+    assert runner.ran("groupadd cairn-admins")
+    assert any("created group" in line for line in runner.report.done)
+    assert provision.CERT_DIR.is_dir()
+    assert (provision.CERT_DIR.stat().st_mode & 0o7777) == provision.SHARED_CONFIG_MODE
+
+
+def test_admin_group_left_alone_when_it_already_exists(sandbox, monkeypatch):
+    """Idempotent (`BR-DEPLOY-021` rule 1): an existing group is reported, not recreated."""
+    monkeypatch.setattr(provision, "_group_gid", lambda name: 4242)
+    monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
+    runner = Recorder()
+
+    provision.stage_admin_group(runner, _options(role="both"))
+
+    assert not runner.ran("groupadd")
+    assert any("already exists" in line for line in runner.report.skipped)
+
+
+def test_admin_group_name_is_configurable(sandbox, monkeypatch):
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
+    runner = Recorder()
+
+    provision.stage_admin_group(
+        runner, _options(role="both", flags={"--admin-group": "ops-team"})
+    )
+
+    assert runner.ran("groupadd ops-team")
+
+
+def test_admin_group_already_correct_is_not_rechowned(sandbox, monkeypatch):
+    """Idempotent: matching group and mode are reported and left untouched."""
+    provision.CERT_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(provision.CERT_DIR, provision.SHARED_CONFIG_MODE)
+    own_gid = provision.CERT_DIR.stat().st_gid
+    monkeypatch.setattr(provision, "_group_gid", lambda name: own_gid)
+    chown_calls = []
+    monkeypatch.setattr(provision.os, "chown", lambda *a: chown_calls.append(a))
+    runner = Recorder()
+
+    provision.stage_admin_group(runner, _options(role="both"))
+
+    assert not chown_calls
+    assert any("already correct" in line for line in runner.report.skipped)
+
+
+def test_no_admin_group_flag_skips_the_stage_entirely(sandbox):
+    runner = Recorder()
+
+    provision.stage_admin_group(runner, _options(role="both", switches=["--no-admin-group"]))
+
+    assert not runner.commands
+    assert any("skipped" in line for line in runner.report.skipped)
+    assert not provision.CERT_DIR.exists()
+
+
+def test_admin_group_dry_run_writes_nothing(sandbox, monkeypatch):
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    runner = Recorder(dry_run=True)
+
+    provision.stage_admin_group(runner, _options(role="both"))
+
+    assert not provision.CERT_DIR.exists()
+
+
+def test_no_admin_group_flag_clears_the_parsed_option():
+    options = provision.parse_args(["--role", "builder", "--no-admin-group"])
+
+    assert options.admin_group is None
+
+
+def test_admin_group_defaults_to_cairn_admins():
+    options = provision.parse_args(["--role", "builder"])
+
+    assert options.admin_group == provision.DEFAULT_ADMIN_GROUP
 
 
 # --- the registry ------------------------------------------------------------

@@ -9,6 +9,102 @@ code changes live in git history.
 
 ---
 
+## 2026-07-26 (still later — no directory search, no home directories, no local-override file; `cairn-admins`)
+
+Continuing the same discussion, prompted by two more things Brian raised: a future
+containerized cairn where a working directory means nothing, and the sharper present-tense
+problem — a real multi-user VPS where separate logins (his example: Brian, Sara, Jim) share one
+deployment and per-user config silently diverges between them.
+
+- **Added `ADR-042`.** Manifest discovery drops the upward directory walk entirely
+  (superseding `ADR-029`'s walk-up mechanism): `--manifest <path>` or `$CAIRN_MANIFEST`, nothing
+  else, no fallback default path. Confirmed explicitly with Brian that this reverses
+  `BR-CFG-012`'s former "the common case MUST require no flags" clause, rather than walking it
+  back quietly. `builder.toml` moves to `/etc/cairn/builder.toml` — no `$XDG_CONFIG_HOME`, no
+  home directory, matching `/etc/cairn/environment.toml`'s existing pattern; who may write it is
+  left to ordinary filesystem permissions, which cairn assumes nothing about.
+  `cairn.local.toml` is removed outright, not relocated — its one job (a personal, no-root,
+  per-checkout override) is fully absorbed by a new `CAIRN_*` environment-variable layer
+  (`CAIRN_ENGINE`, `CAIRN_REGISTRY`, `CAIRN_NAMESPACE`, `CAIRN_IMAGE_BASE`,
+  `CAIRN_TRANSCRIPT_DIR`) sitting at the same top precedence the file used to occupy.
+- **Revised `BR-CFG-008`/`012`/`015` (new)** and `BR-CLI-014`/`007` to match: no filesystem
+  search of any kind, the three-layer build-config precedence restated with the env-var layer,
+  and a new requirement (`BR-CFG-015`) that `/etc/cairn` stays a single host-wide directory
+  whose ownership cairn never assumes.
+- **Added `ADR-043` and `BR-DEPLOY-022`.** `cairn-provision` now creates a `cairn-admins` group
+  (name configurable, `--admin-group`) by default on every role, and shares `/etc/cairn` with
+  it — group-owned, **mode 2775** (`rwxrws r-x`, setgid). Brian's own suggestion was `chmod
+  g+rw`; the execute bit and setgid were added while implementing it, not a reinterpretation —
+  a directory needs its execute bit to be enterable at all, and setgid is what keeps files
+  *later* created inside (by a re-run, or by root writing the descriptor) from reverting to the
+  creating process's own primary group. `--no-admin-group` skips the stage entirely. Runs before
+  `registry`/`descriptor` so the setgid bit predates every file those stages write.
+  `cairn doctor` gains a **read-only** check (`check_shared_config_dir`) reporting the
+  directory's group, setgid bit, writability, and the invoking user's membership — never
+  mutating, matching `ADR-040`'s standing invariant that only `cairn-provision`, not `cairn`
+  itself, changes host state.
+- **Code:** `src/cairn/config.py` (`find_manifest`/`find_manifest_or_none` drop the directory
+  walk and read `$CAIRN_MANIFEST`; `load_build_config` drops the `cairn.local.toml` layer and
+  reads the `CAIRN_*` overrides; `BUILDER_CONFIG_PATH` moves to `/etc/cairn/builder.toml`);
+  `src/cairn/cli.py` and `src/cairn/push.py` (error messages and `--manifest` help text
+  updated; `--manifest` added to `images`/`prune` for consistency now that no command has an
+  implicit fallback); `src/cairn/provision.py` (new `admin-group` stage, `--admin-group`/
+  `--no-admin-group` flags); `src/cairn/doctor.py` (new `check_shared_config_dir`, `--manifest`
+  threaded through `doctor`).
+- **Explicitly out of scope:** `src/cairn/project.py`'s directory walk for cairn's own
+  vendoring project root is unaffected — finding cairn's own checkout while developing cairn
+  is a different question from which deployment a command targets, and cwd still legitimately
+  answers it.
+
+## 2026-07-26 (later — the machine build-config file is renamed to `builder.toml`)
+
+Brian pushed back on the previous entry's naming while reviewing it: `config.toml` and the
+manifest `cairn.toml` are one word apart, and nothing in either name tells a reader which is
+which.
+
+- **Added `ADR-041`.** Renamed `~/.config/cairn/config.toml` → `~/.config/cairn/builder.toml`
+  — named for the **Builder** role that reads it, not the generic word "config" that could be
+  either file. `BR-CFG-008`/`012` and `BR-CLI-014` amended to the new name; the code constant
+  `USER_CONFIG_PATH` renamed to `BUILDER_CONFIG_PATH` (`src/cairn/config.py`). No key, no
+  precedence rule, and no access boundary changed — filename only.
+- **Verified the access boundary the rename now advertises.** Grepped every call site of
+  `load_build_config()`: `build`, `push`, `images`, `prune`, `new-tag`/`retag`/`retire`, and
+  `doctor` — every builder-side command, plus `doctor` (which reports on either role) — and
+  confirmed no target-side command (`reconcile`, `adopt`, `systemd-units`) reads it. This was
+  already true before the rename; the rename just makes the name match the fact.
+- **Answered three override questions Brian asked, and documented them in
+  `CONFIGURATION.md`:** `builder.toml` cannot be shadowed by a same-named file in the working
+  directory (that slot is `cairn.local.toml`, a differently-named file beside the manifest —
+  not a bare cwd lookup), cannot be overridden by an environment variable (none is read for
+  any of its five keys), and cannot be overridden by a CLI flag except `--transcript <path>`
+  on `cairn build`, which replaces the transcript destination outright rather than overriding
+  the `transcript_dir` setting.
+
+## 2026-07-26 — split `CONFIGURATION.md` out of README; documented config.toml creation
+
+Prompted by Brian starting a real client install and finding two README gaps: the
+Configuration section had grown into full reference material (manifest schema, the
+three-layer build-config precedence, the target descriptor), and nothing said how
+`~/.config/cairn/config.toml` comes into existence or what it may contain.
+
+- **Added `CONFIGURATION.md`** as the full configuration reference, mirroring the
+  existing `ABOUT_REGISTRIES.md`/`ABOUT_GHCR.md` pattern (README stays a short pointer,
+  the topic gets its own doc). Covers the manifest schema, both build-config layers
+  (`~/.config/cairn/config.toml`, `cairn.local.toml`), full precedence, and the target's
+  `/etc/cairn/environment.toml`.
+- **Clarified, as a documentation fix, not a behavior change:** both `cairn.toml` and
+  `~/.config/cairn/config.toml` are hand-authored — there is no `cairn init` or
+  scaffolding command for either, confirmed against `src/cairn/config.py`. Decided (with
+  Brian) that this stays manual by design rather than growing a new `BR-CLI` scaffold
+  command; if that changes later it needs its own requirements pass, not a doc-only fix.
+- **Documented `~/.config/cairn/config.toml`'s actual shape** — flat keys with no
+  `[cairn]` table wrapper, unlike the manifest — and every recognized key
+  (`BUILD_CONFIG_KEYS` in `src/cairn/config.py`) with its meaning. This existed in code
+  but was never written down for a user.
+- Slimmed README's `## Configuration` to a minimal quickstart example plus a link,
+  keeping only the registry-ownership discussion (`ABOUT_REGISTRIES.md`/
+  `ABOUT_GHCR.md`) inline since that's a judgment call, not a reference.
+
 ## 2026-07-25 (later — the installer moves into the package as `cairn-provision`)
 
 Follows directly from the PyPI-install fix earlier the same day: once `cairn` itself is fully

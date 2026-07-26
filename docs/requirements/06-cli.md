@@ -1,10 +1,10 @@
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-26_
 
 The `cairn` command surface. Mostly *cites* verbs defined in other areas; adds the
 create/move/retire guards, global flags, and output/exit conventions. Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-018`, `ADR-023`, `ADR-031`.
+`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-018`, `ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`.
 
 ---
 
@@ -57,11 +57,15 @@ mistaken for a complete inventory. *(BR-DEPLOY-005, BR-BUILD-011, BR-BUILD-014, 
 **`BR-CLI-006`** *(vendor)* — `cairn vendor status | sync` — thin ventwig wrappers. *(BR-VEND-*)*
 
 **`BR-CLI-007`** *(doctor)* — `cairn doctor` — **role-aware** preflight, role detected from
-context (`ADR-028`). On a **build/control** machine: the selected build engine present and
+context (`ADR-028`). Accepts `--manifest` like every other manifest-consuming command
+(`BR-CLI-014`); a missing manifest warns rather than fails, since doctor legitimately runs
+before one exists. On a **build/control** machine: the selected build engine present and
 capable of secret-mount builds (Docker Engine v23+, or podman v4+ — `ADR-027`); **`git`**,
 which cairn resolves every manifest ref with (`BR-BUILD-005`); `ventwig status` clean;
-config valid. On a **target**: Docker Engine + Compose, systemd, and registry
-reachability. *(BR-VEND-005/006, BR-BUILD-005, BR-CLI-014, ADR-027, ADR-028)*
+config valid. On **either role**: `/etc/cairn`'s current group, permissions, and the invoking
+user's membership, reported only, never mutated (`BR-CFG-015`, `ADR-043`). On a **target**:
+Docker Engine + Compose, systemd, and registry reachability.
+*(BR-VEND-005/006, BR-BUILD-005, BR-CFG-015, BR-CLI-014, ADR-027, ADR-028, ADR-043)*
 
 **`BR-CLI-008`** *(reconcile)* — `cairn reconcile` — the target-side, single-flight
 pull-loop verb, run under systemd. *(BR-DEPLOY-001/003/016)*
@@ -102,10 +106,12 @@ so systemd and CI detect outcomes. *(BR-DEPLOY-019)*
 **`BR-CLI-013`** *(output)* — Human-readable by default; **`--json`** on read/introspection
 commands (`images`, status) for CI/scripting. *(—)*
 
-**`BR-CLI-014`** *(config discovery)* — cairn discovers the manifest (`cairn.toml`), build
-config (`~/.config/cairn/config.toml` + optional `cairn.local.toml`), and (on targets) the
-environment descriptor; the common case needs **no flags** (minimal typing). Precedence is
-specified by `BR-CFG-012`. *(BR-CFG-008, BR-CFG-012, ADR-029)*
+**`BR-CLI-014`** *(config discovery)* — cairn resolves the manifest (`cairn.toml`) only from
+`--manifest` or `$CAIRN_MANIFEST` — never by searching a directory (`ADR-042`) — resolves
+build config from `/etc/cairn/builder.toml` plus `CAIRN_*` environment-variable overrides, and
+(on targets) reads the environment descriptor from its fixed path. Every command that accepts a
+manifest exposes `--manifest`, so the flag is always available even where `$CAIRN_MANIFEST` is
+not set. Precedence is specified by `BR-CFG-012`. *(BR-CFG-008, BR-CFG-012, ADR-029, ADR-042)*
 
 **`BR-CLI-015`** *(help & errors)* — Every command has `--help`; errors are actionable and
 name the fix; convention over configuration. *(—)*

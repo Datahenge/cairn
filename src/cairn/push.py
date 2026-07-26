@@ -42,7 +42,8 @@ def assert_registry_configured(build_config: BuildConfig) -> None:
     if not build_config.registry and not build_config.image_base:
         raise PushError(
             "No registry configured, so images remain local. Set `registry` (and usually "
-            "`namespace`) in ~/.config/cairn/config.toml or cairn.local.toml."
+            "`namespace`) in /etc/cairn/builder.toml, or set $CAIRN_REGISTRY (and usually "
+            "$CAIRN_NAMESPACE)."
         )
 
 

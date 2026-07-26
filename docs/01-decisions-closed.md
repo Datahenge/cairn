@@ -492,10 +492,11 @@ vendored tree stays anchored to cairn's own root. They coincide today (developme
 the repo) and stop coinciding the moment cairn is `pip install`-ed and run against a
 deployment directory elsewhere — which requires no code change under this decision.
 
-**Build config layers** in the same spirit: `~/.config/cairn/config.toml` holds
-machine-wide defaults (e.g. `engine`, `ADR-027`), and an optional `cairn.local.toml`
-**beside the manifest** overrides it key-by-key, so per-deployment settings travel with
-the deployment while the portable `cairn.toml` stays free of them (`BR-CFG-008`).
+**Build config layers** in the same spirit: `~/.config/cairn/builder.toml` (renamed from
+`config.toml`, `ADR-041`) holds machine-wide defaults (e.g. `engine`, `ADR-027`), and an
+optional `cairn.local.toml` **beside the manifest** overrides it key-by-key, so
+per-deployment settings travel with the deployment while the portable `cairn.toml` stays
+free of them (`BR-CFG-008`).
 
 **Closed 2026-07-25:** the vendored tree now lives at `src/cairn/vendored/frappe_docker` —
 inside `src/cairn` — so the wheel carries it without any special packaging step (`ADR-007`,
@@ -843,9 +844,10 @@ environment-agnostic, not the file. Nothing here reaches the image: the table na
 that live in the registry, and no environment name is ever baked into a build. The image
 stays one artifact promoted between environments, which is `ADR-010`'s whole point.
 
-**Why not build config.** `~/.config/cairn/config.toml` and `cairn.local.toml` are explicitly
-machine-local and uncommitted (`BR-CFG-008`). A source of truth that gates a production
-retag cannot live somewhere that differs per laptop and is absent on a colleague's.
+**Why not build config.** `~/.config/cairn/builder.toml` (`config.toml` before `ADR-041`)
+and `cairn.local.toml` are explicitly machine-local and uncommitted (`BR-CFG-008`). A
+source of truth that gates a production retag cannot live somewhere that differs per
+laptop and is absent on a colleague's.
 
 **Consequence for the schema:** `[cairn]` accepts a fifth key, and the manifest's
 unknown-key rejection must admit it. The table is optional — a manifest that only ever builds
@@ -1183,6 +1185,181 @@ Bash would have been marginally easier to audit line-by-line and impossible to t
 operator's responsibility. The installer does not change it — it provisions the *build and deploy
 plumbing*, never a site. `bench new-site` remains outside every tool cairn ships.
 *(BR-DEPLOY-021, BR-CLI-020, BR-DEPLOY-007, ADR-022, ADR-035, ADR-018)*
+
+---
+
+### ADR-041 — The machine build-config file is named `builder.toml`, not `config.toml`
+**Decided:** 2026-07-26
+
+Brian, starting a real client install and writing it up in `CONFIGURATION.md`, noticed that
+`~/.config/cairn/config.toml` and the manifest `cairn.toml` are one word apart — a reader can't
+glean which is which from the name alone, only from which directory it sits in.
+
+**Decision:** rename the file to `~/.config/cairn/builder.toml`. The manifest keeps its name
+(idiomatic — a project manifest named after its tool, as with `Cargo.toml`) and already has a
+recognizable sibling, `cairn.local.toml`; the machine file was the odd one out. `builder.toml`
+instead names the **role** it serves: it's what a machine acting as **Builder** reads, mirroring
+the Builder/Target split the README already teaches. `doctor` also reads it (it reports on
+either role), but no `Target`-side code (`reconcile`, `adopt`, `systemd-units`) ever does — this
+was true before the rename and constrains what the name is allowed to imply.
+
+Considered and rejected: renaming the manifest instead (`cairn.toml` → `manifest.toml`) — higher
+blast radius for the file every user interacts with most, and it forfeits the `Cargo.toml`-style
+branding for no gain, since the manifest was never the ambiguous half. Also considered: doing
+nothing, since the two files' directories (project root vs. `~/.config/cairn/`) already
+disambiguate them in code — rejected because the ambiguity was never about the code path, only
+about a reader's or writer's first encounter with the two names in prose or in a terminal
+history, which the directory doesn't help with.
+
+**No behavior changed** — same keys (`BR-CFG-008`'s `BUILD_CONFIG_KEYS`), same precedence
+(`BR-CFG-012`), same access boundary (builder-side commands + `doctor`, never target-side). Filename
+only, so pre-release timing made this cheap: nothing in production yet depends on the old path
+existing.
+
+**Confirmed, while renaming: no other override path exists for this file.** It cannot be
+shadowed by a same-named file in the working directory (that slot is `cairn.local.toml`, a
+different name, beside the manifest specifically — not a bare cwd lookup of `builder.toml`
+itself), by an environment variable (none is read for any of its keys), or by a CLI flag (no
+command exposes `--engine`/`--registry`/`--namespace`/`--image-base`; the one adjacent flag,
+`--transcript <path>` on `cairn build`, replaces the transcript *destination* outright rather than
+overriding the `transcript_dir` *setting*, and is scoped to that one invocation). Adding a cwd-shadow
+lookup was considered and set aside: it would create a second "am I overridden right now" question
+alongside `cairn.local.toml`'s existing one, for a file that's supposed to be genuinely
+machine-wide rather than per-directory.
+
+**Superseded the same day (`ADR-042`):** the directory moved again, from `~/.config/cairn/` to
+`/etc/cairn/`, and `cairn.local.toml` was removed rather than kept as the override slot described
+above — a home directory turned out to be the wrong model for a multi-operator VPS, which
+`ADR-042` covers in full. The filename `builder.toml` and the reasoning for it are unaffected;
+only the directory and the override mechanism changed again.
+*(BR-CFG-008, BR-CFG-012, BR-CLI-014, BR-CLI-016, ADR-029, ADR-042)*
+
+---
+
+### ADR-042 — Configuration becomes fully explicit and host-shared: no directory search, no home directories, no local-override file
+**Decided:** 2026-07-26
+
+Prompted by a future Brian named explicitly: cairn running containerized, where a "working
+directory" is meaningless or arbitrary. But the sharper, present-tense problem he raised is a
+**multi-user VPS** — most of his clients' actual boxes, where several human operators (his own
+running example: Brian, Sara, Jim) hold separate Linux logins with different permissions to the
+same one deployment.
+
+Two mechanisms this project already had turned out to be wrong for that shape of host:
+
+1. **Manifest discovery walked up from the working directory** (`ADR-029`). Brian's objection:
+   it "assumes a generic filename I don't like," and more importantly, "the outcome can silently
+   drift too easily" — cd into the wrong directory, or a nested checkout with its own stray
+   `cairn.toml`, and the wrong deployment is silently the one acted on.
+2. **Machine build config lived under `~/.config/`** (`ADR-041`, at the time still per-user).
+   XDG's per-user model is right for a single-operator laptop and actively wrong for a shared
+   ops box: Brian sets his engine preference, logs out; Sara logs in tomorrow to an empty config
+   and no visible reason why. Invisible-until-it-bites is worse than not having the feature.
+
+**Decision, in three parts:**
+
+1. **Manifest resolution drops the directory search entirely.** `--manifest <path>` or
+   `$CAIRN_MANIFEST` — nothing else, no fallback default path of any kind. This reverses
+   `BR-CFG-012`'s former "the common case MUST require no flags" clause, confirmed explicitly
+   with Brian rather than walked back quietly. The underlying reasoning is the same one already
+   governing registry defaults: `BR-CFG-013` forbids cairn from inferring a registry/namespace
+   from anything — the machine, the git remote, the operator's other deployments. Silent
+   directory-walking is the identical failure mode (guessing at *which deployment*, an even
+   larger thing to get silently wrong than *which registry*) and there is no principled place to
+   keep one implicit fallback while forbidding all the others. Systemd units and CI jobs set
+   `$CAIRN_MANIFEST` once in their own config and never touch it again; interactive use is one
+   `export` per session or a per-client shell alias — the same shape kubectl (`$KUBECONFIG`) and
+   the AWS CLI (`$AWS_PROFILE`) already ask of their users for the identical reason.
+2. **`builder.toml` moves to `/etc/cairn/builder.toml`.** No `$XDG_CONFIG_HOME`, no home
+   directory, no per-user tier at all. One file, shared identically by every login on the box —
+   the same fix, for the same reason, `/etc/cairn/environment.toml` (the target descriptor)
+   already had by construction. Everything machine-scoped-but-not-tied-to-one-checkout now lives
+   under `/etc/cairn/`, without exception. Who may *write* it is deliberately left to ordinary
+   Unix permissions — cairn assumes nothing about ownership; an admin is free to `chown` it to a
+   shared group (`ADR-043`) or leave it root-only.
+3. **`cairn.local.toml` is removed outright**, not merely relocated. Its only job — a personal,
+   no-root, per-checkout override — is fully covered once every invocation already carries an
+   explicit manifest reference: the same environment-variable mechanism extends trivially to the
+   build-config keys themselves. One `CAIRN_<KEY>` variable per `BUILD_CONFIG_KEYS` entry
+   (`CAIRN_ENGINE`, `CAIRN_REGISTRY`, `CAIRN_NAMESPACE`, `CAIRN_IMAGE_BASE`,
+   `CAIRN_TRANSCRIPT_DIR`) replaces it, sitting at the same highest-precedence layer the file
+   used to occupy. This is *more* Twelve-Factor than the file was (config that varies by
+   instance belongs in the environment, not in a second config file beside the first), and it
+   deletes a footgun along with the mechanism: a file whose entire purpose was "don't commit
+   this" is no longer sitting in a git working tree one `git add .` away from being committed
+   anyway.
+
+**Final precedence:**
+
+- **Manifest:** `--manifest <path>` › `$CAIRN_MANIFEST`. No default.
+- **Build config**, three layers, key-by-key, lowest first: `/etc/cairn/builder.toml` ›
+  the resolved manifest's `[cairn.registry]` › `CAIRN_ENGINE`/`CAIRN_REGISTRY`/
+  `CAIRN_NAMESPACE`/`CAIRN_IMAGE_BASE`/`CAIRN_TRANSCRIPT_DIR`.
+
+**Considered and rejected:** keeping one non-cwd implicit fallback, such as a fixed
+`/etc/cairn/cairn.toml` default for "the one deployment this host has." Rejected because it
+reintroduces exactly the silent-inference risk the whole change exists to remove — a second
+manifest later added to that path would silently change what a flagless invocation does, the
+same failure shape as the directory walk it would be replacing. Also considered: keeping
+`cairn.local.toml` as a rarely-used escape hatch alongside the env vars. Rejected — a mechanism
+that exists but is redundant with a strictly simpler one is a maintenance and documentation cost
+with no offsetting benefit.
+
+**Explicitly out of scope:** `cairn`'s own project-root discovery for vendoring
+(`src/cairn/project.py`, `ADR-029`) is unaffected. Finding the checkout that holds cairn's own
+`pyproject.toml`/`[tool.ventwig]` while developing cairn itself is a genuinely different
+question from which *deployment* a command targets, and cwd means something real there — a
+developer editing cairn's own source is, by construction, standing inside cairn's own checkout.
+*(BR-CFG-008, BR-CFG-009, BR-CFG-010, BR-CFG-011, BR-CFG-012, BR-CFG-013, BR-CFG-014, BR-CLI-014,
+BR-CLI-016, ADR-029, ADR-039, ADR-041, ADR-043)*
+
+---
+
+### ADR-043 — `cairn-provision` shares `/etc/cairn` with a group by default
+**Decided:** 2026-07-26
+
+A direct consequence of `ADR-042`: once `/etc/cairn/builder.toml` is the *only* place machine
+build settings live — no per-user fallback — a root-only directory means every operator on a
+multi-login box needs `sudo` for a routine edit. Left to each client engagement to solve by hand,
+this is exactly the kind of setup step Brian has already rejected documenting as a runbook
+(`ADR-040`): "if it's worth doing for safety/checks, it's worth building it as a reusable
+installer."
+
+**Decision:** `cairn-provision` gains a stage, run by default on every role, that:
+
+1. Creates a group (`--admin-group`, default `cairn-admins`) if it does not already exist.
+2. Ensures `/etc/cairn` exists, is owned by that group, and is mode `2775` — `rwxrws r-x` **plus
+   setgid**, not merely group-writable. Brian's own suggestion was `chmod g+rw`; setgid and the
+   execute bit are an addition made while implementing it, not a reinterpretation: a directory
+   needs the execute bit for a group member to traverse into it or open a file inside at all —
+   `g+rw` without `g+x` would leave the directory group-readable/writable but not enterable,
+   which is not a usable permission set for a directory. Setgid (`g+s`) ensures files *later*
+   created inside — by a future `cairn-provision` re-run, or by root writing the descriptor —
+   inherit the shared group automatically rather than reverting to the creating process's own
+   primary group, which would otherwise silently re-break sharing the day after this stage runs.
+3. Is fully idempotent (`BR-DEPLOY-021` rule 1): an existing group is left alone and reported,
+   not recreated; already-correct ownership and mode are reported and left untouched, not
+   reapplied.
+
+This runs **before** `registry` and `descriptor` (which also write under `/etc/cairn`), so the
+setgid bit is already in place when those stages create their own files. `--no-admin-group`
+skips the stage entirely, leaving the directory exactly as found — for an operator who already
+has their own scheme, or who wants `/etc/cairn` to stay root-only.
+
+**What cairn itself (not the installer) does with this fact: nothing, and reports it.** Per
+`ADR-040`'s standing invariant — cairn prints host configuration, the operator (here,
+`cairn-provision`, the one sanctioned exception) installs it — creating or chowning a group is a
+host mutation and therefore cannot live inside `cairn` proper. `cairn doctor` instead gains a
+**read-only** check reporting `/etc/cairn`'s current group, whether setgid is set, whether it is
+group-writable, and whether the invoking user is a member — informational only, prescribing no
+particular group name and never mutating what it finds, matching every other doctor check.
+
+**Consequence for `BR-DEPLOY-021`.** The new stage is held to the same seven-point installer
+contract as every other stage: idempotent, dry-run prints exactly what it would do, no secret
+material is involved, prerequisites (root) are already gated by the existing preflight stage,
+and the stage confirms its own postcondition (the directory's actual group and mode) rather than
+assuming the commands it ran succeeded.
+*(BR-DEPLOY-021, BR-CFG-010, ADR-040, ADR-041, ADR-042)*
 
 ---
 

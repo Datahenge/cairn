@@ -1,10 +1,11 @@
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-26_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
-`ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`.
+`ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
+`ADR-042`, `ADR-043`.
 
 ---
 
@@ -196,3 +197,17 @@ Where an installer is provided it MUST:
 An installer MUST NOT create sites, volumes, or databases: `BR-DEPLOY-007` keeps that the operator's
 responsibility, and provisioning the *plumbing* does not change it.
 *(ADR-040, ADR-035, ADR-022, BR-DATA-006, BR-DEPLOY-007, BR-DEPLOY-011, BR-CFG-010, BR-CLI-011)*
+
+**`BR-DEPLOY-022`** *(shared `/etc/cairn` — default, not mandatory)* — Where an installer is
+provided (`BR-DEPLOY-021`), it MUST, by default and on every role, ensure `/etc/cairn` is
+shared with a group (name configurable, e.g. `--admin-group`, default `cairn-admins`) rather
+than left root-only: creating the group if absent, and setting the directory group-owned,
+group-writable, and **setgid** so files later created inside inherit the group automatically.
+An explicit flag (e.g. `--no-admin-group`) MUST allow skipping this and leaving the directory
+exactly as found. This stage is bound by the same seven-point contract as every other
+(`BR-DEPLOY-021`) — idempotent, reported in `--dry-run`, no secret material, gated on the same
+root check, and its postcondition (the directory's actual group and mode) confirmed rather than
+assumed. cairn itself MUST NOT perform this — creating or chowning a group is a host mutation
+and stays with the installer (`ADR-040`); `cairn doctor` MAY report the directory's current
+group, mode, and the invoking user's membership, but MUST NOT change any of them (`BR-CFG-015`).
+*(ADR-042, ADR-043, BR-CFG-015, BR-DEPLOY-021)*

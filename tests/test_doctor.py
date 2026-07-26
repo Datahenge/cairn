@@ -46,8 +46,18 @@ def git_present(monkeypatch):
     monkeypatch.setattr(doctor.resolve, "git_version", lambda: "2.47.1")
 
 
+@pytest.fixture
+def shared_config_ok(monkeypatch):
+    """Composition tests must not depend on whether /etc/cairn exists on the test host."""
+    monkeypatch.setattr(
+        doctor,
+        "check_shared_config_dir",
+        lambda: doctor.CheckResult.of("shared config", True, "ok"),
+    )
+
+
 def _stub_config(monkeypatch, build_config, apps=()):
-    monkeypatch.setattr(doctor.config, "find_manifest", lambda: Path("cairn.toml"))
+    monkeypatch.setattr(doctor.config, "find_manifest", lambda explicit=None: Path("cairn.toml"))
     monkeypatch.setattr(
         doctor.config,
         "load_manifest",
@@ -66,8 +76,8 @@ def _boom():
 def test_missing_manifest_warns_rather_than_fails(monkeypatch):
     """doctor is a machine preflight — legitimately run before a manifest exists."""
 
-    def _missing():
-        raise ManifestNotFoundError("No cairn.toml found at or above /tmp. Use --manifest.")
+    def _missing(explicit=None):
+        raise ManifestNotFoundError("No manifest given. Pass --manifest <path>.")
 
     monkeypatch.setattr(doctor.config, "find_manifest", _missing)
 
@@ -79,7 +89,7 @@ def test_missing_manifest_warns_rather_than_fails(monkeypatch):
 
 def test_malformed_manifest_fails(monkeypatch):
     """A manifest that exists but is wrong is a hard failure, not a warning."""
-    monkeypatch.setattr(doctor.config, "find_manifest", lambda: Path("cairn.toml"))
+    monkeypatch.setattr(doctor.config, "find_manifest", lambda explicit=None: Path("cairn.toml"))
 
     def _invalid(path):
         raise ManifestInvalidError("cairn.toml: [cairn] has unknown key(s) imagename")
@@ -96,7 +106,7 @@ def test_malformed_manifest_fails(monkeypatch):
 def test_valid_config_reports_app_count_and_sources(monkeypatch):
     _stub_config(
         monkeypatch,
-        config_module.BuildConfig(sources=(Path("/home/u/.config/cairn/config.toml"),)),
+        config_module.BuildConfig(sources=("/etc/cairn/builder.toml",)),
         apps=(config_module.App("erpnext", "u", "r"),),
     )
 
@@ -104,7 +114,7 @@ def test_valid_config_reports_app_count_and_sources(monkeypatch):
 
     assert result.status is doctor.Status.OK
     assert "1 app(s)" in result.detail
-    assert "config.toml" in result.detail
+    assert "builder.toml" in result.detail
     assert build_config is not None
 
 
@@ -116,6 +126,52 @@ def test_warning_does_not_affect_exit_code(monkeypatch):
     ]
 
     assert doctor.report(results) == 0
+
+
+# --- shared config dir (BR-CFG-015, ADR-043) --------------------------------
+
+
+def test_shared_config_dir_warns_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "SHARED_CONFIG_DIR", tmp_path / "does-not-exist")
+
+    result = doctor.check_shared_config_dir()
+
+    assert result.status is doctor.Status.WARN
+    assert "does not exist" in result.detail
+
+
+def test_shared_config_dir_reports_group_mode_and_membership(monkeypatch, tmp_path):
+    """Purely informational (ADR-043): reports the facts, never changes them."""
+    import grp
+    import os
+
+    shared = tmp_path / "cairn"
+    shared.mkdir()
+    os.chmod(shared, 0o2775)
+    monkeypatch.setattr(doctor, "SHARED_CONFIG_DIR", shared)
+
+    result = doctor.check_shared_config_dir()
+
+    own_group = grp.getgrgid(os.getgid()).gr_name
+    assert result.status is doctor.Status.OK
+    assert own_group in result.detail
+    assert "setgid" in result.detail
+    assert "group-writable" in result.detail
+    assert "current user is a member" in result.detail
+
+
+def test_shared_config_dir_reports_not_group_writable(monkeypatch, tmp_path):
+    import os
+
+    shared = tmp_path / "cairn"
+    shared.mkdir()
+    os.chmod(shared, 0o755)
+    monkeypatch.setattr(doctor, "SHARED_CONFIG_DIR", shared)
+
+    result = doctor.check_shared_config_dir()
+
+    assert result.status is doctor.Status.OK
+    assert "not group-writable" in result.detail
 
 
 # --- git (BR-CLI-007, BR-BUILD-005) -----------------------------------------
@@ -170,7 +226,9 @@ def test_engine_failure_is_reported_not_raised(monkeypatch):
 # --- check composition (ADR-027) --------------------------------------------
 
 
-def test_buildx_checked_only_for_docker(monkeypatch, all_vendor_checks_pass, config_ok):
+def test_buildx_checked_only_for_docker(
+    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok
+):
     """ADR-027: a docker machine is checked for the buildx plugin."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: DOCKER)
     monkeypatch.setattr(
@@ -187,10 +245,13 @@ def test_buildx_checked_only_for_docker(monkeypatch, all_vendor_checks_pass, con
         "vendored tree",
         "vendor .git",
         "build inputs",
+        "shared config",
     ]
 
 
-def test_buildx_not_checked_for_podman(monkeypatch, all_vendor_checks_pass, config_ok):
+def test_buildx_not_checked_for_podman(
+    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok
+):
     """ADR-027: a podman machine is never told to install a Docker plugin it won't use."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
 
@@ -204,10 +265,11 @@ def test_buildx_not_checked_for_podman(monkeypatch, all_vendor_checks_pass, conf
         "vendored tree",
         "vendor .git",
         "build inputs",
+        "shared config",
     ]
 
 
-def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass):
+def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass, shared_config_ok):
     """BR-CFG-008: `engine =` from build config drives detection with no flag."""
     seen: list[str | None] = []
     _stub_config(monkeypatch, config_module.BuildConfig(engine="podman"))
@@ -223,7 +285,9 @@ def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass
     assert seen == ["podman"]
 
 
-def test_explicit_engine_overrides_configured_one(monkeypatch, all_vendor_checks_pass):
+def test_explicit_engine_overrides_configured_one(
+    monkeypatch, all_vendor_checks_pass, shared_config_ok
+):
     """An explicit argument wins over the configured preference."""
     seen: list[str | None] = []
     _stub_config(monkeypatch, config_module.BuildConfig(engine="podman"))
@@ -242,7 +306,7 @@ def test_explicit_engine_overrides_configured_one(monkeypatch, all_vendor_checks
     assert seen == ["docker"]
 
 
-def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok):
+def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok, shared_config_ok):
     """BR-CLI-007: one invocation reports the full picture; no short-circuit."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
     monkeypatch.setattr(doctor.vendor, "assert_clean", _boom)
@@ -258,6 +322,7 @@ def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok):
         doctor.Status.FAIL,
         doctor.Status.FAIL,
         doctor.Status.FAIL,
+        doctor.Status.OK,  # shared config
     ]
 
 
@@ -311,7 +376,9 @@ def test_run_checks_dispatches_to_target_when_a_descriptor_exists(monkeypatch):
 def test_run_checks_dispatches_to_build_when_no_descriptor(monkeypatch):
     monkeypatch.setattr(doctor.descriptor, "exists", lambda: False)
     monkeypatch.setattr(
-        doctor, "run_build_checks", lambda preferred_engine=None: ["build-sentinel"]
+        doctor,
+        "run_build_checks",
+        lambda preferred_engine=None, manifest_path=None: ["build-sentinel"],
     )
 
     assert doctor.run_checks() == ["build-sentinel"]
@@ -463,7 +530,9 @@ def test_check_registry_reachable_fails_with_the_registrys_own_message(monkeypat
     assert "not permitted" in result.detail
 
 
-def test_run_target_checks_skips_the_registry_when_the_descriptor_fails(monkeypatch):
+def test_run_target_checks_skips_the_registry_when_the_descriptor_fails(
+    monkeypatch, shared_config_ok
+):
     def _raise():
         raise DescriptorError("nope")
 
@@ -485,10 +554,13 @@ def test_run_target_checks_skips_the_registry_when_the_descriptor_fails(monkeypa
         "docker",
         "docker compose",
         "reconcile timer",
+        "shared config",
     ]
 
 
-def test_run_target_checks_includes_the_registry_when_the_descriptor_loads(monkeypatch):
+def test_run_target_checks_includes_the_registry_when_the_descriptor_loads(
+    monkeypatch, shared_config_ok
+):
     monkeypatch.setattr(doctor.descriptor, "load", lambda: _descriptor())
     monkeypatch.setattr(doctor, "check_docker", lambda: doctor.CheckResult.of("docker", True, "ok"))
     monkeypatch.setattr(
@@ -509,4 +581,5 @@ def test_run_target_checks_includes_the_registry_when_the_descriptor_loads(monke
         "docker compose",
         "reconcile timer",
         "registry",
+        "shared config",
     ]

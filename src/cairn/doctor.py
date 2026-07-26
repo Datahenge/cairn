@@ -28,10 +28,13 @@ legitimately isn't, before the first manual `cairn reconcile` has succeeded.
 
 from __future__ import annotations
 
+import grp
+import os
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import typer
 
@@ -49,6 +52,11 @@ _LABEL_WIDTH = 16
 
 #: Ceiling on a systemctl/compose probe — these are local, so slow means hung, not busy.
 _PROBE_TIMEOUT_SECONDS = 15
+
+#: Shared machine-scoped directory both roles use — `builder.toml` (`ADR-041`), the
+#: environment descriptor (`ADR-034`), and whatever group `cairn-provision` sets it up
+#: with (`ADR-043`).
+SHARED_CONFIG_DIR = Path("/etc/cairn")
 
 
 class Status(Enum):
@@ -80,23 +88,28 @@ class CheckResult:
         return cls(label, Status.OK if ok else Status.FAIL, detail)
 
 
-def run(preferred_engine: str | None = None) -> int:
+def run(preferred_engine: str | None = None, manifest_path: Path | None = None) -> int:
     """Run every check, report the results, and return the exit code."""
-    return report(run_checks(preferred_engine))
+    return report(run_checks(preferred_engine, manifest_path))
 
 
-def run_checks(preferred_engine: str | None = None) -> list[CheckResult]:
+def run_checks(
+    preferred_engine: str | None = None, manifest_path: Path | None = None
+) -> list[CheckResult]:
     """Run this host's role-appropriate preflight checks (BR-CLI-007, `ADR-028`).
 
     A descriptor at the fixed path means this host is a target; its absence means
-    build/control. *preferred_engine* only ever matters on the build/control branch.
+    build/control. *preferred_engine* and *manifest_path* only ever matter on the
+    build/control branch.
     """
     if descriptor.exists():
         return run_target_checks()
-    return run_build_checks(preferred_engine)
+    return run_build_checks(preferred_engine, manifest_path)
 
 
-def run_build_checks(preferred_engine: str | None = None) -> list[CheckResult]:
+def run_build_checks(
+    preferred_engine: str | None = None, manifest_path: Path | None = None
+) -> list[CheckResult]:
     """Run the build/control preflight checks in order and return their results.
 
     Config is checked first because it supplies the engine preference (`BR-CFG-008`);
@@ -104,7 +117,7 @@ def run_build_checks(preferred_engine: str | None = None) -> list[CheckResult]:
     appears only when the selected engine needs it, so a podman machine is not told to
     install a Docker plugin it will never use (`ADR-027`).
     """
-    config_result, build_config = check_config()
+    config_result, build_config = check_config(manifest_path)
     engine_result, selected = check_build_engine(
         preferred_engine or (build_config.engine if build_config else None)
     )
@@ -118,6 +131,7 @@ def run_build_checks(preferred_engine: str | None = None) -> list[CheckResult]:
         _guard("vendored tree", vendor.assert_clean, "matches its recorded pin"),
         _guard("vendor .git", vendor.assert_no_nested_git, "no nested .git"),
         _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
+        check_shared_config_dir(),
     ]
 
 
@@ -131,31 +145,76 @@ def run_target_checks() -> list[CheckResult]:
     results = [descriptor_result, check_docker(), check_compose(), check_reconcile_timer()]
     if loaded is not None:
         results.append(check_registry_reachable(loaded))
+    results.append(check_shared_config_dir())
     return results
 
 
-def check_config() -> tuple[CheckResult, config.BuildConfig | None]:
+def check_config(
+    manifest_path: Path | None = None,
+) -> tuple[CheckResult, config.BuildConfig | None]:
     """Validate the manifest and build config, returning the config for reuse.
 
+    *manifest_path* comes from ``--manifest`` or is left to `config.find_manifest`'s own
+    ``$CAIRN_MANIFEST`` fallback — doctor never searches a directory for one (`ADR-042`).
     A missing manifest **warns** rather than fails — doctor runs legitimately on a
     target, or before a manifest exists. A malformed manifest, or a malformed build
     config, fails (BR-CFG-012, BR-CLI-007).
     """
     label = "config"
     try:
-        manifest_path = config.find_manifest()
+        found = config.find_manifest(manifest_path)
     except ManifestNotFoundError as exc:
         return CheckResult(label, Status.WARN, _first_line(str(exc))), None
 
     try:
-        manifest = config.load_manifest(manifest_path)
-        build_config = config.load_build_config(manifest_path)
+        manifest = config.load_manifest(found)
+        build_config = config.load_build_config(found)
     except CairnError as exc:
         return CheckResult(label, Status.FAIL, _first_line(str(exc))), None
 
-    sources = ", ".join(str(p) for p in build_config.sources) or "defaults only"
-    detail = f"{manifest_path.name} valid, {len(manifest.apps)} app(s); build config: {sources}"
+    sources = ", ".join(build_config.sources) or "defaults only"
+    detail = f"{found.name} valid, {len(manifest.apps)} app(s); build config: {sources}"
     return CheckResult(label, Status.OK, detail), build_config
+
+
+def check_shared_config_dir() -> CheckResult:
+    """Report `SHARED_CONFIG_DIR`'s group and whether the invoking user can write to it.
+
+    Purely informational (`ADR-043`) — cairn prescribes no particular group name and
+    never changes what it finds; an operator may set this up however they like, or not
+    at all. Read-only, so a multi-operator host surfaces the fact plainly rather than an
+    operator discovering it the day their own `builder.toml` edit silently fails.
+    """
+    label = "shared config"
+    if not SHARED_CONFIG_DIR.is_dir():
+        return CheckResult(
+            label,
+            Status.WARN,
+            f"{SHARED_CONFIG_DIR} does not exist yet — run cairn-provision, or create it "
+            f"by hand",
+        )
+
+    try:
+        info = SHARED_CONFIG_DIR.stat()
+    except OSError as exc:
+        return CheckResult(label, Status.WARN, f"{SHARED_CONFIG_DIR} cannot be inspected — {exc}")
+
+    try:
+        group_name = grp.getgrgid(info.st_gid).gr_name
+    except KeyError:
+        group_name = str(info.st_gid)
+
+    setgid = bool(info.st_mode & 0o2000)
+    group_writable = bool(info.st_mode & 0o020)
+    member = info.st_gid == os.getgid() or info.st_gid in os.getgroups()
+
+    detail = (
+        f"{SHARED_CONFIG_DIR} owned by group '{group_name}'"
+        f"{' (setgid)' if setgid else ''}, "
+        f"{'group-writable' if group_writable else 'not group-writable'}, current user "
+        f"{'is' if member else 'is not'} a member"
+    )
+    return CheckResult(label, Status.OK, detail)
 
 
 def check_descriptor() -> tuple[CheckResult, Descriptor | None]:

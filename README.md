@@ -44,7 +44,12 @@ registry credential means it couldn't push or retag even if asked.
 **For a machine anything else depends on** — a client's builder or target VPS, not a
 laptop you alone operate — install system-wide rather than into your own account:
 
+```bash
+# if you don't already have it
+sudo apt install pipx  
 ```
+
+```bash
 sudo pipx install --global datahenge-cairn
 ```
 
@@ -96,6 +101,11 @@ would run and writes nothing, so you can review it before handing over root. It 
 idempotent — safe to re-run — and never silently overwrites a file it didn't create;
 anything it would replace is kept alongside, renamed.
 
+It also shares `/etc/cairn` with a group by default (`cairn-admins`, or `--admin-group
+<name>`) so a client box with several operators can edit `/etc/cairn/builder.toml` without
+everyone needing `sudo` — see [CONFIGURATION.md](CONFIGURATION.md#sharing-etccairn-across-several-operators).
+`--no-admin-group` skips this and leaves `/etc/cairn` exactly as found.
+
 ### For development
 
 Contributing to cairn itself, or re-syncing the vendored upstream, needs a checkout:
@@ -112,16 +122,14 @@ install needs.
 
 ## Configuration
 
-### The manifest — `cairn.toml`
-
-One file declares one image: the Frappe source, the ordered list of apps, and build
-knobs. It's meant to be committed and shared — it carries no machine- or registry-specific
-settings.
+One manifest declares the image (`cairn.toml`, committed with the deployment); machine-
+local build settings, if you need any, live separately and are never shared:
 
 ```toml
+# cairn.toml
 [cairn]
 image_name = "erpnext-btu-v16"
-series = "v16"                      # the readable half of the image tag
+series = "v16"
 
 [cairn.registry]
 host      = "ghcr.io"
@@ -131,46 +139,23 @@ namespace = "your-org"
 url = "https://github.com/frappe/frappe"
 ref = "version-16"
 
-# Order matters: apps install in this order, and cairn never reorders or resolves
-# dependencies for you. List every app after the apps it depends on.
 [[cairn.apps]]
 name = "erpnext"
 url = "https://github.com/frappe/erpnext"
 ref = "version-16"
-
-[[cairn.apps]]
-name = "your_custom_app"
-url = "https://github.com/your-org/your_custom_app"
-ref = "version-16"
-
-[cairn.build]
-python_version = "3.14.2"
-node_version = "24.13.0"
-install_chromium = true
-
-[cairn.environments]
-production = "production"
-staging    = "staging"
 ```
 
-cairn discovers `cairn.toml` by walking upward from the current directory, or you can
-point at one explicitly with `--manifest`.
+Every command names its manifest explicitly — `--manifest <path>`, or `$CAIRN_MANIFEST` if
+you'd rather not repeat the flag. cairn never searches a directory for one: on a shared
+machine, "the nearest `cairn.toml`" is a silent way to act on the wrong deployment, not a
+convenience. There's no scaffolding command either — you hand-write the manifest, starting
+from the example above.
 
-### Machine-local settings
-
-Registry coordinates live in the manifest above deliberately — they describe the
-*deployment*, not the machine building it. What's genuinely machine-local (which build
-engine to use, an alternate transcript directory) lives in two layers instead, lowest
-precedence first:
-
-1. `~/.config/cairn/config.toml` — machine-wide defaults.
-2. `cairn.local.toml`, beside the manifest, **never committed** — a per-checkout override,
-   e.g. to build with `podman` on a laptop that has no Docker daemon.
-
-```toml
-# cairn.local.toml
-engine = "podman"
-```
+See **[CONFIGURATION.md](CONFIGURATION.md)** for the full manifest schema, the
+machine-local `/etc/cairn/builder.toml` layer and its `CAIRN_*` environment-variable
+overrides (what each key means, how they're created, and how precedence works), sharing
+`/etc/cairn` across several operators, and how a target's `/etc/cairn/environment.toml`
+descriptor comes from `cairn adopt` rather than being hand-authored.
 
 ### Where images are pushed
 
@@ -181,20 +166,17 @@ Which registry you use, and who owns the credential, is worth thinking about del
 registry-agnostic and stores no credentials — authenticate with `docker login` or `podman
 login` before pushing.
 
-### The target's descriptor
-
-A target doesn't hand-author configuration. Run `cairn adopt` against its running
-`frappe_docker` stack, review the descriptor it prints, and install it yourself at
-`/etc/cairn/environment.toml`. That descriptor — not the manifest — is what `cairn
-reconcile` reads, and its presence is what marks a machine as a target at all.
-
 ## How to use
+
+The examples below assume `$CAIRN_MANIFEST` is already exported for the session (e.g.
+`export CAIRN_MANIFEST=/srv/acme/cairn.toml`) — add `--manifest <path>` to any of them
+instead if you'd rather not.
 
 **On a builder:**
 
 ```
 cairn doctor                 # confirm the machine can actually build
-cairn build                  # build the image declared by cairn.toml
+cairn build                  # build the image declared by the manifest
 cairn build --push           # ...and upload it
 cairn images --local         # what's on this machine, and which builds are superseded
 cairn prune                  # remove superseded local images (keeps build-cache layers)

@@ -1,10 +1,11 @@
 # BR-CFG — Configuration Requirements
 
-_Status: **approved** 2026-07-23 (living) · revised 2026-07-25 · Last updated: 2026-07-25_
+_Status: **approved** 2026-07-23 (living) · revised 2026-07-26 · Last updated: 2026-07-26_
 
 Configuration, in two orthogonal sub-domains: **target** (runtime, per-environment, on the
 sites volume) and **build** (build-time only, local to the build machine). Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-009`, `ADR-015`, `ADR-017`, `ADR-019`, `ADR-022`.
+`/CLAUDE.md`. Decisions cited: `ADR-009`, `ADR-015`, `ADR-017`, `ADR-019`, `ADR-022`,
+`ADR-042`, `ADR-043`.
 
 ---
 
@@ -41,9 +42,25 @@ and Docker secrets are `ADR-017`/`DEPLOY`. *(ADR-017)*
 
 **`BR-CFG-008`** — **Machine** configuration — the **build engine** (`ADR-027`),
 builder/cache settings, local image base, **`transcript_dir`** (`BR-CLI-016`) — MUST live in a
-local file separate from the portable `cairn.toml` manifest (e.g.
-`~/.config/cairn/config.toml`, with an optional `cairn.local.toml` override) and MUST NOT be
-committed with a shareable deployment. The manifest MUST remain free of these.
+file separate from the portable `cairn.toml` manifest (`/etc/cairn/builder.toml`, optionally
+overridden per key by `CAIRN_*` environment variables) and MUST NOT be committed with a
+shareable deployment. The manifest MUST remain free of these.
+
+**Amended 2026-07-26 (`ADR-041`):** the file is named `builder.toml`, not `config.toml` —
+one word apart from the manifest `cairn.toml` gave no reader a way to tell the two apart on
+sight. `builder.toml` instead names the **role** (`Builder`, as opposed to `Target`) that
+reads it — only builder-side commands and `doctor` ever do (`BR-CLI-014`). No key or
+precedence rule changed; this amendment was the filename only.
+
+**Amended 2026-07-26 (`ADR-042`):** the file moves to `/etc/cairn/builder.toml` — no
+`$XDG_CONFIG_HOME`, no per-user home directory, no `cairn.local.toml`. A per-user config tier
+is wrong for a multi-operator VPS (several human logins sharing one deployment): it is
+invisible-until-it-bites, not a convenience. Every operator on the host now reads the identical
+file; who may *write* it is left to ordinary filesystem permissions, which `cairn-provision`
+can share with a group by default (`BR-CFG-015`, `ADR-043`) but cairn itself neither assumes
+nor enforces. `cairn.local.toml`'s job — a personal, no-root, per-checkout override — is fully
+absorbed by the `CAIRN_*` environment-variable layer once every invocation already carries an
+explicit manifest reference (`BR-CFG-012`); it is not relocated, it is removed.
 
 **Amended 2026-07-25 (`ADR-039`):** the registry **host** and **namespace** are excepted and
 belong in the manifest (`BR-CFG-014`). They are not secrets and not machine facts — under
@@ -67,22 +84,37 @@ with the pushed image. Absent a registry, images remain local (`cairn/<image_nam
 `PULL_POLICY=missing`). *(ADR-009)*
 
 **`BR-CFG-012`** *(discovery & precedence)* — cairn MUST discover configuration by the
-following precedence, and the common case MUST require no flags:
-- **Manifest** — `--manifest <path>` when given; otherwise the nearest `cairn.toml`
-  searching **upward from the working directory**. The manifest root is resolved
-  independently of cairn's own project root (`ADR-029`).
+following precedence, and it MUST perform **no filesystem search of any kind** — not the
+working directory, not any ancestor of it, not a fixed system path guessed at (`ADR-042`,
+superseding this requirement's former "the common case MUST require no flags" clause,
+confirmed as a deliberate reversal, and superseding `ADR-029`'s directory walk):
+
+- **Manifest** — `--manifest <path>` when given, else `$CAIRN_MANIFEST`. Neither given is an
+  error naming both options; there is no third, implicit option. Every invocation states
+  which deployment it targets. The manifest root remains resolved independently of cairn's
+  own project root (`ADR-029`) — this requirement governs the *deployment* manifest only, not
+  cairn's own vendoring project-root discovery (`src/cairn/project.py`), which is a genuinely
+  different question cwd still legitimately answers.
 - **Build config**, three layers, each overriding the previous **key-by-key**:
-  1. `~/.config/cairn/config.toml` — the machine-wide base;
+  1. `/etc/cairn/builder.toml` — the machine-wide base, shared by every login on the host
+     (`BR-CFG-008`);
   2. the manifest's `[cairn.registry]` — where *this deployment's* images belong
      (`BR-CFG-014`);
-  3. an optional `cairn.local.toml` **beside the manifest** — the deliberate local override.
+  3. `CAIRN_ENGINE` / `CAIRN_REGISTRY` / `CAIRN_NAMESPACE` / `CAIRN_IMAGE_BASE` /
+     `CAIRN_TRANSCRIPT_DIR` — the deliberate override, one environment variable per
+     `BUILD_CONFIG_KEYS` entry (`ADR-042`).
 
-  All three are optional; absent all, the documented defaults apply (`BR-CFG-011`). Layer 2
-  is deliberately below layer 3 so a local override remains possible without editing — and
-  committing — a client's manifest.
+  No other override path exists: layer 1 is not itself overridable by a same-named file in
+  the working directory (the sole per-checkout override, `cairn.local.toml`, is removed
+  entirely — its job is now layer 3's), nor by any CLI flag (the sole adjacent exception is
+  `--transcript <path>` on `cairn build`, which replaces the destination outright rather than
+  overriding `transcript_dir`; `BR-CLI-016`). All three are optional; absent all, the
+  documented defaults apply (`BR-CFG-011`). Layer 2 is deliberately below layer 3 so an
+  override remains possible without editing — and committing — a client's manifest.
 - **Machine** settings MUST NOT be read from the manifest, and the manifest MUST remain free
   of them (`BR-CFG-008`). Layer 2 MUST accept only `host` and `namespace`; anything else in
-  `[cairn.registry]` MUST be rejected as an unknown key. *(ADR-029, ADR-039, BR-CLI-014)*
+  `[cairn.registry]` MUST be rejected as an unknown key. *(ADR-029, ADR-039, ADR-042,
+  BR-CLI-014)*
 
 **`BR-CFG-013`** *(image ownership — the operator is never the sole owner of a client's image)*
 — cairn MUST support publishing to a registry namespace the operator **does not own**, and MUST
@@ -120,9 +152,21 @@ image location is reproducible without the operator's machine — and so the cli
 deployment over and keep publishing to their own registry. It MUST contain no credentials
 (`BR-CFG-010`). *(ADR-038, ADR-039, BR-CFG-008, BR-CFG-012)*
 
+**`BR-CFG-015`** *(a shared `/etc/cairn`, not a per-user one)* — `/etc/cairn` MUST remain a
+single, host-wide directory whose write access is governed by ordinary filesystem
+permissions — cairn MUST NOT assume, require, or check for any particular owner, group, or
+mode. A provisioning tool distributed alongside cairn (`cairn-provision`, `BR-DEPLOY-021`) MAY
+share the directory with a group by default so multiple operators can edit `builder.toml`
+without root; doing so or skipping it are both conforming. `cairn doctor` MAY report the
+directory's current group, permissions, and the invoking user's membership, but MUST NOT
+mutate any of them — diagnostic only, matching every other doctor check. *(ADR-042, ADR-043,
+BR-DEPLOY-021)*
+
 ---
 
 ## Cross-references
 - `DEPLOY`/`ADR-017` owns `common_site_config.json`, `.env`, and secrets.
 - `BUILD` (`BR-BUILD-008`/`011`) consumes the registry/namespace from build config.
+- `DEPLOY`/`BR-DEPLOY-021` owns the `cairn-provision` installer contract that `BR-CFG-015`'s
+  default group-sharing stage must satisfy.
 - **Follow-up (user docs):** a GHCR setup runbook (`ADR-009`) is deferred to Phase-6.
