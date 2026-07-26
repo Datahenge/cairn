@@ -1,35 +1,54 @@
 """Preflight checks behind ``cairn doctor`` (BR-CLI-007).
 
-Answers one question — *can this machine build?* — before a long build discovers the
-answer the slow way. Every check runs even after one fails, so a single invocation
-reports the full picture; each failure names its fix (BR-CLI-015) and any failure makes
-the exit code non-zero (BR-CLI-012).
+Answers one question, but which one depends on the machine: *can this machine build?* on
+a builder, *can this machine converge?* on a target. Every check runs even after one
+fails, so a single invocation reports the full picture; each failure names its fix
+(BR-CLI-015) and any failure makes the exit code non-zero (BR-CLI-012).
 
-Checks: config valid (`BR-CFG-012`); a usable build engine — docker or podman
-(`ADR-027`) — plus buildx when the engine is docker; ``git``, which every manifest ref is
-resolved with (`BR-BUILD-005`); and the vendored tree clean (BR-VEND-005), free of
+**Role detection** (`ADR-028`): a descriptor at the fixed path (`ADR-034`) means this
+host is a target; its absence means build/control. No flag, and none needed — the same
+signal `cairn doctor`'s docstring and `cairn systemd-units` already rely on.
+
+**Build/control checks:** config valid (`BR-CFG-012`); a usable build engine — docker or
+podman (`ADR-027`) — plus buildx when the engine is docker; ``git``, which every manifest
+ref is resolved with (`BR-BUILD-005`); and the vendored tree clean (BR-VEND-005), free of
 upstream git metadata (BR-VEND-007), and complete in its build inputs (BR-VEND-006).
 
-A **missing** manifest is a warning, not a failure: doctor is a machine preflight, run
-legitimately on a target or before a manifest exists. A **malformed** one fails.
+**Target checks:** the descriptor itself parses; Docker is installed and its daemon
+reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is present;
+the reconcile timer, if installed, is active; and the descriptor's watched tag resolves
+in the registry — the exact read `reconcile` performs on every poll, so a failure here is
+a failure `reconcile` would also hit.
 
-One leg of BR-CLI-007 lands later by design: the *target-role* checks (Docker + Compose,
-systemd, registry reachability). `ADR-028` makes doctor role-aware; that branch lands
-with `DEPLOY`. Today doctor implements the build/control role only.
+A **missing** manifest is a warning, not a failure, on a build/control host: doctor is a
+machine preflight, run legitimately before a manifest exists. A **malformed** one fails.
+The reconcile timer not yet being installed is a warning on a target, not a failure — it
+legitimately isn't, before the first manual `cairn reconcile` has succeeded.
 """
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
 import typer
 
-from . import config, engine, resolve, vendor
-from .errors import BuildEngineError, CairnError, ManifestNotFoundError
+from . import config, descriptor, engine, registry, resolve, systemd, vendor
+from .descriptor import Descriptor
+from .errors import (
+    BuildEngineError,
+    CairnError,
+    DescriptorError,
+    ManifestNotFoundError,
+    RegistryError,
+)
 
 _LABEL_WIDTH = 16
+
+#: Ceiling on a systemctl/compose probe — these are local, so slow means hung, not busy.
+_PROBE_TIMEOUT_SECONDS = 15
 
 
 class Status(Enum):
@@ -67,7 +86,18 @@ def run(preferred_engine: str | None = None) -> int:
 
 
 def run_checks(preferred_engine: str | None = None) -> list[CheckResult]:
-    """Run all build-role preflight checks in order and return their results (BR-CLI-007).
+    """Run this host's role-appropriate preflight checks (BR-CLI-007, `ADR-028`).
+
+    A descriptor at the fixed path means this host is a target; its absence means
+    build/control. *preferred_engine* only ever matters on the build/control branch.
+    """
+    if descriptor.exists():
+        return run_target_checks()
+    return run_build_checks(preferred_engine)
+
+
+def run_build_checks(preferred_engine: str | None = None) -> list[CheckResult]:
+    """Run the build/control preflight checks in order and return their results.
 
     Config is checked first because it supplies the engine preference (`BR-CFG-008`);
     an explicit *preferred_engine* still wins over the configured one. The buildx check
@@ -89,6 +119,19 @@ def run_checks(preferred_engine: str | None = None) -> list[CheckResult]:
         _guard("vendor .git", vendor.assert_no_nested_git, "no nested .git"),
         _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
     ]
+
+
+def run_target_checks() -> list[CheckResult]:
+    """Run the target preflight checks in order and return their results (`ADR-028`).
+
+    The descriptor is checked first because the registry check needs the reference it
+    names; if it fails to load there is nothing to check the registry against.
+    """
+    descriptor_result, loaded = check_descriptor()
+    results = [descriptor_result, check_docker(), check_compose(), check_reconcile_timer()]
+    if loaded is not None:
+        results.append(check_registry_reachable(loaded))
+    return results
 
 
 def check_config() -> tuple[CheckResult, config.BuildConfig | None]:
@@ -113,6 +156,111 @@ def check_config() -> tuple[CheckResult, config.BuildConfig | None]:
     sources = ", ".join(str(p) for p in build_config.sources) or "defaults only"
     detail = f"{manifest_path.name} valid, {len(manifest.apps)} app(s); build config: {sources}"
     return CheckResult(label, Status.OK, detail), build_config
+
+
+def check_descriptor() -> tuple[CheckResult, Descriptor | None]:
+    """Validate the environment descriptor, returning it for reuse (`BR-DEPLOY-010`).
+
+    Doctor only reaches this branch because `descriptor.exists()` was already true
+    (`run_checks`), so a failure here means the file is present but does not parse —
+    the same failure `reconcile` would hit on its next poll.
+    """
+    label = "descriptor"
+    try:
+        loaded = descriptor.load()
+    except DescriptorError as exc:
+        return CheckResult(label, Status.FAIL, _first_line(str(exc))), None
+
+    detail = (
+        f"environment '{loaded.environment}', site '{loaded.site}', watching {loaded.reference}"
+    )
+    return CheckResult(label, Status.OK, detail), loaded
+
+
+def check_docker() -> CheckResult:
+    """Confirm Docker is installed and its daemon reachable.
+
+    `DEPLOY` is Docker-only regardless of what a builder chose (`ADR-002`, `ADR-027`), so
+    this checks `docker` specifically rather than reusing build-engine detection, which
+    would also accept podman.
+    """
+    label = "docker"
+    try:
+        selected = engine.check(engine.DOCKER)
+    except BuildEngineError as exc:
+        return CheckResult.of(label, False, _first_line(str(exc)))
+    return CheckResult.of(label, True, f"docker v{selected.version}")
+
+
+def check_compose() -> CheckResult:
+    """Confirm the `docker compose` plugin is present — every reconcile pass shells to it."""
+    label = "docker compose"
+    result = _run(["docker", "compose", "version"])
+    if result is None or result.returncode != 0:
+        detail = _first_line(result.stderr or result.stdout) if result else ""
+        return CheckResult.of(
+            label, False, detail or "`docker compose version` failed; is the plugin installed?"
+        )
+    return CheckResult.of(label, True, _first_line(result.stdout) or "present")
+
+
+def check_reconcile_timer() -> CheckResult:
+    """Report whether the reconcile timer is installed and active.
+
+    A warning, not a failure: a target legitimately has no timer yet before the first
+    manual `cairn reconcile` has succeeded — installing it earlier is what turns one wrong
+    descriptor into a wrong deploy every few minutes, which is why `systemd-units` prints
+    rather than installs. Unlike `check_compose`, a nonzero exit here is the *normal* answer
+    for "not active" (`systemctl is-active`'s documented behaviour) — not a failure to run.
+    """
+    label = "reconcile timer"
+    unit = f"{systemd.UNIT_NAME}.timer"
+    result = _run(["systemctl", "is-active", unit])
+    if result is None:
+        return CheckResult(
+            label, Status.WARN, "systemd not available, or the timer is not installed"
+        )
+
+    state = result.stdout.strip() or result.stderr.strip() or "unknown"
+    if state == "active":
+        return CheckResult(label, Status.OK, f"{unit} is active")
+    return CheckResult(
+        label,
+        Status.WARN,
+        f"{unit} is {state} — install it with `cairn systemd-units` once a manual "
+        f"`cairn reconcile` has succeeded",
+    )
+
+
+def check_registry_reachable(loaded: Descriptor) -> CheckResult:
+    """Resolve the descriptor's watched tag in the registry — reconcile's own read.
+
+    Exercising the exact call `reconcile` makes on every poll (`BR-DEPLOY-002`) means a
+    failure here is a failure reconcile would also hit, with the same message it would
+    show — never a doctor-specific approximation of the real check.
+    """
+    label = "registry"
+    try:
+        ref = registry.parse_ref(loaded.reference)
+        digest = registry.digest_of(ref)
+    except RegistryError as exc:
+        return CheckResult(label, Status.FAIL, _first_line(str(exc)))
+    return CheckResult(label, Status.OK, f"{loaded.reference} resolves to {digest[:19]}")
+
+
+def _run(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+    """Run *command*, returning the completed process, or None if it could not run at all.
+
+    Deliberately returns the whole result rather than picking stdout-on-success the way
+    other probes in this codebase do: `check_compose` and `check_reconcile_timer` disagree
+    about what a nonzero exit means, so the interpretation has to stay with each caller.
+    """
+    try:
+        return subprocess.run(
+            command, capture_output=True, text=True, timeout=_PROBE_TIMEOUT_SECONDS, check=False
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
 
 
 def report(results: list[CheckResult]) -> int:

@@ -12,11 +12,14 @@ import pytest
 
 from cairn import config as config_module
 from cairn import doctor, engine
+from cairn.descriptor import Descriptor
 from cairn.errors import (
     BuildEngineError,
+    DescriptorError,
     ManifestInvalidError,
     ManifestNotFoundError,
     RefResolutionError,
+    RegistryError,
     VendorDriftError,
 )
 
@@ -293,3 +296,217 @@ def test_report_exit_code_nonzero_on_any_failure():
     results = [doctor.CheckResult.of("a", True, "ok"), doctor.CheckResult.of("b", False, "bad")]
 
     assert doctor.report(results) == 1
+
+
+# --- role detection (`ADR-028`) ----------------------------------------------
+
+
+def test_run_checks_dispatches_to_target_when_a_descriptor_exists(monkeypatch):
+    monkeypatch.setattr(doctor.descriptor, "exists", lambda: True)
+    monkeypatch.setattr(doctor, "run_target_checks", lambda: ["target-sentinel"])
+
+    assert doctor.run_checks() == ["target-sentinel"]
+
+
+def test_run_checks_dispatches_to_build_when_no_descriptor(monkeypatch):
+    monkeypatch.setattr(doctor.descriptor, "exists", lambda: False)
+    monkeypatch.setattr(
+        doctor, "run_build_checks", lambda preferred_engine=None: ["build-sentinel"]
+    )
+
+    assert doctor.run_checks() == ["build-sentinel"]
+
+
+# --- target checks (`ADR-028`) ------------------------------------------------
+
+
+def _descriptor(**overrides):
+    defaults = dict(
+        environment="production",
+        image="ghcr.io/datahenge/erpnext-btu-v16",
+        tag="production",
+        site="erp.example.com",
+    )
+    return Descriptor(**{**defaults, **overrides})
+
+
+def _completed(returncode: int, stdout: str = "", stderr: str = ""):
+    return type("R", (), {"returncode": returncode, "stdout": stdout, "stderr": stderr})()
+
+
+def test_check_descriptor_reports_environment_site_and_reference(monkeypatch):
+    monkeypatch.setattr(doctor.descriptor, "load", lambda: _descriptor())
+
+    result, loaded = doctor.check_descriptor()
+
+    assert result.status is doctor.Status.OK
+    assert "production" in result.detail
+    assert "erp.example.com" in result.detail
+    assert "ghcr.io/datahenge/erpnext-btu-v16:production" in result.detail
+    assert loaded is not None
+
+
+def test_check_descriptor_fails_when_it_does_not_parse(monkeypatch):
+    def _raise():
+        raise DescriptorError("not valid TOML")
+
+    monkeypatch.setattr(doctor.descriptor, "load", _raise)
+
+    result, loaded = doctor.check_descriptor()
+
+    assert result.status is doctor.Status.FAIL
+    assert loaded is None
+
+
+def test_check_docker_reuses_engine_detection(monkeypatch):
+    monkeypatch.setattr(doctor.engine, "check", lambda name: DOCKER)
+
+    result = doctor.check_docker()
+
+    assert result.status is doctor.Status.OK
+    assert "docker" in result.detail
+
+
+def test_check_docker_fails_when_daemon_unreachable(monkeypatch):
+    def _raise(name):
+        raise BuildEngineError("Docker daemon not reachable")
+
+    monkeypatch.setattr(doctor.engine, "check", _raise)
+
+    result = doctor.check_docker()
+
+    assert result.status is doctor.Status.FAIL
+    assert "not reachable" in result.detail
+
+
+def test_check_compose_passes_when_the_plugin_answers(monkeypatch):
+    monkeypatch.setattr(
+        doctor, "_run", lambda command: _completed(0, stdout="Docker Compose v2.29.0")
+    )
+
+    result = doctor.check_compose()
+
+    assert result.status is doctor.Status.OK
+    assert "Compose" in result.detail
+
+
+def test_check_compose_fails_on_a_nonzero_exit(monkeypatch):
+    monkeypatch.setattr(
+        doctor, "_run", lambda command: _completed(1, stderr="unknown command")
+    )
+
+    result = doctor.check_compose()
+
+    assert result.status is doctor.Status.FAIL
+    assert "unknown command" in result.detail
+
+
+def test_check_compose_fails_when_docker_itself_is_absent(monkeypatch):
+    monkeypatch.setattr(doctor, "_run", lambda command: None)
+
+    result = doctor.check_compose()
+
+    assert result.status is doctor.Status.FAIL
+
+
+def test_check_reconcile_timer_is_ok_when_active(monkeypatch):
+    monkeypatch.setattr(doctor, "_run", lambda command: _completed(0, stdout="active\n"))
+
+    result = doctor.check_reconcile_timer()
+
+    assert result.status is doctor.Status.OK
+
+
+def test_check_reconcile_timer_warns_when_inactive(monkeypatch):
+    """Not a failure: legitimately true before the first manual reconcile."""
+    monkeypatch.setattr(doctor, "_run", lambda command: _completed(3, stdout="inactive\n"))
+
+    result = doctor.check_reconcile_timer()
+
+    assert result.status is doctor.Status.WARN
+    assert "inactive" in result.detail
+
+
+def test_check_reconcile_timer_warns_when_systemd_absent(monkeypatch):
+    monkeypatch.setattr(doctor, "_run", lambda command: None)
+
+    result = doctor.check_reconcile_timer()
+
+    assert result.status is doctor.Status.WARN
+    assert "not available" in result.detail
+
+
+def test_check_registry_reachable_reads_the_descriptors_own_reference(monkeypatch):
+    seen = {}
+
+    def _digest_of(ref):
+        seen["ref"] = ref
+        return "sha256:" + "a" * 64
+
+    monkeypatch.setattr(doctor.registry, "digest_of", _digest_of)
+
+    result = doctor.check_registry_reachable(_descriptor())
+
+    assert result.status is doctor.Status.OK
+    assert str(seen["ref"]) == "ghcr.io/datahenge/erpnext-btu-v16:production"
+
+
+def test_check_registry_reachable_fails_with_the_registrys_own_message(monkeypatch):
+    def _raise(ref):
+        raise RegistryError("not permitted to read ghcr.io/datahenge/erpnext-btu-v16")
+
+    monkeypatch.setattr(doctor.registry, "digest_of", _raise)
+
+    result = doctor.check_registry_reachable(_descriptor())
+
+    assert result.status is doctor.Status.FAIL
+    assert "not permitted" in result.detail
+
+
+def test_run_target_checks_skips_the_registry_when_the_descriptor_fails(monkeypatch):
+    def _raise():
+        raise DescriptorError("nope")
+
+    monkeypatch.setattr(doctor.descriptor, "load", _raise)
+    monkeypatch.setattr(doctor, "check_docker", lambda: doctor.CheckResult.of("docker", True, "ok"))
+    monkeypatch.setattr(
+        doctor, "check_compose", lambda: doctor.CheckResult.of("docker compose", True, "ok")
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_reconcile_timer",
+        lambda: doctor.CheckResult.of("reconcile timer", True, "ok"),
+    )
+
+    results = doctor.run_target_checks()
+
+    assert [r.label for r in results] == [
+        "descriptor",
+        "docker",
+        "docker compose",
+        "reconcile timer",
+    ]
+
+
+def test_run_target_checks_includes_the_registry_when_the_descriptor_loads(monkeypatch):
+    monkeypatch.setattr(doctor.descriptor, "load", lambda: _descriptor())
+    monkeypatch.setattr(doctor, "check_docker", lambda: doctor.CheckResult.of("docker", True, "ok"))
+    monkeypatch.setattr(
+        doctor, "check_compose", lambda: doctor.CheckResult.of("docker compose", True, "ok")
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_reconcile_timer",
+        lambda: doctor.CheckResult.of("reconcile timer", True, "ok"),
+    )
+    monkeypatch.setattr(doctor.registry, "digest_of", lambda ref: "sha256:" + "a" * 64)
+
+    results = doctor.run_target_checks()
+
+    assert [r.label for r in results] == [
+        "descriptor",
+        "docker",
+        "docker compose",
+        "reconcile timer",
+        "registry",
+    ]
