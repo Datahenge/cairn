@@ -9,6 +9,28 @@ code changes live in git history.
 
 ---
 
+## 2026-07-27 (later still — site names come from the filesystem, not from `list-apps`' formatting)
+
+A real target Brian was bringing up hit a false `is_multi_site` STOP on a perfectly ordinary
+single-site host. Diagnosis: `_parse_list_apps` inferred site names from `bench --site all
+list-apps`'s formatting — an unindented line meant a site, an indented one an app. Measured on
+this host's Frappe 16.26.1, a single site produces **no header line at all**, just a flat,
+unindented two-line app list (`frappe`, `erpnext`). Both lines read as "sites," zero apps were
+found, and cairn refused to adopt a host that in fact serves exactly one site
+(`erp.lsnav.app`, confirmed via `ls sites/`).
+
+- **Site discovery no longer depends on `list-apps` at all.** `_survey_sites_and_apps` now reads
+  `sites/*/site_config.json` directly — the same test bench itself uses to recognize a site — and
+  treats that as authoritative. A side benefit: sites are now known even when `bench` itself can't
+  answer (a dead backend), which previously lost the site along with the apps.
+- **`_parse_list_apps` replaced with `_parse_apps(output, sites)`**, which filters out any line
+  matching an already-known site name and treats everything else as an app — correct whether or
+  not a given bench version prints the (now redundant) header line, with no indentation-sniffing
+  at all.
+- Revised `BR-CLI-020` to require filesystem-derived site names.
+
+---
+
 ## 2026-07-27 (later still — `cairn adopt` recognizes cairn's own registry by label, not by name)
 
 Continuing the same discussion: reordering the stages (below) fixes the common, first-run case,

@@ -205,6 +205,14 @@ It MUST derive, from the live stack rather than from anything the operator state
 - the **image and tag currently running**;
 - the `.env` in use.
 
+Site names MUST be read from the filesystem (`sites/<name>/site_config.json`), never parsed out
+of `bench --site all list-apps`'s own formatting: that command's site-header convention has
+varied across Frappe versions — measured on 16.26.1, a single-site host omits the header
+entirely and prints a flat app list — and treating it as the source of site names turns a version
+difference into a false multi-site stop, or worse, zero apps found on an ordinary host. Installed
+apps MAY still come from `list-apps`, filtered against the already-known site names rather than
+by indentation.
+
 It MUST **report gaps rather than guess**: anything it cannot determine is named, with the reason,
 and left absent from the output. A plausible default silently inserted here becomes a wrong deploy
 later.

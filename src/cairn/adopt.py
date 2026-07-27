@@ -341,12 +341,39 @@ def _cairn_managed_projects() -> set[str]:
 
 
 def _survey_sites_and_apps(found: Survey) -> None:
-    """Read the site list and installed apps from bench itself.
+    """Read the real sites from the filesystem, then installed apps from bench.
 
-    One call answers both, and it answers them from the *site*, which is the only authority —
-    the compose ``SITES`` variable says what the proxy serves, not what exists.
+    A site is authoritatively a ``sites/<name>/site_config.json`` — the same test bench itself
+    uses to recognize one — rather than anything parsed out of ``bench --site all list-apps``.
+    That command's own formatting has varied across versions: recent Frappe (measured on
+    16.26.1) omits the site-name header entirely when there is exactly one site, printing a
+    flat, unindented app list — which older parsing here, keyed on indentation, misread as one
+    "site" per app, with zero apps found at all. Filesystem enumeration has no such ambiguity.
     """
     if found.project is None:
+        return
+
+    listing = _capture(
+        self_compose(
+            found,
+            ["exec", "-T", BENCH_SERVICE, "find", "sites", "-maxdepth", "2", "-name",
+             "site_config.json"],
+        )
+    )
+    if listing is None:
+        found.findings.append(
+            Finding("sites", "could not list `sites/`; is the backend container up?")
+        )
+        return
+
+    sites = tuple(sorted({
+        line.strip().split("/")[-2] for line in listing.splitlines() if line.strip()
+    }))
+    found.sites = sites
+    if not sites:
+        found.findings.append(
+            Finding("sites", "no site_config.json was found under sites/; nothing to converge")
+        )
         return
 
     output = _capture(
@@ -355,44 +382,33 @@ def _survey_sites_and_apps(found: Survey) -> None:
     if output is None:
         found.findings.append(
             Finding(
-                "sites and apps",
-                "`bench --site all list-apps` did not answer; is the backend container up?",
+                "apps", "`bench --site all list-apps` did not answer; is the backend container up?"
             )
         )
         return
-
-    sites, apps = _parse_list_apps(output)
-    found.sites = sites
-    found.apps = apps
-    if not sites:
-        found.findings.append(
-            Finding("sites", "bench reported no sites; this host has nothing to converge")
-        )
+    found.apps = _parse_apps(output, sites)
 
 
-def _parse_list_apps(output: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Parse ``bench --site all list-apps`` output into (sites, apps).
+def _parse_apps(output: str, sites: tuple[str, ...]) -> tuple[str, ...]:
+    """Parse ``bench --site all list-apps`` output into installed apps.
 
-    bench prints a site name, then that site's apps indented beneath it. Formats have varied
-    across versions, so this reads structurally — an unindented line naming a site, indented
-    lines naming apps — rather than matching an exact layout.
+    Every line names an app, except a line that is itself one of the *known* site names —
+    some bench versions print a site-name header before that site's apps; the single-site case
+    on recent Frappe omits it and prints a flat list instead. Filtering against the
+    authoritative site list (from ``sites/*/site_config.json``) handles both without depending
+    on indentation, which is exactly what varied between them.
     """
-    sites: list[str] = []
     apps: list[str] = []
-
     for raw in output.splitlines():
-        line = raw.rstrip()
-        if not line.strip():
+        line = raw.strip()
+        if not line:
             continue
-        if line[0].isspace():
-            name = line.split()[0]
-            if name not in apps:
-                apps.append(name)
-        else:
-            candidate = line.split()[0].rstrip(":")
-            if candidate not in sites:
-                sites.append(candidate)
-    return tuple(sites), tuple(apps)
+        name = line.split()[0].rstrip(":")
+        if name in sites:
+            continue
+        if name not in apps:
+            apps.append(name)
+    return tuple(apps)
 
 
 def _survey_image(found: Survey) -> None:

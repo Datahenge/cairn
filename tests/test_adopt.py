@@ -30,8 +30,15 @@ def _compose_ls(directory, overrides=("mariadb", "redis", "https"), name=PROJECT
     return json.dumps([{"Name": name, "Status": "running(6)", "ConfigFiles": ",".join(files)}])
 
 
+def _find_sites(sites=("erp.acme.test",)):
+    """`find sites -maxdepth 2 -name site_config.json` output: one path per real site."""
+    return "\n".join(f"sites/{site}/site_config.json" for site in sites) + "\n"
+
+
 def _list_apps(sites=("erp.acme.test",), apps=("frappe", "erpnext", "btu")):
-    """bench prints each site unindented, then that site's apps indented beneath it."""
+    """bench prints each site unindented, then that site's apps indented beneath it — the
+    older format. (Recent Frappe, single-site, omits the header entirely; see
+    `test_a_headerless_single_site_app_list_is_still_parsed_correctly`.)"""
     lines = []
     for site in sites:
         lines.append(site)
@@ -47,6 +54,7 @@ def _routes(tmp_path, **overrides):
     """The default happy-path answers, individually overridable per test."""
     answers = {
         "compose ls": _compose_ls(tmp_path),
+        "find sites": _find_sites(),
         "list-apps": _list_apps(),
         "ps": _compose_ps(),
     }
@@ -288,11 +296,14 @@ def test_an_explicit_project_is_not_filtered_even_if_cairn_manages_it(monkeypatc
 
 
 def test_an_unreachable_backend_is_reported(monkeypatch, tmp_path):
+    """Sites are known from the filesystem independently of whether bench answers, so a dead
+    backend loses only the app list, not the sites already found."""
     _install(monkeypatch, _routes(tmp_path, **{"list-apps": None}))
 
     found = adopt.survey()
 
-    assert found.sites == ()
+    assert found.sites == ("erp.acme.test",)
+    assert found.apps == ()
     assert any("backend container" in f.detail for f in found.findings)
 
 
@@ -314,7 +325,7 @@ def test_a_stack_with_no_bench_service_is_reported(monkeypatch, tmp_path):
 
 def test_an_incomplete_survey_refuses_to_render(monkeypatch, tmp_path):
     """A half-descriptor that reconcile later rejects is a worse failure than refusing now."""
-    _install(monkeypatch, _routes(tmp_path, **{"list-apps": None}))
+    _install(monkeypatch, _routes(tmp_path, **{"find sites": None}))
     found = adopt.survey()
 
     with pytest.raises(ValueError, match="no site"):
@@ -329,7 +340,13 @@ def test_multiple_sites_is_detected(monkeypatch, tmp_path):
     naming one — so converging a multi-site host would drop the others."""
     _install(
         monkeypatch,
-        _routes(tmp_path, **{"list-apps": _list_apps(sites=("a.test", "b.test"))}),
+        _routes(
+            tmp_path,
+            **{
+                "find sites": _find_sites(sites=("a.test", "b.test")),
+                "list-apps": _list_apps(sites=("a.test", "b.test")),
+            },
+        ),
     )
 
     found = adopt.survey()
@@ -344,6 +361,21 @@ def test_one_site_is_not_a_stop(monkeypatch, tmp_path):
 
     assert found.is_multi_site is False
     assert not any("STOP" in line for line in adopt.report(found))
+
+
+def test_a_headerless_single_site_app_list_is_still_parsed_correctly(monkeypatch, tmp_path):
+    """Measured on Frappe 16.26.1: a single-site host's `bench --site all list-apps` prints a
+    flat, unindented app list with no site-name header at all. Older parsing here, keyed on
+    indentation, misread both app lines as separate sites and found zero apps — turning an
+    ordinary single-site host into a false `is_multi_site` stop."""
+    headerless = "frappe  16.25.0 UNVERSIONED\nerpnext 16.26.1 UNVERSIONED\n"
+    _install(monkeypatch, _routes(tmp_path, **{"list-apps": headerless}))
+
+    found = adopt.survey()
+
+    assert found.sites == ("erp.acme.test",)
+    assert found.apps == ("frappe", "erpnext")
+    assert found.is_multi_site is False
 
 
 def test_an_app_list_mismatch_is_warned_about(monkeypatch, tmp_path):
