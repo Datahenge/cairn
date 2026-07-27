@@ -9,6 +9,24 @@ code changes live in git history.
 
 ---
 
+## 2026-07-27 (later still — recorded a local git mirror as a deferred `BR-BUILD-016` successor)
+
+After `BR-BUILD-016` shipped, Brian asked whether a future local git mirror — refreshed via
+the SSH deploy key already working host-side, served to the build over `--network=host` so
+the BuildKit sandbox needs no credential at all — would sidestep the problem entirely. It
+would, and would eliminate `github_auth.py`'s reason to exist along with it. Checked first
+whether this had already been discussed: it echoes `ADR-015`'s **Option C** ("build-time
+synthetic-ref git mirror"), rejected as too heavy — but that mirror existed to fake
+commit-SHA pinning, a different job than making a private repo reachable. Recorded as a new,
+explicitly *not a revival*, open decision rather than folding it into the closed one.
+
+- **Added `ADR-044`.** Deferred, not a default: `BR-BUILD-016` already meets today's concrete
+  need. Recorded as the strong long-term replacement candidate if PAT-based auth ever proves
+  insufficient, with the real costs sized (a new provisioning stage, a freshness mechanism,
+  the `--network=host` buildx-driver entitlement question) rather than left implicit.
+
+---
+
 ## 2026-07-27 (later still — private `github.com` apps, one token, `BR-BUILD-016`)
 
 Brian's clients own the private app repos he builds against — he can't create a fine-grained PAT
