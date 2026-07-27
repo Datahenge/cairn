@@ -32,3 +32,6 @@ htmlcov/
 
 # Claude Code local session/plan state
 .claude/
+
+# shell script for pushing to PyPI.org
+push_to_pypi.sh
