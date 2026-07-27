@@ -9,6 +9,37 @@ code changes live in git history.
 
 ---
 
+## 2026-07-27 (later — the free-disk gate now measures where Docker actually lives)
+
+Brian caught a second, sharper problem while asking about the disk-free floor: on his target
+host, Docker's data (images, volumes) lives on a separate mount from `/`, and `_check_disk()`
+was hardcoded to check `/` — so the gate could pass on a full data volume, or fail on a roomy
+root, either way measuring the wrong filesystem.
+
+- **Revised `BR-DEPLOY-021` rule 5.** The free-disk check MUST now measure the filesystem the
+  engine reports as its actual data directory (`docker info --format '{{.DockerRootDir}}'`), not
+  assume `/`. Falls back to `/` only when the engine can't be asked (not installed, or not
+  reachable yet — this runs before the earlier checks are known to have passed). The reported
+  detail names the path checked, so a mismatch would be visible rather than silently wrong, per
+  `BR-CLI-011`.
+
+---
+
+## 2026-07-27 (an explicit override for the free-disk gate)
+
+Brian asked whether `cairn-provision`'s 30 GB free-disk floor could be bypassed with `--force`.
+It could not — `--force` only governs overwriting existing files (rule 3), and the preflight gate
+(rule 5) had no override at all: any failed check, disk included, stopped the run unconditionally.
+
+- **Revised `BR-DEPLOY-021` rule 5.** The free-disk check specifically MAY now be bypassed with a
+  new, explicit `--skip-disk-free` flag — for an operator who has already judged the risk of
+  running short mid-build or mid-migration. No other prerequisite (root, engine, plugins, memory)
+  gets this treatment; running low on memory during an asset build is the kind of failure that is
+  hard to diagnose after the fact, so it stays a hard stop. A bypass is still reported, as a
+  warning in the closing summary, so it is never silent.
+
+---
+
 ## 2026-07-26 (still later — no directory search, no home directories, no local-override file; `cairn-admins`)
 
 Continuing the same discussion, prompted by two more things Brian raised: a future

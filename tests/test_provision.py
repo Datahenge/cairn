@@ -204,6 +204,64 @@ def test_the_disk_gate_uses_the_documented_floor(monkeypatch):
     assert provision._check_disk().ok is True
 
 
+def test_disk_check_targets_dockers_actual_data_dir(monkeypatch):
+    """A separate mount for Docker data is common on a target; `/` having room says nothing
+    about it."""
+    runner = Recorder(answers={"docker info": "/mnt/docker-data\n"})
+    assert provision._docker_data_dir(runner) == Path("/mnt/docker-data")
+
+    checked = []
+    monkeypatch.setattr(
+        provision.shutil,
+        "disk_usage",
+        lambda path: checked.append(path) or type("U", (), {"free": 40_000_000_000})(),
+    )
+    provision._check_disk(provision._docker_data_dir(runner))
+    assert checked == [Path("/mnt/docker-data")]
+
+
+def test_disk_check_falls_back_to_root_when_docker_cannot_answer():
+    """Not installed, or this preflight is what would install it — either way, `/` is the
+    same floor the check always used."""
+    runner = Recorder()  # no answers: `docker info` yields nothing, like a missing engine
+    assert provision._docker_data_dir(runner) == Path("/")
+
+
+def test_skip_disk_free_overrides_only_the_disk_check(monkeypatch):
+    """`--skip-disk-free` is a named exception to rule 5, not a hole in it: every other
+    prerequisite must still gate the run."""
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    monkeypatch.setattr(
+        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()
+    )
+    runner = Recorder()
+
+    with pytest.raises(provision.Aborted, match="root"):
+        provision.stage_preflight(runner, _options(role="target", skip_disk_free=True))
+
+    assert "FAIL" in runner.output  # the disk failure is still reported, not hidden
+    assert "overridden by --skip-disk-free" in runner.output
+
+
+def test_skip_disk_free_lets_a_short_disk_run_proceed(monkeypatch):
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(
+        provision, "_check_command",
+        lambda runner, label, command: provision.Check(label, True, "ok"),
+    )
+    monkeypatch.setattr(
+        provision, "_check_memory", lambda: provision.Check("available memory", True, "ok")
+    )
+    monkeypatch.setattr(
+        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()
+    )
+    runner = Recorder()
+
+    provision.stage_preflight(runner, _options(role="target", skip_disk_free=True))
+
+    assert any("overridden" in warning for warning in runner.report.warnings)
+
+
 def test_memory_is_read_as_available_not_free(tmp_path):
     """MemFree excludes reclaimable cache and would make a healthy host look starved."""
     meminfo = tmp_path / "meminfo"

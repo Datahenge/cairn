@@ -188,6 +188,14 @@ Where an installer is provided it MUST:
    owner-only permissions.
 5. **Gate before acting.** Host prerequisites — engine, plugins, free disk, available memory — MUST be
    checked and *all* results reported before any change is made, and a failure MUST stop the run.
+   The free-disk floor MAY be bypassed by an explicit flag (e.g. `--skip-disk-free`), for an
+   operator who has already judged the risk of running short mid-build or mid-migration; no other
+   prerequisite has such an override. Bypassing MUST still be reported — as a warning in the run's
+   closing summary — never silently. The free-disk check MUST measure the filesystem the engine
+   actually stores images and volumes on (the engine's reported data directory), not assume it is
+   the root filesystem — a host with a separate mount for Docker data would otherwise have the
+   wrong filesystem measured. Reported detail MUST name the path checked, so a mismatch is visible
+   rather than silently wrong.
 6. **Verify what it claims.** A step reporting success MUST have confirmed its post-condition: a
    backup is confirmed to exist and be non-empty, a registry is confirmed reachable, a written
    descriptor is confirmed to parse. This is `BR-CLI-011`'s rule applied to provisioning.

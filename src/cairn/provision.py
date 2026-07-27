@@ -230,11 +230,12 @@ def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
     All results before the first failure is deliberate. An installer that dies on the first
     problem makes the operator discover prerequisites one reboot at a time.
     """
+    disk_check = _check_disk(_docker_data_dir(runner))
     checks = [
         _check_root(),
         _check_command(runner, "docker", ["docker", "--version"]),
         _check_command(runner, "docker compose", ["docker", "compose", "version"]),
-        _check_disk(),
+        disk_check,
         _check_memory(),
     ]
     if builds(options):
@@ -248,7 +249,18 @@ def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
     for check in checks:
         runner.say(check.render())
 
-    failed = [check for check in checks if not check.ok]
+    if not disk_check.ok and options.skip_disk_free:
+        runner.say("    overridden by --skip-disk-free")
+        runner.report.warnings.append(
+            "free disk was below the minimum but the check was overridden; "
+            "a build or migration may run out of room"
+        )
+
+    failed = [
+        check
+        for check in checks
+        if not check.ok and not (check is disk_check and options.skip_disk_free)
+    ]
     if failed:
         raise Aborted(
             f"{len(failed)} prerequisite(s) failed: "
@@ -269,6 +281,19 @@ def _check_command(runner: Runner, label: str, command: list[str]) -> Check:
     return Check(label, True, output.strip().splitlines()[0] if output.strip() else "present")
 
 
+def _docker_data_dir(runner: Runner) -> Path:
+    """Where the engine actually stores images and volumes.
+
+    A separate mount for Docker data is common on a target, and the root filesystem having
+    (or lacking) room says nothing about it. Falls back to `/` when the engine can't answer
+    yet — not installed, or this preflight is what would install it.
+    """
+    output = runner.probe(["docker", "info", "--format", "{{.DockerRootDir}}"])
+    if output is None or not output.strip():
+        return Path("/")
+    return Path(output.strip())
+
+
 def _check_disk(path: Path = Path("/")) -> Check:
     try:
         free_gb = shutil.disk_usage(path).free / 1_000_000_000
@@ -278,7 +303,7 @@ def _check_disk(path: Path = Path("/")) -> Check:
     return Check(
         "free disk",
         ok,
-        f"{free_gb:.0f} GB free" + ("" if ok else f" — needs {MINIMUM_DISK_GB} GB"),
+        f"{free_gb:.0f} GB free on {path}" + ("" if ok else f" — needs {MINIMUM_DISK_GB} GB"),
     )
 
 
@@ -875,6 +900,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--build-interval", default="15min", help="build poll interval")
     parser.add_argument(
         "--skip-backup", action="store_true", help="do not back up before changing anything"
+    )
+    parser.add_argument(
+        "--skip-disk-free", action="store_true",
+        help="proceed even if free disk space is below the minimum",
     )
     parser.add_argument(
         "--admin-group", default=DEFAULT_ADMIN_GROUP,
