@@ -11,7 +11,7 @@ import types
 
 import pytest
 
-from cairn import resolve
+from cairn import github_auth, resolve
 from cairn.config import App, Frappe, Manifest
 from cairn.errors import RefResolutionError
 
@@ -161,6 +161,68 @@ def test_terminal_prompt_is_disabled(monkeypatch):
     resolve.resolve_ref("btu", "https://example.com/btu", "main")
 
     assert captured["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+
+# --- private github.com apps (BR-BUILD-016) ----------------------------------
+
+
+def test_a_github_token_authenticates_the_ls_remote_url(monkeypatch):
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    captured: dict = {}
+
+    def _capture(command, **kwargs):
+        captured["command"] = command
+        return _completed(f"{BRANCH_SHA}\trefs/heads/main\n")
+
+    monkeypatch.setattr(resolve.subprocess, "run", _capture)
+    resolve.resolve_ref("btu", "https://github.com/clientorg/btu", "main")
+
+    assert "https://ghp_secret@github.com/clientorg/btu" in captured["command"]
+
+
+def test_a_github_token_is_not_sent_to_an_unrelated_host(monkeypatch):
+    """Injecting anywhere but github.com would leak the token to that host."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    captured: dict = {}
+
+    def _capture(command, **kwargs):
+        captured["command"] = command
+        return _completed(f"{BRANCH_SHA}\trefs/heads/main\n")
+
+    monkeypatch.setattr(resolve.subprocess, "run", _capture)
+    resolve.resolve_ref("btu", "https://example.com/btu", "main")
+
+    assert "ghp_secret" not in " ".join(captured["command"])
+
+
+def test_resolved_ref_url_stays_plain_even_with_a_token(monkeypatch):
+    """The token is for the live git call only — never for anything stored or recorded."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    _stub(monkeypatch, f"{BRANCH_SHA}\trefs/heads/main\n")
+
+    resolved = resolve.resolve_ref("btu", "https://github.com/clientorg/btu", "main")
+
+    assert resolved.url == "https://github.com/clientorg/btu"
+
+
+def test_a_failed_authenticated_lookup_does_not_leak_the_token(monkeypatch):
+    """git's own error text can quote the URL it was given verbatim; that must not carry the
+    token back out through cairn's own exception."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    monkeypatch.setattr(resolve, "_run", resolve._run)  # use the real wrapper
+    monkeypatch.setattr(
+        resolve.subprocess,
+        "run",
+        lambda *a, **k: _completed(
+            returncode=128,
+            stderr="fatal: could not read from 'https://ghp_secret@github.com/clientorg/btu'\n",
+        ),
+    )
+
+    with pytest.raises(RefResolutionError) as excinfo:
+        resolve.resolve_ref("btu", "https://github.com/clientorg/btu", "main")
+
+    assert "ghp_secret" not in str(excinfo.value)
 
 
 # --- whole-manifest resolution ----------------------------------------------

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cairn import build, transcript, vendor
+from cairn import build, github_auth, transcript, vendor
 from cairn.config import App, BuildConfig, Frappe, Manifest
 from cairn.errors import BuildError, VendorDriftError
 from cairn.resolve import RefKind, Resolution, ResolvedRef
@@ -246,6 +246,57 @@ def test_dry_run_render_shows_everything_without_building():
     assert "com.datahenge.cairn.input-hash=abc123" in report
     assert "podman build" in report
     assert "(moving)" in report  # branch pins are flagged, BR-BUILD-005
+
+
+# --- private github.com apps (BR-BUILD-016) ----------------------------------
+
+
+def test_apps_json_secret_is_unchanged_without_a_token(monkeypatch):
+    monkeypatch.delenv(github_auth.GITHUB_TOKEN_ENV_VAR, raising=False)
+    plan = _plan(apps_json='[{"url": "https://github.com/clientorg/btu", "branch": "main"}]\n')
+
+    assert plan.apps_json_secret == plan.apps_json
+
+
+def test_apps_json_secret_authenticates_a_github_app(monkeypatch):
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    plan = _plan(apps_json='[{"url": "https://github.com/clientorg/btu", "branch": "main"}]\n')
+
+    assert "ghp_secret@github.com" in plan.apps_json_secret
+    assert "ghp_secret" not in plan.apps_json, "the plain field must never carry the token"
+
+
+def test_apps_json_secret_leaves_a_non_github_app_alone(monkeypatch):
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    plan = _plan(apps_json='[{"url": "https://gitlab.com/clientorg/btu", "branch": "main"}]\n')
+
+    assert "ghp_secret" not in plan.apps_json_secret
+
+
+def test_dry_run_render_never_shows_the_token(monkeypatch):
+    """`--dry-run` (BR-BUILD-012) prints `apps_json`, never `apps_json_secret`."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    plan = _plan(apps_json='[{"url": "https://github.com/clientorg/btu", "branch": "main"}]\n')
+
+    assert "ghp_secret" not in plan.render()
+
+
+def test_run_writes_the_authenticated_apps_json_to_the_real_secret_file(monkeypatch):
+    """The one place `apps_json_secret` actually matters: what bench reads during the build."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    contents: dict[str, str] = {}
+
+    def _run(command, **kwargs):
+        secret_flag = next(part for part in command if part.startswith("id=apps_json"))
+        path = Path(secret_flag.split("src=", 1)[1])
+        contents["apps_json"] = path.read_text(encoding="utf-8")
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+    plan = _plan(apps_json='[{"url": "https://github.com/clientorg/btu", "branch": "main"}]\n')
+    build.run(plan)
+
+    assert "ghp_secret@github.com" in contents["apps_json"]
 
 
 # --- preconditions and failure (BR-BUILD-009) -------------------------------

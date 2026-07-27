@@ -18,8 +18,10 @@ Two properties this module exists to enforce:
   them for the caller to warn about — `BR-BUILD-005` says the manifest *should* pin to
   tags.
 
-Resolution never authenticates: ``GIT_TERMINAL_PROMPT=0`` ensures a private or misspelled
-URL fails fast instead of blocking on a credential prompt.
+Resolution authenticates only a `github.com` URL, and only with the one token
+``CAIRN_GITHUB_TOKEN`` configures (`github_auth`, `BR-BUILD-016`) — everything else is
+unauthenticated by design: ``GIT_TERMINAL_PROMPT=0`` ensures a private or misspelled URL still
+fails fast rather than blocking on a credential prompt.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import subprocess
 from dataclasses import dataclass
 from enum import Enum
 
+from . import github_auth
 from .config import App, Manifest
 from .errors import RefResolutionError
 
@@ -177,8 +180,11 @@ def _ls_remote(name: str, url: str, ref: str) -> tuple[str | None, str | None]:
     ``ls-remote`` omits the peeled line, so an annotated tag would otherwise resolve to
     the tag object rather than the commit the build checks out.
     """
+    authenticated_url = github_auth.authenticated(url, github_auth.github_token())
     result = _run(
-        ["git", "ls-remote", "--heads", "--tags", url, ref, f"{ref}{_PEELED_SUFFIX}"], name, url
+        ["git", "ls-remote", "--heads", "--tags", authenticated_url, ref, f"{ref}{_PEELED_SUFFIX}"],
+        name,
+        url,
     )
 
     branch_commit: str | None = None
@@ -199,7 +205,14 @@ def _ls_remote(name: str, url: str, ref: str) -> tuple[str | None, str | None]:
 
 
 def _run(command: list[str], name: str, url: str) -> subprocess.CompletedProcess[str]:
-    """Run *command*, converting every failure mode into :class:`RefResolutionError`."""
+    """Run *command*, converting every failure mode into :class:`RefResolutionError`.
+
+    *url* is always the **plain** URL, used only for messages — *command* may carry an
+    authenticated form (`github_auth.authenticated`). git's own stderr is redacted too: some
+    failures quote the URL they were given verbatim, which would otherwise leak the token
+    through cairn's own exception even though cairn never put it in the message directly.
+    """
+    token = github_auth.github_token()
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
         result = subprocess.run(
@@ -220,7 +233,8 @@ def _run(command: list[str], name: str, url: str) -> subprocess.CompletedProcess
         ) from exc
 
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip().splitlines()
+        raw = github_auth.redacted(result.stderr or result.stdout, token)
+        detail = raw.strip().splitlines()
         raise RefResolutionError(
             f"{name}: cannot read {url} — {detail[-1] if detail else 'git ls-remote failed'}. "
             f"Check the URL, and that the repository is public or your git credentials "

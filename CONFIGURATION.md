@@ -153,6 +153,28 @@ config only for a genuinely personal/experimental image that isn't a deployment 
 cairn stores no credentials, in either file — authenticate with `docker login` or
 `podman login` before pushing.
 
+## Private `github.com` apps
+
+If a manifest's `[[cairn.apps]]` points at a private repository on `github.com`, set
+`$CAIRN_GITHUB_TOKEN` when you run `cairn build` (or `reconcile`, if a target ever resolves
+refs itself):
+
+```
+export CAIRN_GITHUB_TOKEN=github_pat_xxxxx
+cairn build --manifest ./cairn.toml
+```
+
+This is deliberately **not** a `builder.toml` key — that file is machine-wide and, on a shared
+box, group-*writable* by design (see below), which makes it the wrong place for a secret.
+`$CAIRN_GITHUB_TOKEN` is read directly, used only for `github.com` URLs, and never touches
+`cairn.toml`, `builder.toml`, provenance, or `--dry-run` output.
+
+If you don't own the repository — the common case building a client's private app — ask the
+client to create a **fine-grained** personal access token scoped to just that one repository
+(read-only "Contents" is enough) rather than a classic, account-wide token. A fine-grained PAT
+gives you the same one-repo isolation an SSH deploy key would, as a token you can hand off
+directly; a classic PAT is broader than this needs and shouldn't be used for it.
+
 ## Sharing `/etc/cairn` across several operators
 
 If more than one person administers a box — the common case for a consultancy's client

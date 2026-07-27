@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, appsjson, engine, resolve, tagging, vendor
+from . import __version__, appsjson, engine, github_auth, resolve, tagging, vendor
 from .config import BuildConfig, Manifest
 from .errors import BuildError
 from .resolve import Resolution
@@ -94,6 +94,24 @@ class BuildPlan:
     def references(self) -> tuple[str, str]:
         """The two fully-qualified image references this build produces."""
         return f"{self.image_base}:{self.primary_tag}", f"{self.image_base}:{self.moving_tag}"
+
+    @property
+    def apps_json_secret(self) -> str:
+        """``apps_json``, with ``CAIRN_GITHUB_TOKEN`` layered onto private `github.com` app
+        URLs (`BR-BUILD-016`).
+
+        Computed on read rather than stored: `apps_json` itself stays token-free, which is
+        what keeps `render()` (`--dry-run`, `BR-BUILD-012`) safe to print. This property is
+        for the one thing that actually needs the token — the real build secret — and nothing
+        else should call it.
+        """
+        token = github_auth.github_token()
+        if not token:
+            return self.apps_json
+        entries = json.loads(self.apps_json)
+        for entry in entries:
+            entry["url"] = github_auth.authenticated(entry["url"], token)
+        return json.dumps(entries, indent=2, sort_keys=False) + "\n"
 
     def command(self, apps_json: Path) -> list[str]:
         """Return the exact engine invocation, with *apps_json* mounted as a secret."""
@@ -279,7 +297,7 @@ def run(build_plan: BuildPlan, sink: Transcript | None = None) -> None:
     On failure the exact command is quoted back, since that is what makes the failure
     reproducible by hand (`BR-CLI-015`).
     """
-    with appsjson.written(build_plan.apps_json) as apps_json:
+    with appsjson.written(build_plan.apps_json_secret) as apps_json:
         command = build_plan.command(apps_json)
         try:
             returncode = (
@@ -341,7 +359,7 @@ def tag_cache_stage(build_plan: BuildPlan) -> str | None:
     if build_plan.engine_name != engine.PODMAN:
         return None
 
-    with appsjson.written(build_plan.apps_json) as apps_json:
+    with appsjson.written(build_plan.apps_json_secret) as apps_json:
         command = build_plan.cache_stage_command(apps_json)
         try:
             result = subprocess.run(

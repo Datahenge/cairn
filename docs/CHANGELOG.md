@@ -9,6 +9,39 @@ code changes live in git history.
 
 ---
 
+## 2026-07-27 (later still — private `github.com` apps, one token, `BR-BUILD-016`)
+
+Brian's clients own the private app repos he builds against — he can't create a fine-grained PAT
+himself (he isn't the repo owner), and a classic PAT was rejected outright as too broad. He first
+asked about an SSH deploy key already set up on the VPS (`git@github-clientrepo:...`); traced
+through, that works today for `git ls-remote` (a bare host-side subprocess) but not for the actual
+build — the clone happens inside an isolated BuildKit sandbox with no access to the host's SSH
+config at all, and forwarding it in would mean editing the vendored, unmodified Containerfile
+(`ADR-007`), i.e. the deferred fork escape hatch (`ADR-021`), not a today-sized change. Resolved
+instead: the client creates a fine-grained PAT scoped to just their one repo and hands Brian the
+token — same isolation a deploy key gives, delivered as a bearer credential instead, which *can*
+be embedded in the HTTPS URL with zero Containerfile changes.
+
+- **Added `BR-BUILD-016`.** One token, `$CAIRN_GITHUB_TOKEN`, authenticates a `github.com` app
+  URL for both `git ls-remote` (`resolve.py`) and the `apps.json` build secret (`appsjson.py`
+  content, via a new `BuildPlan.apps_json_secret` property in `build.py`). Deliberately not a
+  `builder.toml`/`BUILD_CONFIG_KEYS` entry — that file is shared and group-writable
+  (`BR-DEPLOY-022`), the wrong place for a secret.
+- **New module `github_auth.py`** — the one seam every caller routes through: `authenticated()`
+  injects the token only for `http(s)://github.com/...` (never another host, never an SSH form),
+  and `redacted()` strips the token from text that might otherwise echo it back (git's own error
+  output on a failed authenticated `ls-remote`).
+- **Provenance, `--dry-run`, and error messages stay token-free.** `BuildPlan.apps_json` (used by
+  `render()`) is never touched; only the new `apps_json_secret` property — used at the one real
+  write site, `appsjson.written(...)` — carries the credentialed form. `ResolvedRef.url` likewise
+  always stays the plain manifest URL; the token exists only for the live `ls-remote` subprocess
+  call.
+- Frappe itself stays explicitly out of scope: it rides the `FRAPPE_PATH` build-arg
+  (`BR-BUILD-004`), permanently readable via image history, so there is no safe channel for a
+  token to reach it.
+
+---
+
 ## 2026-07-27 (later still — the descriptor is now actually group-writable, and `write()` converges mode)
 
 Brian's first fully successful `cairn-provision` run surfaced a last, quieter bug: `/etc/cairn`

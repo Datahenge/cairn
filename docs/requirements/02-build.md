@@ -159,6 +159,41 @@ building. *(BR-CLI)*
 same declared image), not bit-for-bit hermetic; this limit MUST be documented. *(ADR-004,
 ADR-007)*
 
+## Private `github.com` apps
+
+**`BR-BUILD-016`** *(one token, `github.com` only)* — cairn MAY authenticate a manifest app's
+`github.com` URL with a single, operator-provided token, read from `$CAIRN_GITHUB_TOKEN`. Not a
+`BUILD_CONFIG_KEYS` entry: it has no `builder.toml` counterpart, by design — that file is
+deliberately shared and group-writable (`BR-DEPLOY-022`), the wrong place for a secret, and
+rule 4's "cairn stores no secrets" applies here exactly as it does to every other credential
+(`BR-DEPLOY-011`, `ADR-017`).
+
+Where a token is configured, cairn MUST use it for both places it talks to a `github.com`
+remote for an app: ref resolution (`git ls-remote`, `BR-BUILD-005`) and the `apps.json` build
+secret (`BR-BUILD-006`). Four things are load-bearing:
+
+1. **Scoped to `github.com` exactly.** Injected only when a URL's host is exactly `github.com`
+   over `http`/`https` — never any other host, and never an SSH form (`git@github.com:...`,
+   `ssh://…`), which needs a live handshake a Basic-auth credential cannot provide. Sending the
+   token to an unrelated host would leak it there.
+2. **The manifest never carries it.** `cairn.toml` app URLs stay plain and portable
+   (`BR-BUILD-001`); the token is layered on only at the point of the actual git invocation —
+   in memory for `ls-remote`, inside the already-ephemeral, owner-only `apps.json` secret file
+   for the build — never written back into anything that persists.
+3. **Provenance stays plain.** Resolved-ref URLs recorded onto the image (`BR-BUILD-011`),
+   `--dry-run` output (`BR-BUILD-012`), and every error message MUST show the untouched URL.
+   Where the underlying tool's own output might otherwise quote a credentialed URL back (git's
+   own error text on a failed `ls-remote`), cairn MUST redact the token from it before the
+   message is raised.
+4. **One token.** A single token covers every private `github.com` app for this phase; per-app
+   or per-org credentials are an explicit non-goal, deferred until a concrete need arises.
+
+Frappe itself is out of scope: it is supplied via the `FRAPPE_PATH` build-arg
+(`BR-BUILD-004`), which is permanently readable via image history (`BR-BUILD-006`'s own
+reasoning) — a token has no safe channel to reach it, and none is attempted.
+*(BR-BUILD-001, BR-BUILD-004, BR-BUILD-005, BR-BUILD-006, BR-BUILD-011, BR-DEPLOY-011,
+BR-DEPLOY-022, ADR-017)*
+
 ---
 
 ## Cross-references
