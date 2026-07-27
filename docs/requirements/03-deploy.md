@@ -178,11 +178,14 @@ backup` writes into the sites volume and is therefore the operator's act.
 Where an installer is provided it MUST:
 
 1. **Be idempotent.** Re-running it MUST converge rather than duplicate or fail. This is what makes
-   the second and third machine cheap, which is the reason it exists at all. Where a stage
-   regenerates identity material a running container already loaded into memory (e.g. the
-   registry's TLS certificate), convergence MUST recreate that container — a file changing
-   underneath an already-running process is invisible both to the process and to `docker compose
-   up -d`'s own change detection, so nothing else would make it pick up the new file.
+   the second and third machine cheap, which is the reason it exists at all. Convergence covers a
+   file's **mode**, not only its content — a file whose content already matches MUST still have
+   its mode corrected if it drifted, since matching content is otherwise a permanent excuse to
+   never look at it again. Where a stage regenerates identity material a running container
+   already loaded into memory (e.g. the registry's TLS certificate), convergence MUST recreate
+   that container — a file changing underneath an already-running process is invisible both to
+   the process and to `docker compose up -d`'s own change detection, so nothing else would make
+   it pick up the new file.
 2. **Offer a dry run** that prints every action, including every command it would run, and writes
    nothing.
 3. **Never silently overwrite.** An existing file it would replace MUST be preserved and named, and
@@ -222,4 +225,12 @@ root check, and its postcondition (the directory's actual group and mode) confir
 assumed. cairn itself MUST NOT perform this — creating or chowning a group is a host mutation
 and stays with the installer (`ADR-040`); `cairn doctor` MAY report the directory's current
 group, mode, and the invoking user's membership, but MUST NOT change any of them (`BR-CFG-015`).
+
+Sharing the directory is not enough on its own: the setgid bit propagates *group ownership* to a
+file created later, but never its permission bits — a file the installer writes still gets
+whatever mode its own umask leaves it, which is commonly group-**readable** only. Any file under
+`/etc/cairn` the installer writes and an operator is meant to edit without `sudo` (the
+descriptor; `builder.toml` is operator-authored, not installer-written) MUST therefore be written
+group-**writable** explicitly, not left to inheritance. Key material stays the documented
+exception — owner-only regardless (rule 4).
 *(ADR-042, ADR-043, BR-CFG-015, BR-DEPLOY-021)*

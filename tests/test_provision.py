@@ -374,12 +374,40 @@ def test_an_identical_file_is_left_alone_and_reported_as_skipped(tmp_path):
     """Re-running must converge, not churn. This is what makes VPS #2 and #3 cheap."""
     target = tmp_path / "compose.yaml"
     target.write_text("services: {}\n", encoding="utf-8")
+    os.chmod(target, 0o644)  # pin the starting mode; the ambient umask is not the point here
     runner = provision.Runner(dry_run=False, force=False)
 
     runner.write(target, "services: {}\n", what="registry compose")
 
     assert runner.report.done == []
     assert any("already correct" in note for note in runner.report.skipped)
+
+
+def test_identical_content_with_a_drifted_mode_is_still_corrected(tmp_path):
+    """Convergence (rule 1) covers the mode, not just the content — the directory's setgid bit
+    only propagates group *ownership* to a new file, never its permission bits, so a file
+    created under an unrelated umask can drift from what sharing `/etc/cairn` requires."""
+    target = tmp_path / "environment.toml"
+    target.write_text('environment = "test"\n', encoding="utf-8")
+    os.chmod(target, 0o644)
+    runner = provision.Runner(dry_run=False, force=False)
+
+    runner.write(target, 'environment = "test"\n', mode=0o664, what="descriptor")
+
+    assert (target.stat().st_mode & 0o777) == 0o664
+    assert any("corrected" in line for line in runner.report.done)
+
+
+def test_a_dry_run_reports_but_does_not_correct_a_drifted_mode(tmp_path):
+    target = tmp_path / "environment.toml"
+    target.write_text('environment = "test"\n', encoding="utf-8")
+    os.chmod(target, 0o644)
+    runner = provision.Runner(dry_run=True, force=False)
+
+    runner.write(target, 'environment = "test"\n', mode=0o664, what="descriptor")
+
+    assert (target.stat().st_mode & 0o777) == 0o644
+    assert any("would correct" in line for line in runner.report.done)
 
 
 def test_writing_twice_converges(tmp_path):

@@ -9,6 +9,27 @@ code changes live in git history.
 
 ---
 
+## 2026-07-27 (later still — the descriptor is now actually group-writable, and `write()` converges mode)
+
+Brian's first fully successful `cairn-provision` run surfaced a last, quieter bug: `/etc/cairn`
+itself had the correct shared group and setgid bit (`drwxrwsr-x root cairn-admins`), but
+`environment.toml` inside it came out `rw-r--r--` — group-**readable**, not writable, defeating
+the entire point of `BR-DEPLOY-022` sharing the directory in the first place. Setgid only
+propagates *group ownership* to a new file, never its permission bits — those still come from
+whatever umask the writing process (root, here) happens to have.
+
+- **`stage_descriptor` now writes `environment.toml` at the new `SHARED_FILE_MODE` (`0o664`)**
+  instead of `write()`'s general-purpose default (`0o644`).
+- **`Runner.write()` now converges mode as well as content.** Previously, once a file's content
+  matched, it was reported "already correct" forever — including a mode that had drifted, which
+  is exactly what left Brian's existing `environment.toml` stuck at `0o644` even though nothing
+  about its content was ever wrong. Re-running now corrects a drifted mode in place (no backup
+  needed — same content, only the mode changes), and a `--dry-run` reports what it would fix
+  rather than calling a wrong mode "already correct."
+- Revised `BR-DEPLOY-021` rule 1 and `BR-DEPLOY-022` to state both explicitly.
+
+---
+
 ## 2026-07-27 (later still — site names come from the filesystem, not from `list-apps`' formatting)
 
 A real target Brian was bringing up hit a false `is_multi_site` STOP on a perfectly ordinary

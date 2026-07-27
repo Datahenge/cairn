@@ -89,6 +89,13 @@ DEFAULT_ADMIN_GROUP = "cairn-admins"
 #: writes are meant to be restricted to the shared group.
 SHARED_CONFIG_MODE = 0o2775
 
+#: rw-rw-r--, for a file under `/etc/cairn` an operator in the shared group is meant to edit
+#: (the descriptor; `builder.toml`, written by the operator, not cairn). Setgid on the
+#: directory only propagates *group ownership* to a new file, never its permission bits —
+#: without this, a root-created file inherits root's umask and ends up group-*readable* only,
+#: silently defeating the whole point of sharing the directory (`BR-DEPLOY-022`).
+SHARED_FILE_MODE = 0o664
+
 #: A **builder** builds images and serves them. It has a manifest, a vendored tree, and a
 #: registry. It has no ERPNext site — so nothing to reconnoitre, nothing to back up, and no
 #: environment descriptor, which describes a *running* deployment.
@@ -198,10 +205,28 @@ class Runner:
         return result.stdout if result.returncode == 0 else None
 
     def write(self, path: Path, content: str, *, mode: int = 0o644, what: str) -> None:
-        """Write *path*, preserving anything already there (`BR-DEPLOY-021` rule 3)."""
+        """Write *path*, preserving anything already there (`BR-DEPLOY-021` rule 3).
+
+        Convergence (rule 1) covers the mode as well as the content: a file created before a
+        mode change shipped, or one a `chmod` outside cairn drifted, must still end up correct
+        on a re-run — the directory's own setgid bit only propagates *group ownership* to new
+        files, never permission bits, so an unrelated umask is otherwise free to leave a
+        supposedly-shared file group-unwritable forever.
+        """
         if path.exists() and path.read_text(encoding="utf-8") == content:
-            self.say(f"    {path} already correct — leaving it")
-            self.report.skipped.append(f"{what} (already correct)")
+            current_mode = path.stat().st_mode & 0o7777
+            if current_mode == mode:
+                self.say(f"    {path} already correct — leaving it")
+                self.report.skipped.append(f"{what} (already correct)")
+            elif self.dry_run:
+                self.say(
+                    f"    {path} content correct — would fix mode {current_mode:o} -> {mode:o}"
+                )
+                self.report.done.append(f"would correct {path} to mode {mode:o}")
+            else:
+                os.chmod(path, mode)
+                self.say(f"    {path} already correct — fixed mode {current_mode:o} -> {mode:o}")
+                self.report.done.append(f"corrected {path} to mode {mode:o}")
             return
 
         if path.exists() and not self.force:
@@ -681,7 +706,9 @@ def stage_descriptor(runner: Runner, options: argparse.Namespace) -> None:
             f"  {shlex.join(command)}"
         )
 
-    runner.write(DESCRIPTOR_PATH, rendered, what=f"installed {DESCRIPTOR_PATH}")
+    runner.write(
+        DESCRIPTOR_PATH, rendered, mode=SHARED_FILE_MODE, what=f"installed {DESCRIPTOR_PATH}"
+    )
     if runner.dry_run:
         return
 
