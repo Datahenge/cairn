@@ -106,6 +106,17 @@ It also shares `/etc/cairn` with a group by default (`cairn-admins`, or `--admin
 everyone needing `sudo` — see [CONFIGURATION.md](CONFIGURATION.md#sharing-etccairn-across-several-operators).
 `--no-admin-group` skips this and leaves `/etc/cairn` exactly as found.
 
+On a builder (or `--role both`), one of these stages stands up a small **supporting**
+container: a local OCI registry (the standard `registry:2` image) that builds push to and
+targets pull from, bound to `127.0.0.1` over a self-signed, trusted certificate. This is not
+"cairn running as a container" — cairn itself stays a plain CLI process on the host. The
+registry is its own Docker Compose project (`cairn-registry`, at `/opt/cairn-registry`),
+entirely separate from your site's own deployment — whatever Compose project already runs
+your ERPNext stack, which `cairn-provision` never creates and only ever adopts. That
+separation is why, once both are running on a `--role both` box, the `descriptor` stage
+needs an explicit `--project <name>` naming your site: with two Compose projects present,
+cairn refuses to guess which one is the deployment to describe.
+
 ### For development
 
 Contributing to cairn itself, or re-syncing the vendored upstream, needs a checkout:

@@ -55,6 +55,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .adopt import CAIRN_MANAGED_LABEL
+
 # --- host requirements -------------------------------------------------------
 
 #: Free disk a build needs: ~2.5 GB of transient git, a ~4.6 GB builder stage, a ~2.75 GB final
@@ -98,8 +100,11 @@ BUILDER_STAGES = ("preflight", "admin-group", "registry", "timers")
 TARGET_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "timers")
 
 #: Both roles on one box. Today's case while builder and target are the same machine; the union
-#: in dependency order, so the backup still happens before anything is installed.
-BOTH_STAGES = ("preflight", "admin-group", "recon", "backup", "registry", "descriptor", "timers")
+#: in dependency order, so the backup still happens before anything is installed. `descriptor`
+#: MUST precede `registry`: `cairn adopt` needs exactly one compose project running to describe
+#: without `--project`, and `registry` starting its own (`cairn-registry`) would otherwise make
+#: every fresh `--role both` install ambiguous for no reason connected to the actual site.
+BOTH_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "registry", "timers")
 
 ROLE_STAGES = {"builder": BUILDER_STAGES, "target": TARGET_STAGES, "both": BOTH_STAGES}
 
@@ -548,7 +553,8 @@ def stage_registry(runner: Runner, options: argparse.Namespace) -> None:
     host = f"localhost:{REGISTRY_PORT}"
     crt, key = CERT_DIR / "registry.crt", CERT_DIR / "registry.key"
 
-    if not crt.exists() or options.force:
+    cert_renewed = not crt.exists() or options.force
+    if cert_renewed:
         CERT_DIR.mkdir(parents=True, exist_ok=True)
         runner.run(
             [
@@ -584,10 +590,13 @@ def stage_registry(runner: Runner, options: argparse.Namespace) -> None:
         registry_compose(),
         what=f"wrote the registry compose file to {REGISTRY_DIR}",
     )
-    runner.run(
-        ["docker", "compose", "--project-directory", str(REGISTRY_DIR), "up", "-d"],
-        what="starting the registry",
-    )
+    up_command = ["docker", "compose", "--project-directory", str(REGISTRY_DIR), "up", "-d"]
+    if cert_renewed:
+        # An already-running container has the old cert loaded in memory; `up -d` alone
+        # would leave it serving a certificate nothing trusts anymore, since the bind-mounted
+        # file changing underneath it is invisible to compose's own change detection.
+        up_command.append("--force-recreate")
+    runner.run(up_command, what="starting the registry")
 
     if not runner.dry_run:
         probe = runner.probe(["curl", "-fsS", f"https://{host}/v2/"])
@@ -620,6 +629,11 @@ def registry_compose() -> str:
     ``REGISTRY_STORAGE_DELETE_ENABLED`` is what makes keep-N retention possible later — the
     reason hosted registries make retention awkward is that some of them cannot delete a single
     version at all.
+
+    Carries ``CAIRN_MANAGED_LABEL`` so ``cairn adopt`` can recognize this project as cairn's own
+    infrastructure and exclude it when auto-detecting a site — by label, never by the
+    ``cairn-registry`` project name, which is only ``REGISTRY_DIR``'s basename and asserts
+    nothing on its own.
     """
     return f"""\
 # Written by cairn-provision. A local OCI registry over self-signed TLS.
@@ -627,6 +641,8 @@ services:
   registry:
     image: docker.io/library/registry:2
     restart: unless-stopped
+    labels:
+      - "{CAIRN_MANAGED_LABEL}=true"
     ports:
       - "127.0.0.1:{REGISTRY_PORT}:{REGISTRY_PORT}"
     environment:

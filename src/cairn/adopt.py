@@ -47,6 +47,13 @@ PROBE_TIMEOUT_SECONDS = 120
 #: The compose service `bench` runs in, per frappe_docker's own layout.
 BENCH_SERVICE = "backend"
 
+#: A container cairn itself stood up as supporting infrastructure carries this label —
+#: `registry_compose()` in `provision.py` is the one place that writes it. Identifying "cairn
+#: made this" by label rather than by a project's *name* means an operator's own project can
+#: never collide with it: `cairn-registry` is only the *default* name compose gives that
+#: directory, never something cairn asserts or enforces.
+CAIRN_MANAGED_LABEL = "com.datahenge.cairn.managed"
+
 #: An override path looks like ``…/overrides/compose.<name>.yaml``; this recovers ``<name>``.
 _OVERRIDE_RE = re.compile(r"overrides/compose\.(?P<name>[^/]+)\.ya?ml$")
 
@@ -267,7 +274,19 @@ def _survey_project(found: Survey, wanted: str | None) -> None:
         )
         return
 
-    chosen = _pick_project(projects, wanted)
+    candidates = projects
+    if wanted is None:
+        # Auto-detection only — an operator naming a project explicitly is trusted as-is.
+        managed = _cairn_managed_projects()
+        own_site = [p for p in projects if isinstance(p, dict) and p.get("Name") not in managed]
+        if not own_site:
+            found.findings.append(
+                Finding("compose project", "no compose project is running on this host")
+            )
+            return
+        candidates = own_site
+
+    chosen = _pick_project(candidates, wanted)
     if chosen is None:
         names = ", ".join(str(p.get("Name")) for p in projects if isinstance(p, dict))
         found.findings.append(
@@ -300,6 +319,25 @@ def _pick_project(projects: list, wanted: str | None) -> dict | None:
     if wanted is not None:
         return next((p for p in running if p.get("Name") == wanted), None)
     return running[0] if len(running) == 1 else None
+
+
+def _cairn_managed_projects() -> set[str]:
+    """Compose projects with at least one container cairn itself stood up.
+
+    Read from `docker ps`'s own compose labels rather than assumed from a name: any container
+    matching `CAIRN_MANAGED_LABEL` already carries `com.docker.compose.project`, since compose
+    applies that to everything it creates.
+    """
+    output = _capture(
+        [
+            "docker", "ps",
+            "--filter", f"label={CAIRN_MANAGED_LABEL}=true",
+            "--format", '{{.Label "com.docker.compose.project"}}',
+        ]
+    )
+    if not output:
+        return set()
+    return {line.strip() for line in output.splitlines() if line.strip()}
 
 
 def _survey_sites_and_apps(found: Survey) -> None:

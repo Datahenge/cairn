@@ -209,6 +209,15 @@ It MUST **report gaps rather than guess**: anything it cannot determine is named
 and left absent from the output. A plausible default silently inserted here becomes a wrong deploy
 later.
 
+When auto-detecting the project (no `--project` given) and more than one compose project is
+running, `adopt` MUST exclude any project containing a container cairn itself stood up as
+supporting infrastructure (e.g. `cairn-provision`'s local registry), so that infrastructure never
+forces a `--project` disambiguation the operator's own site did not cause. Exclusion MUST be by an
+explicit label cairn writes into its own compose files, never by a project's **name** — a name is
+only ever the default compose derives from a directory, something an operator's own project could
+coincidentally share. An explicit `--project` naming a cairn-managed project anyway MUST still be
+honored — exclusion applies only to guessing, never to a stated choice.
+
 Given a manifest it MUST **cross-check** the manifest's ordered app list (`BR-BUILD-003`) against the
 site's installed apps and report disagreement — a mismatch means `bench migrate` would run against
 code the site does not expect, which is the likeliest way a first deploy fails.

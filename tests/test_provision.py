@@ -123,6 +123,14 @@ def test_both_is_the_union_and_still_backs_up_first():
     assert stages.index("preflight") == 0
 
 
+def test_descriptor_precedes_registry_on_a_bootstrap_box():
+    """`cairn adopt` needs exactly one compose project running to auto-detect it. If `registry`
+    ran first, its own `cairn-registry` project would make every fresh `--role both` install
+    ambiguous for a reason that has nothing to do with the actual site."""
+    stages = provision.BOTH_STAGES
+    assert stages.index("descriptor") < stages.index("registry")
+
+
 @pytest.mark.parametrize(
     ("stage", "role", "expected"),
     [
@@ -522,6 +530,12 @@ def test_the_registry_binds_to_localhost_only():
     assert f'"127.0.0.1:{provision.REGISTRY_PORT}:{provision.REGISTRY_PORT}"' in rendered
 
 
+def test_the_registry_carries_the_cairn_managed_label():
+    """So `cairn adopt` can recognize this project as cairn's own infrastructure by label —
+    never by assuming anything from the `cairn-registry` project name."""
+    assert f'"{provision.CAIRN_MANAGED_LABEL}=true"' in provision.registry_compose()
+
+
 def test_the_registry_can_delete_versions():
     """What makes keep-N retention possible later; some hosted registries cannot do it at all."""
     assert "REGISTRY_STORAGE_DELETE_ENABLED" in provision.registry_compose()
@@ -550,6 +564,31 @@ def test_the_certificate_is_trusted_in_both_stores(sandbox):
     docker_ca = provision.DOCKER_CERT_DIR / f"localhost:{provision.REGISTRY_PORT}" / "ca.crt"
     assert docker_ca.read_text(encoding="utf-8") == "cert\n"
     assert runner.ran("update-ca-certificates")
+
+
+def test_a_renewed_certificate_forces_the_registry_container_to_recreate(sandbox, monkeypatch):
+    """A running container has the old cert loaded in memory; `up -d` alone would leave it
+    serving a certificate nothing trusts anymore, since a changed bind-mounted file is
+    invisible to compose's own change detection (rule 1: re-running MUST converge)."""
+    monkeypatch.setattr(provision.os, "chmod", lambda path, mode: None)
+    provision.CERT_DIR.mkdir(parents=True)
+    (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
+    runner = Recorder(answers={"curl": "ok"})
+
+    provision.stage_registry(runner, _options(role="builder", workdir=sandbox, force=True))
+
+    assert runner.ran("up -d --force-recreate")
+
+
+def test_a_reused_certificate_leaves_the_registry_container_alone(sandbox):
+    provision.CERT_DIR.mkdir(parents=True)
+    (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
+    runner = Recorder(answers={"curl": "ok"})
+
+    provision.stage_registry(runner, _options(role="builder", workdir=sandbox))
+
+    assert runner.ran("up -d")
+    assert not runner.ran("--force-recreate")
 
 
 # --- backup: verified, not assumed ------------------------------------------

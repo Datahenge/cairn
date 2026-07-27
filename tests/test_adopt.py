@@ -152,7 +152,12 @@ def test_the_project_is_addressed_by_name(monkeypatch, tmp_path):
 
     adopt.survey()
 
-    followups = [c for c in calls if "compose ls" not in " ".join(c)]
+    # "compose ls" lists every project, host-wide; the managed-project check (used to exclude
+    # cairn's own infrastructure) is host-wide for the same reason — neither can be scoped to
+    # a project that has not been chosen yet.
+    followups = [
+        c for c in calls if "compose ls" not in " ".join(c) and "docker ps" not in " ".join(c)
+    ]
     assert followups, "expected probes after the project listing"
     for command in followups:
         assert "--project-name" in command
@@ -212,6 +217,74 @@ def test_a_missing_project_names_what_is_running(monkeypatch, tmp_path):
 
     assert found.project is None
     assert any(PROJECT in f.detail for f in found.findings)
+
+
+# --- excluding cairn's own infrastructure (`CAIRN_MANAGED_LABEL`) ------------
+
+
+def test_cairn_managed_projects_reads_the_docker_ps_label(monkeypatch):
+    _install(monkeypatch, {"docker ps --filter": "cairn-registry\nother-support\n"})
+
+    assert adopt._cairn_managed_projects() == {"cairn-registry", "other-support"}
+
+
+def test_cairn_managed_projects_is_empty_when_docker_cannot_answer(monkeypatch):
+    _install(monkeypatch, {})
+
+    assert adopt._cairn_managed_projects() == set()
+
+
+def test_cairns_own_registry_is_excluded_from_auto_detection(monkeypatch, tmp_path):
+    """A `cairn-registry` project running alongside the real site must not force `--project`:
+    cairn recognizes its own container by label, never by guessing from the project's name."""
+    listing = json.dumps(
+        [
+            {"Name": "cairn-registry", "ConfigFiles": "/opt/cairn-registry/compose.yaml"},
+            {"Name": PROJECT, "ConfigFiles": f"{tmp_path}/compose.yaml"},
+        ]
+    )
+    answers = {
+        "docker ps --filter": "cairn-registry\n",
+        "compose ls": listing,
+        "list-apps": _list_apps(),
+        "ps": _compose_ps(),
+    }
+    _install(monkeypatch, answers)
+
+    found = adopt.survey()
+
+    assert found.project == PROJECT
+
+
+def test_only_cairns_own_infrastructure_running_is_reported_as_no_site(monkeypatch):
+    """If cairn's own registry is the only thing up, that is honestly "no site running" — not
+    a project to mistakenly auto-adopt as though it were one."""
+    listing = json.dumps(
+        [{"Name": "cairn-registry", "ConfigFiles": "/opt/cairn-registry/compose.yaml"}]
+    )
+    _install(monkeypatch, {"docker ps --filter": "cairn-registry\n", "compose ls": listing})
+
+    found = adopt.survey()
+
+    assert found.project is None
+    assert any("no compose project" in f.detail for f in found.findings)
+
+
+def test_an_explicit_project_is_not_filtered_even_if_cairn_manages_it(monkeypatch):
+    """Exclusion is only a guardrail for auto-detection; an operator naming a project is
+    trusted as-is, same as any other explicit `--project`."""
+    listing = json.dumps(
+        [{"Name": "cairn-registry", "ConfigFiles": "/opt/cairn-registry/compose.yaml"}]
+    )
+    answers = {
+        "docker ps --filter": "cairn-registry\n",
+        "compose ls": listing,
+        "list-apps": _list_apps(),
+        "ps": _compose_ps(),
+    }
+    _install(monkeypatch, answers)
+
+    assert adopt.survey("cairn-registry").project == "cairn-registry"
 
 
 def test_an_unreachable_backend_is_reported(monkeypatch, tmp_path):

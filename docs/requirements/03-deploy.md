@@ -178,7 +178,11 @@ backup` writes into the sites volume and is therefore the operator's act.
 Where an installer is provided it MUST:
 
 1. **Be idempotent.** Re-running it MUST converge rather than duplicate or fail. This is what makes
-   the second and third machine cheap, which is the reason it exists at all.
+   the second and third machine cheap, which is the reason it exists at all. Where a stage
+   regenerates identity material a running container already loaded into memory (e.g. the
+   registry's TLS certificate), convergence MUST recreate that container — a file changing
+   underneath an already-running process is invisible both to the process and to `docker compose
+   up -d`'s own change detection, so nothing else would make it pick up the new file.
 2. **Offer a dry run** that prints every action, including every command it would run, and writes
    nothing.
 3. **Never silently overwrite.** An existing file it would replace MUST be preserved and named, and

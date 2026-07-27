@@ -9,6 +9,71 @@ code changes live in git history.
 
 ---
 
+## 2026-07-27 (later still — `cairn adopt` recognizes cairn's own registry by label, not by name)
+
+Continuing the same discussion: reordering the stages (below) fixes the common, first-run case,
+but not a standalone `--only descriptor` re-run, or any run where the registry happens to already
+be up — the exact recovery path Brian was pointed at earlier in this session. Brian asked whether
+cairn could instead positively identify its own registry project and ignore it outright, rather
+than depend on ordering at all. It can: Docker labels are attached to the actual containers, not
+inferred from a name — unlike `com.docker.compose.project`, which every compose-managed stack
+gets alike and so cannot distinguish cairn's own infrastructure from an operator's site.
+
+- **Added `CAIRN_MANAGED_LABEL`** (`adopt.py`, `"com.datahenge.cairn.managed"`). `registry_compose()`
+  now writes it onto the registry service; `provision.py` imports the constant from `adopt` rather
+  than duplicating the literal, so the write side and the read side cannot drift apart.
+- **`cairn adopt` excludes labeled projects from auto-detection only.** `_survey_project` now asks
+  `docker ps --filter label=…` for the compose projects any cairn-managed container belongs to,
+  and drops them before picking a single running project — but only when no `--project` was given;
+  an operator naming a cairn-managed project explicitly is still honored as-is. If cairn's own
+  infrastructure turns out to be the *only* thing running, that is now reported honestly as "no
+  compose project is running" rather than silently adopting the registry as though it were a site.
+- Revised `BR-CLI-020` to state the exclusion rule and that it binds only to guessing, never to an
+  explicit `--project`.
+
+---
+
+## 2026-07-27 (later still — `descriptor` moves ahead of `registry` on a bootstrap box)
+
+The `--project` requirement Brian hit on a fresh `--role both` install turned out to be
+self-inflicted rather than inherent: `registry` ran before `descriptor` in `BOTH_STAGES`, so by
+the time `cairn adopt` ran, its own `cairn-registry` compose project was already up alongside the
+site — two candidates where there should only ever have been one. `descriptor` never actually
+depends on the registry existing; nothing forced that order except how the list was written.
+
+- **Reordered `BOTH_STAGES`** to `... backup, descriptor, registry, timers`. On the common
+  bootstrap case, `cairn adopt` now runs while only the site's own project is up, so `--project`
+  goes back to being needed only when a host is genuinely ambiguous — not on every install.
+- Considered and rejected two alternatives: teaching `_pick_project` to ignore a project literally
+  named `cairn-registry` (a silent, name-based assumption `adopt.py`'s design deliberately avoids
+  — `_pick_project` refuses to guess rather than special-case), and recording the name in
+  `builder.toml` (collides with that file's existing `registry` key — the push-destination host —
+  and crosses the builder/target read boundary `ADR-041` draws around that file; `cairn adopt` is
+  target-side). Fixing the ordering needed neither: the name was never actually unknown, since
+  `REGISTRY_DIR` is cairn's own constant, so there was nothing to look up in the first place.
+
+---
+
+## 2026-07-27 (later still — a renewed registry certificate now recreates the container)
+
+Brian hit this on a real re-run: after `--project` fixed the earlier `descriptor` ambiguity, a
+second `cairn-provision --force` regenerated the registry's TLS certificate, re-trusted it
+system-wide, then failed at the TLS verification step with "did not answer over TLS."
+
+Cause: `docker compose up -d` recreates a container only when its *declared* config (image, env,
+volumes list) changes — a bind-mounted file changing content underneath an already-running
+container is invisible to it. The registry process had the *old* cert loaded in memory; the host
+now trusted only the *new* one. Files converged, running state did not — a real violation of rule
+1's idempotence guarantee, not a one-off environment quirk.
+
+- **Revised `BR-DEPLOY-021` rule 1** to state the general case: regenerating identity material a
+  running container already loaded MUST recreate that container.
+- **Fixed `stage_registry`.** `docker compose up -d` now gets `--force-recreate` whenever this run
+  (re)generated the certificate — first install or `--force`, either one — and is left alone
+  otherwise, so an unrelated re-run doesn't churn a container that's already correct.
+
+---
+
 ## 2026-07-27 (later — the free-disk gate now measures where Docker actually lives)
 
 Brian caught a second, sharper problem while asking about the disk-free floor: on his target
