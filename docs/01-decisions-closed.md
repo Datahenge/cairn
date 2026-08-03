@@ -303,6 +303,11 @@ life_scientific_migration) to a TEST site that currently has only frappe + erpne
 installed — the three new apps' *code* ships in the image and `apps.txt` updates, but they
 remain inert until `install-app` runs.
 
+**Superseded 2026-07-25 (`ADR-037`):** the opt-in path this decision proposed is struck
+entirely, not merely gated further — see `ADR-037` and `BR-DEPLOY-003a`. Activating a
+newly-shipped app is now always a manual, by-hand operator act; cairn carries no path to it
+at all, opt-in or otherwise.
+
 ---
 
 ### ADR-010 — Desired-state pointer = the environment's moving registry tag
@@ -477,6 +482,11 @@ Compose, systemd, registry reachability). No flag in the common case, per `BR-CL
 minimal-typing goal. The target-role branch lands with `DEPLOY`.
 *(BR-CLI-007, BR-CLI-014, ADR-018, ADR-027)*
 
+**Superseded 2026-08-03 (`ADR-046`):** context-detection is retired along with the unified
+`cairn` binary it existed to serve. `cairn-build doctor` and `cairn-adopt doctor` each run
+exactly one role's checks, unconditionally — the binary invoked is now the role signal,
+so there is nothing left to detect.
+
 ---
 
 ### ADR-029 — The manifest root and cairn's own project root are independent
@@ -620,6 +630,12 @@ systemd service + timer (`BR-DEPLOY-001`).
 heavy *build-only* dependency appears, or a hard requirement emerges that target code be
 *physically incapable* of build/push logic (beyond credential-gating). Neither holds today.
 *(BR-DEPLOY-001)*
+
+**Superseded 2026-08-03 (`ADR-046`):** the single unified `cairn` command is retired in favor
+of two console-script entry points, `cairn-build` and `cairn-adopt`, into the same one
+package. The package/dependency question this ADR answered is unchanged — still one
+distribution, no split — but its command-surface answer ("invoked as `cairn`... with
+subcommands") no longer holds. See `ADR-046` for the full record.
 
 ---
 
@@ -913,6 +929,12 @@ Printing a correct unit is documentation that cannot drift from the code, and it
 with review: `cairn systemd-units | less`, then install deliberately.
 *(BR-DEPLOY-001, BR-DEPLOY-008, BR-DEPLOY-016, BR-DEPLOY-019, BR-CLI-019, ADR-024, ADR-026)*
 
+**Amended in part 2026-08-03 (`ADR-046`):** "the operator installs" is no longer the only
+sanctioned path — `cairn-adopt setup` may also install the unit, as an explicit,
+privilege-gated subcommand replacing the retired `cairn-provision`. `systemd-units` itself
+is unchanged: still print-only, still never touches the host or reloads the daemon on its
+own.
+
 ---
 
 ### ADR-036 — cairn speaks the registry API directly, rather than shelling out
@@ -1186,6 +1208,15 @@ operator's responsibility. The installer does not change it — it provisions th
 plumbing*, never a site. `bench new-site` remains outside every tool cairn ships.
 *(BR-DEPLOY-021, BR-CLI-020, BR-DEPLOY-007, ADR-022, ADR-035, ADR-018)*
 
+**Superseded 2026-08-03 (`ADR-046`):** `cairn-provision` as a **separate program** is retired.
+Its work — the same seven-point contract, the same privileged writes — becomes `setup`, a
+subcommand nested inside each of the two role-specific CLIs (`cairn-build setup`,
+`cairn-adopt setup`), which also retires the `--role` flag: each CLI's `setup` only ever
+provisions what that CLI's own role needs. The reasons this ADR gave for keeping installation
+*out of the ordinary command* still hold — `setup` still checks its own privilege and exits if
+unprivileged, and no other subcommand performs a privileged write — the reversal is only that
+the installer is no longer a *structurally separate binary*. See `ADR-046`.
+
 ---
 
 ### ADR-041 — The machine build-config file is named `builder.toml`, not `config.toml`
@@ -1346,6 +1377,10 @@ setgid bit is already in place when those stages create their own files. `--no-a
 skips the stage entirely, leaving the directory exactly as found — for an operator who already
 has their own scheme, or who wants `/etc/cairn` to stay root-only.
 
+**Amended in part 2026-08-03 (`ADR-046`):** this stage now runs as part of `cairn-build setup`
+or `cairn-adopt setup` rather than a separate `cairn-provision` program — same stage, same
+ordering guarantee, same idempotency, only its home moved.
+
 **What cairn itself (not the installer) does with this fact: nothing, and reports it.** Per
 `ADR-040`'s standing invariant — cairn prints host configuration, the operator (here,
 `cairn-provision`, the one sanctioned exception) installs it — creating or chowning a group is a
@@ -1386,6 +1421,96 @@ documentation site therefore needs a source tree that cannot be confused with it
   explicitly deferred — separate, later work, once the pipeline itself exists.
 
 See `docs/requirements/07-docs.md` (`BR-DOCS-001` through `BR-DOCS-007`).
+
+---
+
+### ADR-046 — Two CLI entry points, `cairn-build` and `cairn-adopt`, replace the unified `cairn` binary and `cairn-provision`
+**Decided:** 2026-08-03
+**Supersedes:** `ADR-018`. **Amends:** `ADR-028`, `ADR-035`, `ADR-040`, `ADR-043`.
+
+Raised while writing the published Get Started guide (`BR-DOCS`): a single onboarding
+narrative for a tool with two roles kept forcing an assumption about which reader was
+reading — "install, then adopt" versus "install, then build" are genuinely different
+stories, and one linear page couldn't tell both without picking one. Separately, a real
+naming collision surfaced: "reconciler" as a role-noun reads, to anyone who knows the
+ERPNext domain, like the name of an *accounting* feature (Bank Reconciliation Tool,
+Payment Reconciliation) — not a deploy agent. Both problems trace back to the same root:
+one binary trying to be two things.
+
+**Decision.** Still **one package**, `datahenge-cairn` — no dependency split, no
+multi-distribution workspace, nothing changes about `pip install`. What changes is the
+**console-script surface**: two entry points, each its own Typer app, in place of the
+single `cairn` command:
+
+- **`cairn-build`** — the build/control role.
+- **`cairn-adopt`** — the target role.
+
+There is no unified `cairn` command and no `datahenge-cairn` alias. The alias's only
+reason to exist (`ADR-018`) was a PyPI-namespace collision fallback for the plain name
+`cairn`; neither new entry point is named `cairn`, so the collision it guarded against no
+longer applies.
+
+**Command allocation:**
+
+| `cairn-build` | `cairn-adopt` |
+| --- | --- |
+| `build`, `push` | `examine` |
+| `new-tag`, `retag`, `retire` | `reconcile` |
+| `images` | `systemd-units` |
+| `vendor status` / `sync` | |
+| `prune` | |
+| `doctor` (build/control checks only) | `doctor` (target checks only) |
+| `setup` (privileged) | `setup` (privileged) |
+
+**`adopt` the verb is renamed `examine`.** `cairn-adopt adopt` read as a stutter, and
+worse, invited the wrong inference — "adopt" implies a change is being made, where the
+command is a strict read-and-print survey (`BR-CLI-020`, unchanged in substance). "examine"
+is unambiguously read-only and pairs with the diagnostic register `doctor` already
+established (a doctor examines a patient). The CLI's own name keeps "adopt" — it still
+correctly frames the tool's purpose, bringing an existing hand-built deployment under
+cairn's care — the collision was only ever between the program name and one of its own
+subcommands, not with the word itself.
+
+**Role detection is retired.** `ADR-028` taught `cairn doctor` to sniff its context and
+pick a check set; that mechanism is no longer needed; each binary now runs exactly one
+role's checks, unconditionally, because the binary invoked already answers the question.
+
+**`cairn-provision` is retired as a separate program.** Its work becomes `setup`, a
+subcommand nested in each of the two CLIs (`cairn-build setup`, `cairn-adopt setup`),
+eliminating the `--role` flag entirely — each CLI's `setup` only ever provisions what
+that role needs, because there is no third, generic installer trying to serve both.
+`setup` performs its own privilege check and exits if unprivileged, exactly as
+`cairn-provision` did. This is a conscious partial reversal of `ADR-035` ("cairn emits
+systemd units; it never installs them") and `ADR-040` ("provisioning is an installer
+beside the CLI, never a verb inside it") — but the property those decisions actually
+protected survives intact: privileged host mutation is still never a **silent** side
+effect of an ordinary command. `build`, `push`, `reconcile`, `examine`, and every other
+plain subcommand still touch nothing privileged; only the explicitly-named,
+explicitly-invoked, privilege-gated `setup` does. The seven-point installer contract
+(`BR-DEPLOY-021`) and `ADR-043`'s `/etc/cairn` group-sharing stage carry over onto `setup`
+unchanged — only their home moved. One implementation simplification falls out for free:
+`cairn-provision`'s prior need to locate and shell out to a sibling `cairn` binary (`ADR-040`'s
+amendment) disappears, since `setup` now runs in-process within whichever CLI hosts it.
+
+**`install` was considered and rejected** as the subcommand name. Cairn already draws a
+hard, repeated line — "cairn never installs a Frappe App" (`BR-DEPLOY-003a`) — and reusing
+"install" for cairn's own host bootstrapping would echo a term cairn has deliberately
+spent effort disclaiming. `setup` says the same thing without the echo.
+
+**No workspace tooling needed.** Because both entry points remain modules inside the one
+existing `cairn` package — sharing its config, registry, descriptor, and compose-rendering
+code internally, exactly as `ADR-018`'s "closed island of five modules" measurement
+already showed was cheap — there is no multi-package workspace to manage (`uv` workspace
+or otherwise). That question, raised earlier in this same discussion, is moot: `cairn-core`
+was never going to be a separately-installed distribution.
+
+**The split-trigger `ADR-018` recorded stays the real bar for going further** — extracting
+the shared code into a genuinely separate installable library remains warranted only if a
+heavy build-only dependency appears, or a hard requirement emerges that target code be
+physically incapable of build/push logic. Nothing here forces that; today's change is
+entirely at the entry-point/command-surface layer.
+*(BR-CLI-001, BR-CLI-007, BR-CLI-008, BR-CLI-019, BR-CLI-020, BR-CLI-021, BR-DEPLOY-021,
+BR-DEPLOY-022, ADR-018, ADR-028, ADR-035, ADR-040, ADR-043)*
 
 ---
 

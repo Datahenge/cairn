@@ -1,33 +1,40 @@
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-26_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
 
-The `cairn` command surface. Mostly *cites* verbs defined in other areas; adds the
-create/move/retire guards, global flags, and output/exit conventions. Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-018`, `ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`.
+The command surface across cairn's **two CLI entry points**, organized the same way `BR-CFG`
+already handles its own two-role split (`05-config.md`'s `A. Target` / `B. Build`): one file,
+sectioned by role, rather than split into separate area files — because most of what governs
+the CLI is shared UX convention (logging, `--json` output, config discovery, help text) that
+applies identically to both binaries, not something that forks cleanly along the role line.
+Mostly *cites* verbs defined in other areas; adds the create/move/retire guards, global flags,
+and output/exit conventions. Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-003`,
+`ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`, `ADR-046`.
 
 ---
 
 ## Substrate
 
-**`BR-CLI-001`** — cairn is a **single Python CLI** (Click/Typer, `ADR-003`), invoked as
-`cairn` (distribution `datahenge-cairn` + `datahenge-cairn` alias), with subcommands. One
-package. *(ADR-003, ADR-018)*
+**`BR-CLI-001`** — cairn is **one package** (`datahenge-cairn`, `ADR-046`) exposing **two**
+console-script CLIs (Click/Typer, `ADR-003`), each its own Typer app and each with its own
+`--help`, subcommands, and role: **`cairn-build`** (build/control) and **`cairn-adopt`**
+(target). There is no unified `cairn` command and no alias — which binary an operator invokes
+is itself the role signal. *(ADR-003, ADR-046)*
 
-## Command surface
+## A. `cairn-build` commands (build/control)
 
-**`BR-CLI-002`** *(build)* — `cairn build [--push] [--manifest <path>] [--no-cache]
+**`BR-CLI-002`** *(build)* — `cairn-build build [--push] [--manifest <path>] [--no-cache]
 [--dry-run]` — build the image from `cairn.toml` (resolve refs → apps.json → tagged image +
 provenance labels). **Default is build-only**; `--push` also uploads. *(BR-BUILD-*)*
 
-**`BR-CLI-003`** *(push)* — `cairn push [--id <tag>]` — upload a built image to the registry
-(default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*
+**`BR-CLI-003`** *(push)* — `cairn-build push [--id <tag>]` — upload a built image to the
+registry (default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*
 
 **`BR-CLI-004`** *(pointer verbs — create / move / retire)* —
-- `cairn new-tag <env> <selector>` — **create** a new environment pointer.
-- `cairn retag <env> <selector>` — **move** an existing pointer (server-side retag, no
+- `cairn-build new-tag <env> <selector>` — **create** a new environment pointer.
+- `cairn-build retag <env> <selector>` — **move** an existing pointer (server-side retag, no
   rebuild).
-- `cairn retire <env>` — **decommission** an environment from cairn (see `BR-CLI-009`).
+- `cairn-build retire <env>` — **decommission** an environment from cairn (see `BR-CLI-009`).
 
 Selectors for `new-tag`/`retag`: `--latest | --previous | --id <ident> | --from <env>`
 (`--from` points at whatever another env currently runs → cross-env promotion). Exactly one
@@ -35,10 +42,10 @@ selector MUST be given; two or more is an error naming the conflict, since each 
 different image.
 
 An earlier draft added an opt-in `--install-app <apps>` to both verbs. It was **struck**
-2026-07-25 (`ADR-037`, `BR-DEPLOY-003a`): installing an app is the operator's act, and a
+2026-07-25 (`ADR-037`, `BR-DEPLOY-003a`): installing a Frappe App is the operator's act, and a
 pointer move is not the event that should carry it. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023)*
 
-**`BR-CLI-005`** *(introspection)* — `cairn images [--tags] [--local] [--json]`.
+**`BR-CLI-005`** *(introspection)* — `cairn-build images [--tags] [--local] [--json]`.
 
 - **Registry** (default) — tags, digests, and provenance labels read **remotely**, no pull.
   *(BR-DEPLOY-005)*
@@ -54,23 +61,8 @@ it is already stamped on the image; this is the command that reads them back. Im
 did not build MUST be excluded, but their count MUST be reported, so the command is never
 mistaken for a complete inventory. *(BR-DEPLOY-005, BR-BUILD-011, BR-BUILD-014, ADR-032)*
 
-**`BR-CLI-006`** *(vendor)* — `cairn vendor status | sync` — thin ventwig wrappers. *(BR-VEND-*)*
-
-**`BR-CLI-007`** *(doctor)* — `cairn doctor` — **role-aware** preflight, role detected from
-context (`ADR-028`). Accepts `--manifest` like every other manifest-consuming command
-(`BR-CLI-014`); a missing manifest warns rather than fails, since doctor legitimately runs
-before one exists. On a **build/control** machine: the selected build engine present and
-capable of secret-mount builds (Docker Engine v23+, or podman v4+ — `ADR-027`); **`git`**,
-which cairn resolves every manifest ref with (`BR-BUILD-005`); `ventwig status` clean;
-config valid. On **either role**: `/etc/cairn`'s current group, permissions, and the invoking
-user's membership, reported only, never mutated (`BR-CFG-015`, `ADR-043`). On a **target**:
-Docker Engine + Compose, systemd, and registry reachability.
-*(BR-VEND-005/006, BR-BUILD-005, BR-CFG-015, BR-CLI-014, ADR-027, ADR-028, ADR-043)*
-
-**`BR-CLI-008`** *(reconcile)* — `cairn reconcile` — the target-side, single-flight
-pull-loop verb, run under systemd. *(BR-DEPLOY-001/003/016)*
-
-## Guards & safety
+**`BR-CLI-006`** *(vendor)* — `cairn-build vendor status | sync` — thin ventwig wrappers.
+*(BR-VEND-*)*
 
 **`BR-CLI-009`** *(existence guards; no auto-vivification)* — Environment existence is
 determined by cairn's **declared environment list** (control-side, `BR-DEPLOY-009`).
@@ -84,37 +76,7 @@ that the **registry tag name persists** (GHCR has no per-tag delete — see `03-
 
 **`BR-CLI-010`** *(prod gate)* — Any command that moves or retires a **`:production`**
 pointer MUST require **explicit confirmation** — interactive prompt by default, `--yes` to
-skip for automation. `--install-app` against Production is **doubly** explicit. *(BR-DEPLOY-015)*
-
-**`BR-CLI-011`** *(least surprise)* — Nothing consequential is silent: no auto-rollback
-(`ADR-025`), no auto-install (`ADR-023`), no data/volume/DB writes of cairn's own
-(`ADR-022`). Consequential/destructive actions confirm; `--dry-run` is available on
-`build`/`push`/`new-tag`/`retag`/`reconcile`.
-
-**Silence cuts both ways.** A command MUST NOT appear to do nothing: any operation that
-takes more than a moment (ref resolution, image build, push) MUST report what it is doing
-and what it is doing it to, and MUST verify its own post-condition rather than trusting an
-exit code — an engine that exits 0 without producing the image MUST be reported as a
-failure, not as success. *(ADR-022, ADR-023, ADR-025)*
-
-## Conventions
-
-**`BR-CLI-012`** *(logging & exit codes)* — cairn logs **only to stdout/stderr**
-(`BR-DEPLOY-019`) and MUST return **meaningful exit codes** (0 success, non-zero failure)
-so systemd and CI detect outcomes. *(BR-DEPLOY-019)*
-
-**`BR-CLI-013`** *(output)* — Human-readable by default; **`--json`** on read/introspection
-commands (`images`, status) for CI/scripting. *(—)*
-
-**`BR-CLI-014`** *(config discovery)* — cairn resolves the manifest (`cairn.toml`) only from
-`--manifest` or `$CAIRN_MANIFEST` — never by searching a directory (`ADR-042`) — resolves
-build config from `/etc/cairn/builder.toml` plus `CAIRN_*` environment-variable overrides, and
-(on targets) reads the environment descriptor from its fixed path. Every command that accepts a
-manifest exposes `--manifest`, so the flag is always available even where `$CAIRN_MANIFEST` is
-not set. Precedence is specified by `BR-CFG-012`. *(BR-CFG-008, BR-CFG-012, ADR-029, ADR-042)*
-
-**`BR-CLI-015`** *(help & errors)* — Every command has `--help`; errors are actionable and
-name the fix; convention over configuration. *(—)*
+skip for automation. *(BR-DEPLOY-015)*
 
 **`BR-CLI-016`** *(build transcript — attended CLI only)* — cairn recognises **three
 execution contexts** (`ADR-031`), and writes a transcript in exactly one of them:
@@ -146,13 +108,7 @@ execution contexts** (`ADR-031`), and writes a transcript in exactly one of them
 
 *(ADR-031, BR-CFG-008, BR-DEPLOY-019)*
 
-**`BR-CLI-017`** *(timing)* — Any command that can take more than a moment MUST report
-**start time, end time, and elapsed duration**, plus **per-phase** elapsed times, to the
-terminal and the transcript. Timing MUST NOT be recorded in provenance labels: duration is
-a property of a build *run* (cache state, machine, network), not of the image's inputs,
-and `BR-BUILD-013`'s guarantee is about inputs. *(ADR-031, BR-CLI-011)*
-
-**`BR-CLI-018`** *(prune — build machine)* — `cairn prune [--keep <n>] [--dry-run] [--yes]`
+**`BR-CLI-018`** *(prune — build machine)* — `cairn-build prune [--keep <n>] [--dry-run] [--yes]`
 reclaims space on the **build** machine, under three concentric restrictions:
 
 1. Only images carrying cairn's own provenance labels (`BR-BUILD-011`) are candidates.
@@ -178,24 +134,35 @@ so a stage image never carries them, and a label-scoped prune cannot reach the c
 MUST therefore never prune by danglingness. *(BR-DEPLOY-006 is the target-side counterpart;
 this is its build-machine analogue. ADR-032, lessons §12)*
 
-**`BR-CLI-019`** *(systemd units — emitted, never installed)* — `cairn systemd-units` MUST
-print a ready-to-install systemd **service** and **timer** for `cairn reconcile` to stdout,
-and MUST NOT write them to the host or reload the daemon (`ADR-035`). The emitted unit MUST
-reflect what cairn knows and the operator would otherwise guess: `Type=oneshot`, no custom
-log file (journald owns the record, `BR-DEPLOY-019`), and a cadence consistent with
-`reconcile` being idempotent and single-flight (`BR-DEPLOY-016`) so an overrunning pass cannot
-stack. Because a unit is host-specific, the command MUST report the values it assumed
-(binary path, user, cadence) rather than silently choosing them. *(BR-DEPLOY-001,
-BR-DEPLOY-008, BR-DEPLOY-016, BR-DEPLOY-019, ADR-035)*
+## B. `cairn-adopt` commands (target)
 
-**`BR-CLI-020`** *(adopt — derive a descriptor from a running deployment)* — `cairn adopt` MUST read
-an **existing** frappe_docker deployment on this host and **print** a draft environment descriptor
-(`BR-DEPLOY-010a`). It MUST NOT write any file, install anything, or alter the running stack — it is
-a read-and-print command, exactly as `BR-CLI-019` is.
+**`BR-CLI-008`** *(reconcile)* — `cairn-adopt reconcile` — the target-side, single-flight
+pull-loop verb, run under systemd. *(BR-DEPLOY-001/003/016)*
 
-Together those two commands fix cairn's rule for host configuration:
+**`BR-CLI-019`** *(systemd units — emitted by default, installable via `setup`)* —
+`cairn-adopt systemd-units` MUST print a ready-to-install systemd **service** and **timer**
+for `cairn-adopt reconcile` to stdout, and, invoked on its own, MUST NOT write them to the
+host or reload the daemon (`ADR-035`). The emitted unit MUST reflect what cairn knows and
+the operator would otherwise guess: `Type=oneshot`, no custom log file (journald owns the
+record, `BR-DEPLOY-019`), and a cadence consistent with `reconcile` being idempotent and
+single-flight (`BR-DEPLOY-016`) so an overrunning pass cannot stack. Because a unit is
+host-specific, the command MUST report the values it assumed (binary path, user, cadence)
+rather than silently choosing them. Installing the unit for real is `cairn-adopt setup`'s
+job (`BR-CLI-021`), not this command's. *(BR-DEPLOY-001, BR-DEPLOY-008, BR-DEPLOY-016,
+BR-DEPLOY-019, ADR-035, ADR-046)*
 
-> **cairn prints host configuration; the operator installs it.**
+**`BR-CLI-020`** *(examine — derive a descriptor from a running deployment)* —
+`cairn-adopt examine` MUST read an **existing** frappe_docker deployment on this host and
+**print** a draft environment descriptor (`BR-DEPLOY-010a`). It MUST NOT write any file,
+install anything, or alter the running stack — it is a read-and-print command, exactly as
+`BR-CLI-019` is. (Named `examine`, not `adopt` — the CLI itself is `cairn-adopt`; a
+subcommand repeating the program's own name read as a stutter and, worse, wrongly implied
+this command changes something, when it is a strict survey. See `ADR-046`.)
+
+Together with `systemd-units`, this fixes cairn's rule for host configuration:
+
+> **cairn prints host configuration for review; only the explicit, privilege-gated `setup`
+> subcommand (`BR-CLI-021`) — never an ordinary command — installs it.**
 
 It MUST derive, from the live stack rather than from anything the operator states:
 
@@ -218,13 +185,14 @@ and left absent from the output. A plausible default silently inserted here beco
 later.
 
 When auto-detecting the project (no `--project` given) and more than one compose project is
-running, `adopt` MUST exclude any project containing a container cairn itself stood up as
-supporting infrastructure (e.g. `cairn-provision`'s local registry), so that infrastructure never
-forces a `--project` disambiguation the operator's own site did not cause. Exclusion MUST be by an
-explicit label cairn writes into its own compose files, never by a project's **name** — a name is
-only ever the default compose derives from a directory, something an operator's own project could
-coincidentally share. An explicit `--project` naming a cairn-managed project anyway MUST still be
-honored — exclusion applies only to guessing, never to a stated choice.
+running, `examine` MUST exclude any project containing a container cairn itself stood up as
+supporting infrastructure (e.g. a local registry stood up by `cairn-adopt setup`), so that
+infrastructure never forces a `--project` disambiguation the operator's own site did not cause.
+Exclusion MUST be by an explicit label cairn writes into its own compose files, never by a
+project's **name** — a name is only ever the default compose derives from a directory, something
+an operator's own project could coincidentally share. An explicit `--project` naming a
+cairn-managed project anyway MUST still be honored — exclusion applies only to guessing, never to
+a stated choice.
 
 Given a manifest it MUST **cross-check** the manifest's ordered app list (`BR-BUILD-003`) against the
 site's installed apps and report disagreement — a mismatch means `bench migrate` would run against
@@ -234,5 +202,74 @@ It MUST report when the deployment serves **more than one site**, because `recon
 from a descriptor naming exactly one (`BR-DEPLOY-014`), and converging such a host would drop the
 others. That condition is a **stop**, not a warning to be worked around.
 
-The emitted descriptor MUST be **loadable**: whatever `adopt` prints, `BR-DEPLOY-010a`'s reader must
-accept. *(BR-DEPLOY-010a, BR-DEPLOY-014, BR-BUILD-003, BR-CLI-019, ADR-034, ADR-040)*
+The emitted descriptor MUST be **loadable**: whatever `examine` prints, `BR-DEPLOY-010a`'s reader
+must accept. *(BR-DEPLOY-010a, BR-DEPLOY-014, BR-BUILD-003, BR-CLI-019, ADR-034, ADR-046)*
+
+## C. Commands on both CLIs
+
+**`BR-CLI-007`** *(doctor)* — Each CLI runs exactly **one** fixed check set — no role
+detection, no context-sniffing (`ADR-028` superseded, `ADR-046`): the binary invoked already
+answers which checks apply. Both accept `--manifest` like every other manifest-consuming
+command (`BR-CLI-014`); a missing manifest warns rather than fails, since doctor legitimately
+runs before one exists.
+
+- **`cairn-build doctor`** — the selected build engine present and capable of secret-mount
+  builds (Docker Engine v23+, or podman v4+ — `ADR-027`); **`git`**, which cairn resolves every
+  manifest ref with (`BR-BUILD-005`); `ventwig status` clean; config valid; `/etc/cairn`'s
+  current group, permissions, and the invoking user's membership, reported only, never mutated
+  (`BR-CFG-015`, `ADR-043`).
+- **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
+  `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
+
+*(BR-VEND-005/006, BR-BUILD-005, BR-CFG-015, BR-CLI-014, ADR-027, ADR-043, ADR-046)*
+
+**`BR-CLI-021`** *(setup — the privileged installer, nested per role)* — Each CLI carries its own
+`setup` subcommand (`cairn-build setup`, `cairn-adopt setup`), replacing the retired
+`cairn-provision` (`ADR-046`). There is no `--role` flag: invoking `cairn-build setup` provisions
+only what a build/control machine needs, and `cairn-adopt setup` only what a target needs — the
+binary already states the role, so a role flag would be redundant.
+
+`setup` MUST check that it is running with the privilege its actions require (root, or the
+configured equivalent) and MUST exit, reporting the shortfall, rather than attempt a partial run
+without it. Beyond that gate, it MUST satisfy the same seven-point installer contract as before
+(`BR-DEPLOY-021`) — idempotent; offers `--dry-run`; never silently overwrites; handles no secrets;
+gates all prerequisite checks before any change; verifies its own postconditions; and is never the
+only path, since every action it takes MUST remain documented for an operator to perform by hand.
+`ADR-043`'s `/etc/cairn` group-sharing stage runs as part of it unchanged. *(BR-DEPLOY-021,
+BR-DEPLOY-022, ADR-040, ADR-043, ADR-046)*
+
+## D. Shared conventions (both CLIs)
+
+**`BR-CLI-011`** *(least surprise)* — Nothing consequential is silent: no auto-rollback
+(`ADR-025`), no auto-install (`ADR-023`), no data/volume/DB writes of cairn's own
+(`ADR-022`). Consequential/destructive actions confirm; `--dry-run` is available on
+`cairn-build build`/`push`/`new-tag`/`retag` and on `cairn-adopt reconcile`.
+
+**Silence cuts both ways.** A command MUST NOT appear to do nothing: any operation that
+takes more than a moment (ref resolution, image build, push) MUST report what it is doing
+and what it is doing it to, and MUST verify its own post-condition rather than trusting an
+exit code — an engine that exits 0 without producing the image MUST be reported as a
+failure, not as success. *(ADR-022, ADR-023, ADR-025)*
+
+**`BR-CLI-012`** *(logging & exit codes)* — cairn logs **only to stdout/stderr**
+(`BR-DEPLOY-019`) and MUST return **meaningful exit codes** (0 success, non-zero failure)
+so systemd and CI detect outcomes. *(BR-DEPLOY-019)*
+
+**`BR-CLI-013`** *(output)* — Human-readable by default; **`--json`** on read/introspection
+commands (`images`, status) for CI/scripting. *(—)*
+
+**`BR-CLI-014`** *(config discovery)* — cairn resolves the manifest (`cairn.toml`) only from
+`--manifest` or `$CAIRN_MANIFEST` — never by searching a directory (`ADR-042`) — resolves
+build config from `/etc/cairn/builder.toml` plus `CAIRN_*` environment-variable overrides, and
+(on targets) reads the environment descriptor from its fixed path. Every command that accepts a
+manifest exposes `--manifest`, so the flag is always available even where `$CAIRN_MANIFEST` is
+not set. Precedence is specified by `BR-CFG-012`. *(BR-CFG-008, BR-CFG-012, ADR-029, ADR-042)*
+
+**`BR-CLI-015`** *(help & errors)* — Every command has `--help`; errors are actionable and
+name the fix; convention over configuration. *(—)*
+
+**`BR-CLI-017`** *(timing)* — Any command that can take more than a moment MUST report
+**start time, end time, and elapsed duration**, plus **per-phase** elapsed times, to the
+terminal and the transcript. Timing MUST NOT be recorded in provenance labels: duration is
+a property of a build *run* (cache state, machine, network), not of the image's inputs,
+and `BR-BUILD-013`'s guarantee is about inputs. *(ADR-031, BR-CLI-011)*

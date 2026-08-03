@@ -1,31 +1,40 @@
-"""Provision a cairn build machine or deploy target (`BR-DEPLOY-021`, `ADR-040`).
+"""Provision a cairn build machine or deploy target — the `setup` subcommand shared by
+`cairn-build` and `cairn-adopt` (`BR-CLI-021`, `BR-DEPLOY-021`, `ADR-046`).
 
-    sudo cairn-provision --role builder --dry-run
-    sudo cairn-provision --role builder
+    sudo cairn-build setup --dry-run
+    sudo cairn-build setup
 
-Installed the same way as `cairn` itself — `pip install datahenge-cairn`, or for a machine
-meant to outlive any one operator's own account, `sudo pipx install --global
-datahenge-cairn` (installs to a shared system location, not tied to a personal login that
-might one day be deactivated).
+    sudo cairn-adopt setup --dry-run
+    sudo cairn-adopt setup
 
-**Why this is a separate program and not a `cairn` subcommand.** Two decisions would break if
-it were one: cairn *emits* systemd units and never installs them (`ADR-035`), and cairn writes
-nothing to a data-plane volume (`ADR-022`) — a pre-install `bench backup` writes into the sites
-volume. An operator running `cairn-provision` with explicit privilege *is* the operator doing
-those things. cairn's own boundary stays exactly where it was drawn, and the invariant across
-the CLI holds: **cairn prints host configuration; the operator installs it — cairn-provision is
-the one exception, and it exists precisely so that exception never has to live inside cairn.**
+Installed the same way as the rest of cairn — `pip install datahenge-cairn`, or for a
+machine meant to outlive any one operator's own account, `sudo pipx install --global
+datahenge-cairn` (installs to a shared system location, not tied to a personal login
+that might one day be deactivated).
 
-It shells out to `cairn` for the read-only and print-only work (`doctor`, `adopt`,
-`systemd-units`) rather than reaching into cairn's internals, so provisioning always reflects
-exactly what a human running those commands by hand would see.
+**Why this is a subcommand, not an ordinary one.** Two decisions would break if `setup`
+behaved like `build`, `push`, or `examine`: cairn *emits* systemd units and never installs
+them except through this explicit path (`ADR-035`), and cairn writes nothing to a
+data-plane volume (`ADR-022`) — a pre-install `bench backup` writes into the sites volume.
+An operator running `setup` with explicit privilege *is* the operator doing those things.
+`setup` checks its own privilege and exits, reporting the shortfall, rather than attempt a
+partial run without it — the invariant across both CLIs holds: **cairn prints host
+configuration; the operator installs it — `setup` is the one exception, and it exists
+precisely so that exception never leaks into an ordinary command.**
 
-It also shares `/etc/cairn` with a group (`--admin-group`, default `cairn-admins`, `ADR-043`) so
-`builder.toml` and the environment descriptor can be edited by every operator on a multi-login
-box without sudo — `--no-admin-group` skips this and leaves the directory exactly as found.
+There is no `--role` flag (`ADR-046`, retiring the separate `cairn-provision` program):
+`cairn-build setup` runs only the builder stages, `cairn-adopt setup` only the target
+stages — the binary invoked already says which. `cairn-adopt setup`'s descriptor stage
+calls straight into :mod:`cairn.adopt` and its timer stage into :mod:`cairn.systemd`, both
+in-process — there is no sibling binary left to shell out to.
 
-**The contract it keeps** (`BR-DEPLOY-021`), which is also why it is Python rather than shell —
-this runs as root on client infrastructure and therefore has to be testable:
+It also shares `/etc/cairn` with a group (`--admin-group`, default `cairn-admins`,
+`ADR-043`) so `builder.toml` and the environment descriptor can be edited by every
+operator on a multi-login box without sudo — `--no-admin-group` skips this and leaves the
+directory exactly as found.
+
+**The contract it keeps** (`BR-DEPLOY-021`), which is also why it is Python rather than
+shell — this runs as root on client infrastructure and therefore has to be testable:
 
 1. **Idempotent.** Re-running converges; it is what makes the second and third machine cheap.
 2. **`--dry-run` prints every action, including every command, and writes nothing.**
@@ -42,7 +51,6 @@ It creates no site, volume, or database: `BR-DEPLOY-007` keeps that the operator
 
 from __future__ import annotations
 
-import argparse
 import grp
 import json
 import os
@@ -55,7 +63,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .adopt import CAIRN_MANAGED_LABEL
+from . import adopt as adopt_module
+from . import systemd
 
 # --- host requirements -------------------------------------------------------
 
@@ -99,21 +108,12 @@ SHARED_FILE_MODE = 0o664
 #: A **builder** builds images and serves them. It has a manifest, a vendored tree, and a
 #: registry. It has no ERPNext site — so nothing to reconnoitre, nothing to back up, and no
 #: environment descriptor, which describes a *running* deployment.
-BUILDER_STAGES = ("preflight", "admin-group", "registry", "timers")
+BUILD_STAGES = ("preflight", "admin-group", "registry", "timers")
 
 #: A **target** runs ERPNext and converges to whatever its pointer says. It has a site — so it
 #: is the only role with an existing stack to survey, a database to back up, and a descriptor.
 #: It pulls from the builder's registry and hosts none of its own.
-TARGET_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "timers")
-
-#: Both roles on one box. Today's case while builder and target are the same machine; the union
-#: in dependency order, so the backup still happens before anything is installed. `descriptor`
-#: MUST precede `registry`: `cairn adopt` needs exactly one compose project running to describe
-#: without `--project`, and `registry` starting its own (`cairn-registry`) would otherwise make
-#: every fresh `--role both` install ambiguous for no reason connected to the actual site.
-BOTH_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "registry", "timers")
-
-ROLE_STAGES = {"builder": BUILDER_STAGES, "target": TARGET_STAGES, "both": BOTH_STAGES}
+ADOPT_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "timers")
 
 
 # --- reporting ---------------------------------------------------------------
@@ -145,14 +145,28 @@ class Aborted(Exception):
     """A stage could not proceed. Reported, never a traceback."""
 
 
-def builds(options: argparse.Namespace) -> bool:
-    """Whether this host builds images — needs buildx, git, a container engine, a registry."""
-    return options.role in ("builder", "both")
+@dataclass
+class SetupOptions:
+    """Everything a `setup` stage might need. Which fields matter depends on the stage —
+    a build-only stage never reads `project`, an adopt-only one never reads `private_ip`.
+    """
 
+    dry_run: bool = False
+    force: bool = False
+    workdir: Path = field(default_factory=Path.cwd)
+    manifest: Path | None = None
+    environment: str = "production"
+    project: str | None = None
+    private_ip: str | None = None
+    interval: str = "5min"
+    build_interval: str = "15min"
+    skip_backup: bool = False
+    skip_disk_free: bool = False
+    admin_group: str | None = DEFAULT_ADMIN_GROUP
 
-def serves(options: argparse.Namespace) -> bool:
-    """Whether this host runs a site — the only role with a stack to survey, back up, describe."""
-    return options.role in ("target", "both")
+    def __post_init__(self) -> None:
+        if self.manifest is None:
+            self.manifest = self.workdir / "cairn.toml"
 
 
 @dataclass
@@ -251,15 +265,10 @@ class Runner:
         self.report.done.append(what)
 
 
-# --- stages ------------------------------------------------------------------
+# --- stages shared by both roles ---------------------------------------------
 
 
-def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
-    """Gate the host: report every check, then stop if any failed (rule 5).
-
-    All results before the first failure is deliberate. An installer that dies on the first
-    problem makes the operator discover prerequisites one reboot at a time.
-    """
+def _base_preflight_checks(runner: Runner, options: SetupOptions) -> tuple[list[Check], Check]:
     disk_check = _check_disk(_docker_data_dir(runner))
     checks = [
         _check_root(),
@@ -268,14 +277,6 @@ def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
         disk_check,
         _check_memory(),
     ]
-    if builds(options):
-        # Only a builder needs these: buildx for the secret-mount build, git for ref
-        # resolution, openssl for the registry certificate. A target has no use for any of
-        # them.
-        checks.append(_check_command(runner, "docker buildx", ["docker", "buildx", "version"]))
-        checks.append(_check_command(runner, "git", ["git", "--version"]))
-        checks.append(_check_command(runner, "openssl", ["openssl", "version"]))
-
     for check in checks:
         runner.say(check.render())
 
@@ -285,7 +286,10 @@ def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
             "free disk was below the minimum but the check was overridden; "
             "a build or migration may run out of room"
         )
+    return checks, disk_check
 
+
+def _fail_on_checks(checks: list[Check], disk_check: Check, options: SetupOptions) -> None:
     failed = [
         check
         for check in checks
@@ -296,6 +300,29 @@ def stage_preflight(runner: Runner, options: argparse.Namespace) -> None:
             f"{len(failed)} prerequisite(s) failed: "
             f"{', '.join(check.label for check in failed)}. Nothing was changed."
         )
+
+
+def stage_preflight_build(runner: Runner, options: SetupOptions) -> None:
+    """Gate a build machine: base checks, plus buildx/git/openssl (rule 5).
+
+    All results before the first failure is deliberate. An installer that dies on the first
+    problem makes the operator discover prerequisites one reboot at a time.
+    """
+    checks, disk_check = _base_preflight_checks(runner, options)
+    extra = [
+        _check_command(runner, "docker buildx", ["docker", "buildx", "version"]),
+        _check_command(runner, "git", ["git", "--version"]),
+        _check_command(runner, "openssl", ["openssl", "version"]),
+    ]
+    for check in extra:
+        runner.say(check.render())
+    _fail_on_checks(checks + extra, disk_check, options)
+
+
+def stage_preflight_adopt(runner: Runner, options: SetupOptions) -> None:
+    """Gate a target machine: the base checks only — no build tooling to demand of it."""
+    checks, disk_check = _base_preflight_checks(runner, options)
+    _fail_on_checks(checks, disk_check, options)
 
 
 def _check_root() -> Check:
@@ -365,137 +392,7 @@ def read_available_memory_gb(meminfo: Path) -> float | None:
     return None
 
 
-def stage_recon(runner: Runner, options: argparse.Namespace) -> None:
-    """Read the existing stack, and record how to put it back (read-only).
-
-    The revert note is the point. `reconcile` never rolls back (`BR-DEPLOY-018`), so the values
-    it would replace have to be captured *before* anything changes.
-
-    Target-only: a builder has no deployment to survey.
-    """
-    if not serves(options):
-        raise Aborted(
-            "there is no running deployment to survey on a build machine. "
-            "Use --role target or --role both."
-        )
-
-    listing = runner.probe(["docker", "compose", "ls", "--format", "json"])
-    if listing is None:
-        runner.say("    no compose project is running, or Docker did not answer")
-        runner.report.warnings.append("no existing stack was found to reconnoitre")
-        return
-
-    try:
-        projects = [p for p in json.loads(listing) if isinstance(p, dict)]
-    except json.JSONDecodeError:
-        runner.report.warnings.append("compose's project list was not JSON")
-        return
-
-    if not projects:
-        runner.say("    no compose project is running")
-        return
-
-    for project in projects:
-        runner.say(f"    project {project.get('Name')} — {project.get('Status', '?')}")
-        first = str(project.get("ConfigFiles", "")).split(",")[0].strip()
-        if not first:
-            continue
-        env_file = Path(first).parent / ".env"
-        current = read_env_values(env_file, ("CUSTOM_IMAGE", "CUSTOM_TAG", "SITES"))
-        for key, value in current.items():
-            runner.say(f"      {key}={value}")
-        if current:
-            runner.report.revert.append(
-                f"In {env_file}, restore: "
-                + ", ".join(f"{k}={v}" for k, v in current.items())
-                + f" then: docker compose --project-name {project.get('Name')} up -d"
-            )
-
-
-def read_env_values(env_file: Path, keys: tuple[str, ...]) -> dict[str, str]:
-    """Read selected ``KEY=value`` pairs from a compose ``.env``, ignoring the rest."""
-    values: dict[str, str] = {}
-    try:
-        lines = env_file.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return values
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, value = stripped.partition("=")
-        if key.strip() in keys:
-            values[key.strip()] = value.strip()
-    return values
-
-
-def stage_backup(runner: Runner, options: argparse.Namespace) -> None:
-    """Back up every site, and verify the dump exists and is non-empty (rule 6).
-
-    The installer's job rather than cairn's: a backup writes into the sites volume, which
-    `ADR-022` forbids cairn from doing. Verified rather than assumed, because the whole reason
-    this stage exists is that `bench migrate` is irreversible.
-
-    Target-only. A builder has no site, so there is nothing here to back up — running `bench`
-    on a build machine would be asking a question of a container that does not exist.
-    """
-    if not serves(options):
-        raise Aborted(
-            "backup applies only to a host running a site. A builder has none — use "
-            "--role target or --role both."
-        )
-
-    if options.skip_backup:
-        runner.say("    skipped by --skip-backup")
-        runner.report.skipped.append("pre-install backup (explicitly skipped)")
-        runner.report.warnings.append(
-            "no backup was taken; bench migrate is irreversible and cairn never rolls back"
-        )
-        return
-
-    project = options.project or _only_project(runner)
-    if project is None:
-        runner.say("    no single compose project to back up; name one with --project")
-        runner.report.skipped.append("pre-install backup (no project identified)")
-        return
-
-    compose = ["docker", "compose", "--project-name", project]
-    runner.run(
-        [*compose, "exec", "-T", "backend", "bench", "--site", "all", "backup", "--with-files"],
-        what="backing up the site(s)",
-        timeout=3600,
-    )
-
-    inspect = "ls -l sites/*/private/backups | tail -20"
-    listing = runner.probe([*compose, "exec", "-T", "backend", "bash", "-lc", inspect])
-    if runner.dry_run:
-        return
-    if not listing or not listing.strip():
-        raise Aborted(
-            "the backup reported success but no dump could be found under "
-            "sites/*/private/backups. Not proceeding — verify by hand."
-        )
-    runner.say("    backups present:")
-    for line in listing.strip().splitlines()[-6:]:
-        runner.say(f"      {line}")
-    runner.report.done.append("verified pre-install backup")
-    runner.report.warnings.append(
-        "the backup is on the box; copy it off before relying on it"
-    )
-
-
-def _only_project(runner: Runner) -> str | None:
-    listing = runner.probe(["docker", "compose", "ls", "--format", "json"])
-    if listing is None:
-        return None
-    try:
-        projects = [p for p in json.loads(listing) if isinstance(p, dict) and p.get("Name")]
-    except json.JSONDecodeError:
-        return None
-    return str(projects[0]["Name"]) if len(projects) == 1 else None
-
-
-def stage_admin_group(runner: Runner, options: argparse.Namespace) -> None:
+def stage_admin_group(runner: Runner, options: SetupOptions) -> None:
     """Share `/etc/cairn` with a group, so every operator can edit `builder.toml` without
     root (`ADR-043`).
 
@@ -559,22 +456,17 @@ def _group_gid(name: str) -> int | None:
         return None
 
 
-def stage_registry(runner: Runner, options: argparse.Namespace) -> None:
+# --- build-only stages ---------------------------------------------------------
+
+
+def stage_registry(runner: Runner, options: SetupOptions) -> None:
     """Run a local registry over self-signed TLS, trusted by both Python and Docker.
 
     TLS rather than plain HTTP so that **cairn needs no change**: its registry client speaks
     https, and both `urllib` and Docker read the system CA store. The private IP goes into the
     certificate now so the same registry keeps working when the builder and the target become
     two machines.
-
-    Builder-only. A target pulls from the builder's registry and hosts none of its own.
     """
-    if not builds(options):
-        raise Aborted(
-            "a registry belongs on the build machine, which serves images to targets. "
-            "Use --role builder or --role both."
-        )
-
     host = f"localhost:{REGISTRY_PORT}"
     crt, key = CERT_DIR / "registry.crt", CERT_DIR / "registry.key"
 
@@ -655,19 +547,19 @@ def registry_compose() -> str:
     reason hosted registries make retention awkward is that some of them cannot delete a single
     version at all.
 
-    Carries ``CAIRN_MANAGED_LABEL`` so ``cairn adopt`` can recognize this project as cairn's own
-    infrastructure and exclude it when auto-detecting a site — by label, never by the
-    ``cairn-registry`` project name, which is only ``REGISTRY_DIR``'s basename and asserts
+    Carries ``CAIRN_MANAGED_LABEL`` so ``cairn-adopt examine`` can recognize this project as
+    cairn's own infrastructure and exclude it when auto-detecting a site — by label, never by
+    the ``cairn-registry`` project name, which is only ``REGISTRY_DIR``'s basename and asserts
     nothing on its own.
     """
     return f"""\
-# Written by cairn-provision. A local OCI registry over self-signed TLS.
+# Written by `cairn-build setup`. A local OCI registry over self-signed TLS.
 services:
   registry:
     image: docker.io/library/registry:2
     restart: unless-stopped
     labels:
-      - "{CAIRN_MANAGED_LABEL}=true"
+      - "{adopt_module.CAIRN_MANAGED_LABEL}=true"
     ports:
       - "127.0.0.1:{REGISTRY_PORT}:{REGISTRY_PORT}"
     environment:
@@ -682,159 +574,51 @@ volumes:
 """
 
 
-def stage_descriptor(runner: Runner, options: argparse.Namespace) -> None:
-    """Generate the descriptor with `cairn adopt`, install it, and confirm it parses.
-
-    Target-only. The descriptor describes a *running* deployment (`BR-DEPLOY-010a`), and its
-    presence is what marks a machine as a target. A builder is described by its manifest.
-    """
-    if not serves(options):
-        raise Aborted(
-            "a descriptor describes a running deployment; a build machine has none. "
-            "Use --role target or --role both."
-        )
-
-    cairn = _cairn_executable()
-    command = [str(cairn), "adopt", "--environment", options.environment]
-    if options.project:
-        command += ["--project", options.project]
-
-    rendered = runner.probe(command)
-    if rendered is None or not rendered.strip():
-        raise Aborted(
-            f"`cairn adopt` could not describe this host. Run it directly to see why:\n"
-            f"  {shlex.join(command)}"
-        )
-
-    runner.write(
-        DESCRIPTOR_PATH, rendered, mode=SHARED_FILE_MODE, what=f"installed {DESCRIPTOR_PATH}"
-    )
-    if runner.dry_run:
-        return
-
-    try:
-        parsed = tomllib.loads(DESCRIPTOR_PATH.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise Aborted(f"{DESCRIPTOR_PATH} does not parse after writing — {exc}") from exc
-    runner.say(f"    describes environment '{parsed.get('environment')}' on site "
-               f"'{parsed.get('site')}'")
-
-
-def stage_timers(runner: Runner, options: argparse.Namespace) -> None:
-    """Install the systemd units, enabling but not starting the build timer.
+def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
+    """Install the build timer, enabling but not starting it.
 
     Not started deliberately: the first build should be watched. A timer that fires before
     anyone has confirmed the manifest turns one wrong configuration into a wrong deploy every
     quarter of an hour.
     """
-    cairn = _cairn_executable()
-    enable = []
-
-    # Each role gets only the timer it actually runs. A builder converges nothing; a target
-    # builds nothing.
-    if serves(options):
-        emitted = runner.probe([str(cairn), "systemd-units", "--interval", options.interval])
-        if emitted is None:
-            raise Aborted("`cairn systemd-units` did not answer; is cairn installed?")
-
-        service, timer = split_units(emitted)
-        if service is None or timer is None:
-            raise Aborted(
-                "could not split `cairn systemd-units` output into a service and a timer"
-            )
-
-        # cairn resolves its own path with shutil.which, which will not find a sibling
-        # binary under sudo unless it happens to be on root's PATH — write the resolved
-        # path we already located instead.
-        service = service.replace("ExecStart=cairn ", f"ExecStart={cairn} ")
-        runner.write(SYSTEMD_DIR / "cairn-reconcile.service", service, what="reconcile service")
-        runner.write(SYSTEMD_DIR / "cairn-reconcile.timer", timer, what="reconcile timer")
-        enable.append("cairn-reconcile.timer")
-
-    if builds(options):
-        script = options.workdir / "build-and-advance.sh"
-        runner.write(
-            script,
-            build_script(options),
-            mode=0o755,
-            what=f"build script at {script}",
-        )
-        runner.write(
-            SYSTEMD_DIR / "cairn-build.service",
-            build_service(options, script),
-            what="build service",
-        )
-        runner.write(
-            SYSTEMD_DIR / "cairn-build.timer", build_timer(options), what="build timer"
-        )
-        enable.append("cairn-build.timer")
+    cairn_build = _executable("cairn-build")
+    script = options.workdir / "build-and-advance.sh"
+    runner.write(
+        script, build_script(options, cairn_build), mode=0o755, what=f"build script at {script}"
+    )
+    runner.write(
+        SYSTEMD_DIR / "cairn-build.service", build_service(options, script), what="build service"
+    )
+    runner.write(SYSTEMD_DIR / "cairn-build.timer", build_timer(options), what="build timer")
 
     runner.run(["systemctl", "daemon-reload"], what="reloading systemd")
-    for unit in enable:
-        runner.run(["systemctl", "enable", unit], what=f"enabling {unit}")
+    runner.run(["systemctl", "enable", "cairn-build.timer"], what="enabling cairn-build.timer")
     runner.report.warnings.append(
-        "timers are enabled but NOT started — run the first build and reconcile by hand first, "
-        f"then `systemctl start {' '.join(enable)}`"
+        "cairn-build.timer is enabled but NOT started — run the first build by hand first, "
+        "then `systemctl start cairn-build.timer`"
     )
 
 
-def _cairn_executable() -> Path:
-    """Locate the `cairn` executable installed alongside this one.
-
-    `cairn-provision` and `cairn` are always installed together, by the same distribution
-    (`pip install` / `pipx install --global datahenge-cairn`) — so the reliable way to find
-    one from the other is as a sibling in the same ``bin/`` directory, not a `PATH` lookup,
-    which depends on how the operator happened to invoke `sudo`.
-    """
-    sibling = Path(sys.argv[0]).resolve().parent / "cairn"
-    if sibling.is_file():
-        return sibling
-    found = shutil.which("cairn")
-    if found:
-        return Path(found)
-    raise Aborted(
-        "cannot find the `cairn` executable next to this one, or on PATH. Is datahenge-cairn "
-        "installed? (`pipx install --global datahenge-cairn`)"
-    )
-
-
-def split_units(emitted: str) -> tuple[str | None, str | None]:
-    """Split `cairn systemd-units` output into (service, timer).
-
-    Keyed on the filename headers cairn prints, so a change to its layout fails loudly here
-    rather than installing half a unit.
-    """
-    service_marker = "cairn-reconcile.service ---"
-    timer_marker = "cairn-reconcile.timer ---"
-    if service_marker not in emitted or timer_marker not in emitted:
-        return None, None
-
-    after_service = emitted.split(service_marker, 1)[1]
-    service, _, rest = after_service.partition("# ---")
-    timer = rest.split(timer_marker, 1)[1] if timer_marker in rest else None
-    return service.strip() + "\n", (timer.strip() + "\n") if timer else None
-
-
-def build_script(options: argparse.Namespace) -> str:
+def build_script(options: SetupOptions, cairn_build: Path) -> str:
     """Build, then advance the environment pointer.
 
-    `cairn build --push` is already an idempotent change detector — it resolves refs, computes
-    the input hash, and short-circuits when that hash is already built. So a timer is the whole
-    of the trigger; no watcher is needed and a no-op poll costs three `git ls-remote` calls.
+    `cairn-build build --push` is already an idempotent change detector — it resolves refs,
+    computes the input hash, and short-circuits when that hash is already built. So a timer is
+    the whole of the trigger; no watcher is needed and a no-op poll costs three `git ls-remote`
+    calls.
     """
-    cairn = _cairn_executable()
     return f"""\
 #!/bin/bash -e
-# Written by cairn-provision. `cairn build --push` is idempotent: with no new commits it
-# resolves refs, sees the input hash is already built, and exits without building.
+# Written by `cairn-build setup`. `cairn-build build --push` is idempotent: with no new
+# commits it resolves refs, sees the input hash is already built, and exits without building.
 cd {options.workdir}
 MANIFEST={shlex.quote(str(options.manifest))}
-{cairn} build --manifest "$MANIFEST" --push
-{cairn} retag {shlex.quote(options.environment)} --latest --yes --manifest "$MANIFEST"
+{cairn_build} build --manifest "$MANIFEST" --push
+{cairn_build} retag {shlex.quote(options.environment)} --latest --yes --manifest "$MANIFEST"
 """
 
 
-def build_service(options: argparse.Namespace, script: Path) -> str:
+def build_service(options: SetupOptions, script: Path) -> str:
     """The build unit.
 
     The script itself always passes `--manifest` explicitly (`ADR-042` — cairn never
@@ -844,7 +628,7 @@ def build_service(options: argparse.Namespace, script: Path) -> str:
     """
     return f"""\
 [Unit]
-Description=cairn — build a new image if the manifest's refs have moved
+Description=cairn-build — build a new image if the manifest's refs have moved
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -861,16 +645,16 @@ WantedBy=multi-user.target
 """
 
 
-def build_timer(options: argparse.Namespace) -> str:
+def build_timer(options: SetupOptions) -> str:
     """The build timer.
 
     Measured from the end of the last run, and deliberately slower than reconcile's: builds take
     tens of minutes. systemd will not start a unit that is already active, which supplies the
-    single-flight that `cairn build` does not have of its own.
+    single-flight that `cairn-build build` does not have of its own.
     """
     return f"""\
 [Unit]
-Description=cairn — poll for new commits and build
+Description=cairn-build — poll for new commits and build
 
 [Timer]
 OnBootSec=5min
@@ -884,100 +668,259 @@ WantedBy=timers.target
 """
 
 
-# --- entry point -------------------------------------------------------------
+# --- adopt-only stages ---------------------------------------------------------
 
-STAGES: dict[str, Callable[[Runner, argparse.Namespace], None]] = {
-    "preflight": stage_preflight,
+
+def stage_recon(runner: Runner, options: SetupOptions) -> None:
+    """Read the existing stack, and record how to put it back (read-only).
+
+    The revert note is the point. `reconcile` never rolls back (`BR-DEPLOY-018`), so the values
+    it would replace have to be captured *before* anything changes.
+    """
+    listing = runner.probe(["docker", "compose", "ls", "--format", "json"])
+    if listing is None:
+        runner.say("    no compose project is running, or Docker did not answer")
+        runner.report.warnings.append("no existing stack was found to reconnoitre")
+        return
+
+    try:
+        projects = [p for p in json.loads(listing) if isinstance(p, dict)]
+    except json.JSONDecodeError:
+        runner.report.warnings.append("compose's project list was not JSON")
+        return
+
+    if not projects:
+        runner.say("    no compose project is running")
+        return
+
+    for project in projects:
+        runner.say(f"    project {project.get('Name')} — {project.get('Status', '?')}")
+        first = str(project.get("ConfigFiles", "")).split(",")[0].strip()
+        if not first:
+            continue
+        env_file = Path(first).parent / ".env"
+        current = read_env_values(env_file, ("CUSTOM_IMAGE", "CUSTOM_TAG", "SITES"))
+        for key, value in current.items():
+            runner.say(f"      {key}={value}")
+        if current:
+            runner.report.revert.append(
+                f"In {env_file}, restore: "
+                + ", ".join(f"{k}={v}" for k, v in current.items())
+                + f" then: docker compose --project-name {project.get('Name')} up -d"
+            )
+
+
+def read_env_values(env_file: Path, keys: tuple[str, ...]) -> dict[str, str]:
+    """Read selected ``KEY=value`` pairs from a compose ``.env``, ignoring the rest."""
+    values: dict[str, str] = {}
+    try:
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        if key.strip() in keys:
+            values[key.strip()] = value.strip()
+    return values
+
+
+def stage_backup(runner: Runner, options: SetupOptions) -> None:
+    """Back up every site, and verify the dump exists and is non-empty (rule 6).
+
+    The installer's job rather than cairn's: a backup writes into the sites volume, which
+    `ADR-022` forbids cairn from doing. Verified rather than assumed, because the whole reason
+    this stage exists is that `bench migrate` is irreversible.
+    """
+    if options.skip_backup:
+        runner.say("    skipped by --skip-backup")
+        runner.report.skipped.append("pre-install backup (explicitly skipped)")
+        runner.report.warnings.append(
+            "no backup was taken; bench migrate is irreversible and cairn never rolls back"
+        )
+        return
+
+    project = options.project or _only_project(runner)
+    if project is None:
+        runner.say("    no single compose project to back up; name one with --project")
+        runner.report.skipped.append("pre-install backup (no project identified)")
+        return
+
+    compose = ["docker", "compose", "--project-name", project]
+    runner.run(
+        [*compose, "exec", "-T", "backend", "bench", "--site", "all", "backup", "--with-files"],
+        what="backing up the site(s)",
+        timeout=3600,
+    )
+
+    inspect = "ls -l sites/*/private/backups | tail -20"
+    listing = runner.probe([*compose, "exec", "-T", "backend", "bash", "-lc", inspect])
+    if runner.dry_run:
+        return
+    if not listing or not listing.strip():
+        raise Aborted(
+            "the backup reported success but no dump could be found under "
+            "sites/*/private/backups. Not proceeding — verify by hand."
+        )
+    runner.say("    backups present:")
+    for line in listing.strip().splitlines()[-6:]:
+        runner.say(f"      {line}")
+    runner.report.done.append("verified pre-install backup")
+    runner.report.warnings.append(
+        "the backup is on the box; copy it off before relying on it"
+    )
+
+
+def _only_project(runner: Runner) -> str | None:
+    listing = runner.probe(["docker", "compose", "ls", "--format", "json"])
+    if listing is None:
+        return None
+    try:
+        projects = [p for p in json.loads(listing) if isinstance(p, dict) and p.get("Name")]
+    except json.JSONDecodeError:
+        return None
+    return str(projects[0]["Name"]) if len(projects) == 1 else None
+
+
+def stage_descriptor(runner: Runner, options: SetupOptions) -> None:
+    """Generate the descriptor with :mod:`cairn.adopt`, install it, and confirm it parses.
+
+    Calls straight into `adopt.survey`/`adopt.render` in-process — `setup` and `examine` are
+    two subcommands of the same binary now, so there is no sibling process to shell out to
+    (`ADR-046`).
+    """
+    found = adopt_module.survey(options.project)
+    if found.is_multi_site:
+        raise Aborted(
+            f"this host serves {len(found.sites)} sites and a descriptor names one. Run "
+            f"`cairn-adopt examine` for the full findings before deciding how to proceed."
+        )
+
+    try:
+        rendered = adopt_module.render(found, options.environment)
+        adopt_module.validate(rendered)
+    except ValueError as exc:
+        raise Aborted(
+            f"not enough could be determined to describe this host: {exc}. Run "
+            f"`cairn-adopt examine` to see what is missing."
+        ) from exc
+
+    runner.write(
+        DESCRIPTOR_PATH, rendered, mode=SHARED_FILE_MODE, what=f"installed {DESCRIPTOR_PATH}"
+    )
+    if runner.dry_run:
+        return
+
+    try:
+        parsed = tomllib.loads(DESCRIPTOR_PATH.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise Aborted(f"{DESCRIPTOR_PATH} does not parse after writing — {exc}") from exc
+    runner.say(f"    describes environment '{parsed.get('environment')}' on site "
+               f"'{parsed.get('site')}'")
+
+
+def stage_timers_adopt(runner: Runner, options: SetupOptions) -> None:
+    """Install the reconcile timer, enabling but not starting it.
+
+    Not started deliberately: the first reconcile should be watched. Rendered in-process via
+    :func:`cairn.systemd.units` — no subprocess, no output to parse (`ADR-046`).
+    """
+    cairn_adopt = _executable("cairn-adopt")
+    rendered = systemd.units(executable=str(cairn_adopt), interval=options.interval)
+
+    runner.write(
+        SYSTEMD_DIR / "cairn-reconcile.service", rendered.service, what="reconcile service"
+    )
+    runner.write(SYSTEMD_DIR / "cairn-reconcile.timer", rendered.timer, what="reconcile timer")
+
+    runner.run(["systemctl", "daemon-reload"], what="reloading systemd")
+    runner.run(
+        ["systemctl", "enable", "cairn-reconcile.timer"], what="enabling cairn-reconcile.timer"
+    )
+    runner.report.warnings.append(
+        "cairn-reconcile.timer is enabled but NOT started — run `cairn-adopt reconcile` by hand "
+        "first, then `systemctl start cairn-reconcile.timer`"
+    )
+
+
+def _executable(name: str) -> Path:
+    """Locate *name* (``cairn-build`` or ``cairn-adopt``) installed alongside this one.
+
+    Both are always installed together, by the same distribution (`pip install` / `pipx
+    install --global datahenge-cairn`) — so the reliable way to find one from the other is
+    as a sibling in the same ``bin/`` directory, not a `PATH` lookup, which depends on how
+    the operator happened to invoke `sudo`.
+    """
+    sibling = Path(sys.argv[0]).resolve().parent / name
+    if sibling.is_file():
+        return sibling
+    found = shutil.which(name)
+    if found:
+        return Path(found)
+    raise Aborted(
+        f"cannot find the `{name}` executable next to this one, or on PATH. Is datahenge-cairn "
+        f"installed? (`pipx install --global datahenge-cairn`)"
+    )
+
+
+# --- entry points -------------------------------------------------------------
+
+BUILD_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
+    "preflight": stage_preflight_build,
+    "admin-group": stage_admin_group,
+    "registry": stage_registry,
+    "timers": stage_timers_build,
+}
+
+ADOPT_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
+    "preflight": stage_preflight_adopt,
     "admin-group": stage_admin_group,
     "recon": stage_recon,
     "backup": stage_backup,
-    "registry": stage_registry,
     "descriptor": stage_descriptor,
-    "timers": stage_timers,
+    "timers": stage_timers_adopt,
 }
 
 
-def stages_for(role: str, only: str | None) -> tuple[str, ...]:
-    """Which stages this run performs, in order."""
-    available = ROLE_STAGES[role]
+def stages_for(available: tuple[str, ...], stage_funcs: dict, only: str | None) -> tuple[str, ...]:
+    """Which stages this run performs, in order.
+
+    *stage_funcs* is one CLI's own fixed stage table (`BUILD_STAGE_FUNCS` or
+    `ADOPT_STAGE_FUNCS`) — a stage belonging to the other CLI is simply not a key in it,
+    so it is reported the same way a typo would be, not as a separate "wrong role" case.
+    """
     if only is None:
         return available
-    if only not in STAGES:
-        raise Aborted(f"unknown stage '{only}'; choose from {', '.join(STAGES)}")
-    if only not in available:
-        raise Aborted(f"stage '{only}' does not apply to role '{role}'")
+    if only not in stage_funcs:
+        raise Aborted(f"unknown stage '{only}'; choose from {', '.join(available)}")
     return (only,)
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="cairn-provision",
-        description="Provision a cairn build machine or deploy target.",
-    )
-    parser.add_argument(
-        "--role",
-        choices=("builder", "target", "both"),
-        required=True,
-        help="builder = builds and serves images; target = runs a site and converges; "
-        "both = one box doing each, which is the bootstrap case",
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="print every action and change nothing"
-    )
-    parser.add_argument(
-        "--only", metavar="STAGE", help=f"run one stage: {', '.join(STAGES)}"
-    )
-    parser.add_argument(
-        "--force", action="store_true", help="replace existing files (the old ones are kept)"
-    )
-    parser.add_argument(
-        "--workdir", type=Path, default=Path.cwd(),
-        help="the deployment directory: cairn.toml and the build timer live here "
-        "(default: the current directory)",
-    )
-    parser.add_argument("--manifest", type=Path, help="deployment manifest for the build timer")
-    parser.add_argument("--environment", default="production", help="environment name")
-    parser.add_argument("--project", help="compose project to adopt and back up")
-    parser.add_argument("--private-ip", help="also put this IP in the registry certificate")
-    parser.add_argument("--interval", default="5min", help="reconcile poll interval")
-    parser.add_argument("--build-interval", default="15min", help="build poll interval")
-    parser.add_argument(
-        "--skip-backup", action="store_true", help="do not back up before changing anything"
-    )
-    parser.add_argument(
-        "--skip-disk-free", action="store_true",
-        help="proceed even if free disk space is below the minimum",
-    )
-    parser.add_argument(
-        "--admin-group", default=DEFAULT_ADMIN_GROUP,
-        help=f"group /etc/cairn is shared with, created if absent (default: "
-        f"{DEFAULT_ADMIN_GROUP})",
-    )
-    parser.add_argument(
-        "--no-admin-group", action="store_true",
-        help="skip sharing /etc/cairn with a group; leave it exactly as found",
-    )
-    options = parser.parse_args(argv)
-    if options.manifest is None:
-        options.manifest = options.workdir / "cairn.toml"
-    if options.no_admin_group:
-        options.admin_group = None
-    return options
+def execute(
+    runner: Runner,
+    options: SetupOptions,
+    stage_funcs: dict[str, Callable[[Runner, SetupOptions], None]],
+    available_stages: tuple[str, ...],
+    only: str | None,
+    *,
+    program: str,
+) -> int:
+    """Run the chosen stages in order, report a summary, and return the exit code.
 
-
-def main(argv: list[str] | None = None) -> int:
-    options = parse_args(argv)
-    runner = Runner(dry_run=options.dry_run, force=options.force)
-
-    runner.say(f"cairn-provision — role {options.role}" + (" (dry run)" if options.dry_run else ""))
+    Shared by `cairn-build setup` and `cairn-adopt setup` — only *stage_funcs* and
+    *available_stages* differ between them.
+    """
+    runner.say(f"{program} setup" + (" (dry run)" if runner.dry_run else ""))
     runner.say(f"workdir {options.workdir}")
     runner.say("")
 
     try:
-        chosen = stages_for(options.role, options.only)
+        chosen = stages_for(available_stages, stage_funcs, only)
         for name in chosen:
             runner.say(f"[{name}]")
-            STAGES[name](runner, options)
+            stage_funcs[name](runner, options)
             runner.say("")
     except Aborted as exc:
         runner.say("")
@@ -991,7 +934,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
 
     _summarize(runner)
-    if options.dry_run:
+    if runner.dry_run:
         runner.say("Nothing was changed. Re-run without --dry-run to apply.")
     return 0
 
@@ -1009,7 +952,3 @@ def _summarize(runner: Runner) -> None:
             runner.say(f"  {label}: {entry}")
     if not any((runner.report.done, runner.report.skipped, runner.report.warnings)):
         runner.say("  nothing to report")
-
-
-if __name__ == "__main__":
-    sys.exit(main())

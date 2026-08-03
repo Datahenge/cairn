@@ -1,6 +1,6 @@
 # BR-CFG — Configuration Requirements
 
-_Status: **approved** 2026-07-23 (living) · revised 2026-07-26 · Last updated: 2026-07-26_
+_Status: **approved** 2026-07-23 (living) · revised 2026-07-26 · Last updated: 2026-08-03_
 
 Configuration, in two orthogonal sub-domains: **target** (runtime, per-environment, on the
 sites volume) and **build** (build-time only, local to the build machine). Conventions: see
@@ -56,9 +56,9 @@ precedence rule changed; this amendment was the filename only.
 `$XDG_CONFIG_HOME`, no per-user home directory, no `cairn.local.toml`. A per-user config tier
 is wrong for a multi-operator VPS (several human logins sharing one deployment): it is
 invisible-until-it-bites, not a convenience. Every operator on the host now reads the identical
-file; who may *write* it is left to ordinary filesystem permissions, which `cairn-provision`
-can share with a group by default (`BR-CFG-015`, `ADR-043`) but cairn itself neither assumes
-nor enforces. `cairn.local.toml`'s job — a personal, no-root, per-checkout override — is fully
+file; who may *write* it is left to ordinary filesystem permissions, which `setup`
+can share with a group by default (`BR-CFG-015`, `ADR-043`, `ADR-046`) but cairn itself neither
+assumes nor enforces. `cairn.local.toml`'s job — a personal, no-root, per-checkout override — is fully
 absorbed by the `CAIRN_*` environment-variable layer once every invocation already carries an
 explicit manifest reference (`BR-CFG-012`); it is not relocated, it is removed.
 
@@ -107,7 +107,7 @@ confirmed as a deliberate reversal, and superseding `ADR-029`'s directory walk):
   No other override path exists: layer 1 is not itself overridable by a same-named file in
   the working directory (the sole per-checkout override, `cairn.local.toml`, is removed
   entirely — its job is now layer 3's), nor by any CLI flag (the sole adjacent exception is
-  `--transcript <path>` on `cairn build`, which replaces the destination outright rather than
+  `--transcript <path>` on `cairn-build build`, which replaces the destination outright rather than
   overriding `transcript_dir`; `BR-CLI-016`). All three are optional; absent all, the
   documented defaults apply (`BR-CFG-011`). Layer 2 is deliberately below layer 3 so an
   override remains possible without editing — and committing — a client's manifest.
@@ -155,11 +155,12 @@ deployment over and keep publishing to their own registry. It MUST contain no cr
 **`BR-CFG-015`** *(a shared `/etc/cairn`, not a per-user one)* — `/etc/cairn` MUST remain a
 single, host-wide directory whose write access is governed by ordinary filesystem
 permissions — cairn MUST NOT assume, require, or check for any particular owner, group, or
-mode. A provisioning tool distributed alongside cairn (`cairn-provision`, `BR-DEPLOY-021`) MAY
-share the directory with a group by default so multiple operators can edit `builder.toml`
-without root; doing so or skipping it are both conforming. `cairn doctor` MAY report the
-directory's current group, permissions, and the invoking user's membership, but MUST NOT
-mutate any of them — diagnostic only, matching every other doctor check. *(ADR-042, ADR-043,
+mode. `setup`, the privileged subcommand nested in each CLI (`cairn-build setup` /
+`cairn-adopt setup`, `BR-DEPLOY-021`, `ADR-046`) MAY share the directory with a group by
+default so multiple operators can edit `builder.toml` without root; doing so or skipping it
+are both conforming. `cairn-build doctor` / `cairn-adopt doctor` MAY report the directory's
+current group, permissions, and the invoking user's membership, but MUST NOT mutate any of
+them — diagnostic only, matching every other doctor check. *(ADR-042, ADR-043, ADR-046,
 BR-DEPLOY-021)*
 
 ---
@@ -167,6 +168,6 @@ BR-DEPLOY-021)*
 ## Cross-references
 - `DEPLOY`/`ADR-017` owns `common_site_config.json`, `.env`, and secrets.
 - `BUILD` (`BR-BUILD-008`/`011`) consumes the registry/namespace from build config.
-- `DEPLOY`/`BR-DEPLOY-021` owns the `cairn-provision` installer contract that `BR-CFG-015`'s
+- `DEPLOY`/`BR-DEPLOY-021` owns the `setup` installer contract that `BR-CFG-015`'s
   default group-sharing stage must satisfy.
 - **Follow-up (user docs):** a GHCR setup runbook (`ADR-009`) is deferred to Phase-6.

@@ -1,4 +1,4 @@
-"""Emit the systemd service and timer for `cairn reconcile` (`BR-CLI-019`, `ADR-035`).
+"""Emit the systemd service and timer for `cairn-adopt reconcile` (`BR-CLI-019`, `ADR-035`).
 
 cairn **prints** these; it never writes to `/etc/systemd/system` and never reloads the daemon
 (`ADR-035`). Writing them would need root and would change the host outside cairn's stated
@@ -142,10 +142,10 @@ def install_hint() -> list[str]:
 
 
 def _executable() -> str:
-    """The path to this cairn, so the unit runs the same one that printed it.
+    """The path to `cairn-adopt`, so the unit runs the same one that printed it.
 
     ``sys.argv[0]`` is not enough — under a console script it may be a bare name that
     resolves differently for root than for the invoking user, and a unit that cannot find its
     binary fails at 3am rather than now.
     """
-    return shutil.which("cairn") or f"{sys.executable} -m cairn"
+    return shutil.which("cairn-adopt") or f"{sys.executable} -m cairn.cli_adopt"

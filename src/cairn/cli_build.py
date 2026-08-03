@@ -1,10 +1,11 @@
-"""cairn command-line interface — a single Typer application (BR-CLI-001).
+"""`cairn-build` — the build/control CLI (`BR-CLI-001`, group A of `BR-CLI`).
 
-Subcommands are added per requirement area. This module currently wires the ``vendor``
-group (BR-CLI-006), ``doctor`` (BR-CLI-007), ``build`` (BR-CLI-002), and ``push``
-(BR-CLI-003); further commands (``new-tag``, ``retag``, ``images``, ``reconcile``) are
-added as their modules land.
+Builds images, manages the vendored tree, moves environment pointers, and provisions a
+build machine. Never touches a running deployment — that is `cairn-adopt`'s job
+(`ADR-046`).
 """
+
+from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
@@ -14,30 +15,28 @@ import typer
 
 from . import (
     __version__,
-    adopt,
     build,
     config,
-    descriptor,
     doctor,
     engine,
     environments,
     images,
     prune,
     push,
-    reconcile,
     registry,
     resolve,
-    systemd,
     timing,
     transcript,
     vendor,
 )
+from .cli_support import done, note, report_timing, run, step, version_callback
 from .errors import CairnError
 from .project import find_project_root
+from .provision import BUILD_STAGE_FUNCS, BUILD_STAGES, Runner, SetupOptions, execute
 
 app = typer.Typer(
-    name="cairn",
-    help="Reproducible ERPNext image builds and pull-based deploys.",
+    name="cairn-build",
+    help="Build ERPNext images, manage the vendored tree, and move environment pointers.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -49,88 +48,19 @@ vendor_app = typer.Typer(
 app.add_typer(vendor_app, name="vendor")
 
 
-def _version_callback(value: bool) -> None:
-    if value:
-        typer.echo(f"cairn {__version__}")
-        raise typer.Exit()
-
-
 @app.callback()
 def _root(
     version: Annotated[
         bool,
         typer.Option(
             "--version",
-            callback=_version_callback,
+            callback=version_callback("cairn-build", __version__),
             is_eager=True,
-            help="Show the cairn version and exit.",
+            help="Show the cairn-build version and exit.",
         ),
     ] = False,
 ) -> None:
-    """cairn — reproducible ERPNext image builds and pull-based deploys."""
-
-
-def _step(message: str) -> None:
-    """Report progress on stderr, keeping stdout clean for a command's actual result.
-
-    Long operations must not look like nothing is happening (BR-CLI-011: nothing
-    consequential is silent), and stderr is the right channel because it does not
-    pollute output a caller may be parsing (BR-CLI-013). Progress is mirrored into the
-    active transcript, if any, so the file records the whole run and not merely the
-    engine's share of it (BR-CLI-016).
-
-    Dimmed, because this is commentary that scrolls past. Anything a person is meant to
-    stop and *read* belongs in :func:`_note` instead — dim grey is the first thing to
-    disappear under a muted colour scheme.
-    """
-    typer.secho(message, fg=typer.colors.BRIGHT_BLACK, err=True)
-    transcript.record(message)
-
-
-def _note(message: str) -> None:
-    """Report something on stderr that is meant to be read, not skimmed past.
-
-    Timings, digests, and the transcript path are answers to questions the operator
-    asked — they travel on stderr with progress, but at full contrast, because dimming
-    them defeats the reason they are printed at all.
-    """
-    typer.secho(message, err=True)
-    transcript.record(message)
-
-
-def _done(message: str) -> None:
-    """Report a completed action on stdout — the command's actual result — and record it.
-
-    stdout rather than stderr, per `_step`: progress is commentary, this is the outcome.
-    """
-    typer.secho(message, fg=typer.colors.GREEN)
-    transcript.record(message)
-
-
-def _run(action: Callable[[], int]) -> None:
-    """Run *action*, and exit with its return code.
-
-    A :class:`CairnError` is rendered as a clean, actionable message with exit code 2
-    rather than a traceback (BR-CLI-015). Anything else is re-raised with a note naming
-    it as unexpected, so an unhandled failure is never mistaken for silent success.
-    """
-    try:
-        code = action()
-    except CairnError as exc:
-        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(2) from exc
-    except KeyboardInterrupt:
-        typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
-        raise typer.Exit(130) from None
-    except Exception as exc:
-        typer.secho(
-            f"Internal error ({type(exc).__name__}): {exc}\n"
-            f"This is a bug in cairn; the traceback follows.",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise
-    raise typer.Exit(code)
+    """cairn-build — reproducible ERPNext image builds and registry pointer moves."""
 
 
 def _run_in_project(action: Callable[[Path], int]) -> None:
@@ -139,9 +69,9 @@ def _run_in_project(action: Callable[[Path], int]) -> None:
     Reserved for the two commands that actually shell out to ``ventwig`` (`vendor status`/
     `vendor sync`) — the only operations that need a development checkout with a
     ``pyproject.toml``. Everything else resolves the vendored tree package-relatively and
-    uses :func:`_run` directly.
+    uses :func:`cli_support.run` directly.
     """
-    _run(lambda: action(find_project_root()))
+    run(lambda: action(find_project_root()))
 
 
 @vendor_app.command(
@@ -247,14 +177,14 @@ def build_command(
             transcript.resolve_dir(build_config.transcript_dir), manifest.image_name
         )
         with transcript.recording(destination) as recorder:
-            _note(f"Transcript {destination}")
+            note(f"Transcript {destination}")
             try:
                 return _build(found, manifest, build_config, watch, sink=recorder)
             finally:
                 # Said a second time on the way out, success or failure: the first
                 # mention scrolled past minutes of engine output long ago, and this is
                 # where someone goes looking (BR-CLI-016).
-                _note(f"Transcript {destination}")
+                note(f"Transcript {destination}")
 
     def _build(
         found: Path,
@@ -270,7 +200,7 @@ def build_command(
             # In a finally, because "it failed after nine minutes" is at least as worth
             # knowing as how long a success took (BR-CLI-017).
             if not dry_run:
-                _report_timing(watch)
+                report_timing(watch)
 
     def _steps(
         found: Path,
@@ -279,11 +209,11 @@ def build_command(
         watch: timing.Stopwatch,
         sink: transcript.Transcript | None,
     ) -> int:
-        _step(f"Manifest {found}")
+        step(f"Manifest {found}")
         if push_after:
             push.assert_registry_configured(build_config)
 
-        _step("Checking vendored tree and resolving refs (contacts each app's remote)…")
+        step("Checking vendored tree and resolving refs (contacts each app's remote)…")
         with watch.phase("checks + ref resolution"):
             plan = build.plan(
                 manifest,
@@ -292,7 +222,7 @@ def build_command(
                 plain_progress=sink is not None,
             )
         for ref in plan.resolution.all_refs:
-            _step(f"  {ref.name:<12} {ref.ref:<14} {ref.kind.value:<7} {ref.short_commit}")
+            step(f"  {ref.name:<12} {ref.ref:<14} {ref.kind.value:<7} {ref.short_commit}")
         _warn_moving_refs(plan)
 
         if dry_run:
@@ -300,17 +230,17 @@ def build_command(
             return 0
 
         if not rebuild and (held := build.existing_image(plan)):
-            _note(f"Image {held}")
-            _done(f"Already built {plan.references[0]}")
-            _step(
+            note(f"Image {held}")
+            done(f"Already built {plan.references[0]}")
+            step(
                 "  These exact inputs were built before, so there is nothing to do. "
                 "Rebuilding would produce an identical image under a new id and leave "
                 "this one nameless — pass --rebuild to do it anyway."
             )
             return 0
 
-        _step(f"Building {plan.references[0]}")
-        _step(
+        step(f"Building {plan.references[0]}")
+        step(
             f"  {plan.engine_name}, {len(plan.build_args)} build args, "
             f"{len(plan.labels)} labels, apps.json as a build secret "
             f"— `--dry-run` prints the full command. This takes several minutes."
@@ -321,8 +251,8 @@ def build_command(
         with watch.phase("verify image"):
             digest = build.assert_image_exists(plan)
         for reference in plan.references:
-            _done(f"Built {reference}")
-        _note(f"Image {digest}")
+            done(f"Built {reference}")
+        note(f"Image {digest}")
 
         if not no_cache_tag:
             _tag_cache_stage(plan, watch)
@@ -330,13 +260,13 @@ def build_command(
         if push_after:
             with watch.phase("push"):
                 for reference in plan.references:
-                    _step(f"Pushing {reference}…")
+                    step(f"Pushing {reference}…")
                     push.push(reference, plan.engine_name)
-                    _done(f"Pushed {reference}")
+                    done(f"Pushed {reference}")
 
         return 0
 
-    _run(_action)
+    run(_action)
 
 
 @app.command(
@@ -378,7 +308,7 @@ def images_command(
 
         base = _registry_repository(found_manifest, build_config)
         if not as_json:
-            _step(f"Reading {base.base} (one request per tag; nothing is pulled)…")
+            step(f"Reading {base.base} (one request per tag; nothing is pulled)…")
         remote, others = images.inspect_registry(base)
         grouped = images.group_registry(remote)
 
@@ -389,7 +319,7 @@ def images_command(
         )
         return 0
 
-    _run(_action)
+    run(_action)
 
 
 @app.command(
@@ -429,19 +359,19 @@ def prune_command(
             return 0
 
         if not assume_yes and not typer.confirm("Remove them?", default=False):
-            _note("Nothing was removed.")
+            note("Nothing was removed.")
             return 0
 
         removed, failures = prune.remove(engine_name, plan.removals)
         for failure in failures:
             typer.secho(f"Could not remove {failure}", fg=typer.colors.YELLOW, err=True)
-        _done(
+        done(
             f"Removed {len(removed)} image(s), reclaiming "
             f"{prune.format_size(sum(image.size for image in removed))}."
         )
         return 1 if failures else 0
 
-    _run(_action)
+    run(_action)
 
 
 def _tag_cache_stage(plan: build.BuildPlan, watch: timing.Stopwatch) -> None:
@@ -455,21 +385,10 @@ def _tag_cache_stage(plan: build.BuildPlan, watch: timing.Stopwatch) -> None:
         named = build.tag_cache_stage(plan)
 
     if named:
-        _note(f"Cache {named}")
-        _step("  Named so it is not mistaken for a stale image; deleting it costs a slow rebuild.")
+        note(f"Cache {named}")
+        step("  Named so it is not mistaken for a stale image; deleting it costs a slow rebuild.")
     elif plan.engine_name == engine.PODMAN:
-        _step("  Could not name the reusable build layers; they stay unnamed in image lists.")
-
-
-def _report_timing(watch: timing.Stopwatch) -> None:
-    """Print the per-phase and overall elapsed times (BR-CLI-017).
-
-    At full contrast: this block exists to be read after the fact, which is precisely
-    what a dimmed colour defeats.
-    """
-    _note("Timing")
-    for line in watch.summary():
-        _note(line)
+        step("  Could not name the reusable build layers; they stay unnamed in image lists.")
 
 
 def _warn_moving_refs(plan: build.BuildPlan) -> None:
@@ -493,8 +412,8 @@ def _warn_moving_refs(plan: build.BuildPlan) -> None:
     "push",
     help=(
         "Upload a built image to the configured registry. Without --id, the manifest's "
-        "refs are re-resolved so the tags pushed are exactly those `cairn build` would "
-        "produce. Authentication is your container engine's: run `docker login` or "
+        "refs are re-resolved so the tags pushed are exactly those `cairn-build build` "
+        "would produce. Authentication is your container engine's: run `docker login` or "
         "`podman login` first — cairn stores no credentials."
     ),
 )
@@ -511,7 +430,7 @@ def push_command(
     """Upload a built image to the configured registry (BR-CLI-003).
 
     Without `--id`, the manifest's refs are re-resolved so the tags pushed are exactly
-    those `cairn build` would produce for the current inputs.
+    those `cairn-build build` would produce for the current inputs.
     """
 
     def _action() -> int:
@@ -531,7 +450,7 @@ def push_command(
             typer.secho(f"Pushed {target}", fg=typer.colors.GREEN)
         return 0
 
-    _run(_action)
+    run(_action)
 
 
 def _registry_repository(
@@ -540,8 +459,8 @@ def _registry_repository(
     """The repository the registry commands act on, taken from the manifest and build config.
 
     The tag is a placeholder — every caller replaces it. What matters is the repository, which
-    is composed exactly as `cairn build` composes it, so the images read here are the images
-    built there.
+    is composed exactly as `cairn-build build` composes it, so the images read here are the
+    images built there.
     """
     if manifest_path is None:
         raise CairnError(
@@ -589,7 +508,7 @@ def _pointer_move(
 
     candidates = None
     if selector in (environments.Selector.LATEST, environments.Selector.PREVIOUS):
-        _step(f"Reading {environment.ref.base} to find the image…")
+        step(f"Reading {environment.ref.base} to find the image…")
         held, _ = images.inspect_registry(environment.ref)
         candidates = [
             registry.RemoteImage(
@@ -617,7 +536,7 @@ def _pointer_move(
         return 0
 
     if move.is_noop:
-        _done(f"{environment.name} already points at {move.source.digest}")
+        done(f"{environment.name} already points at {move.source.digest}")
         return 0
 
     # The production gate (BR-CLI-010). Asked after the move is fully decided, so the digest
@@ -627,13 +546,13 @@ def _pointer_move(
         and not assume_yes
         and not typer.confirm(f"Move '{environment.name}' to this image?", default=False)
     ):
-        _note("The pointer was not moved.")
+        note("The pointer was not moved.")
         return 0
 
-    _step(f"Pointing {environment.ref} at {move.source.digest}…")
+    step(f"Pointing {environment.ref} at {move.source.digest}…")
     digest = environments.apply(move)
-    _done(f"{environment.name} now points at {digest}")
-    _step("  The target converges on its next poll; nothing was pulled or rebuilt.")
+    done(f"{environment.name} now points at {digest}")
+    step("  The target converges on its next poll; nothing was pulled or rebuilt.")
     return 0
 
 
@@ -692,7 +611,7 @@ def new_tag_command(
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
 ) -> None:
     """Create an environment's pointer (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004)."""
-    _run(
+    run(
         lambda: _pointer_move(
             environment,
             creating=True,
@@ -737,7 +656,7 @@ def retag_command(
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
 ) -> None:
     """Move an environment's pointer (BR-CLI-004, BR-CLI-010, BR-DEPLOY-004)."""
-    _run(
+    run(
         lambda: _pointer_move(
             environment,
             creating=False,
@@ -793,141 +712,7 @@ def retire_command(
         )
         return 0
 
-    _run(_action)
-
-
-@app.command(
-    "reconcile",
-    help=(
-        "Converge this host to the image its environment's tag points at. Idempotent and "
-        "safe to run repeatedly: with nothing changed it does nothing. Reads "
-        "/etc/cairn/environment.toml, and never rolls back on failure — it stops and reports."
-    ),
-)
-def reconcile_command(
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Show what would converge, and change nothing.")
-    ] = False,
-    descriptor_path: Annotated[
-        Path | None,
-        typer.Option(
-            "--descriptor",
-            help="Read this descriptor instead of the host's.",
-            hidden=True,
-        ),
-    ] = None,
-) -> None:
-    """Converge the target to its desired state (BR-CLI-008, BR-DEPLOY-003).
-
-    Deliberately does **not** require a cairn project: a target has no manifest and no
-    vendored tree, only the descriptor that says what it runs (`ADR-034`).
-    """
-    watch = timing.Stopwatch()
-    try:
-        environment = descriptor.load(descriptor_path)
-        _step(f"Environment {environment.environment} — site {environment.site}")
-
-        with watch.phase("converge"):
-            outcome = reconcile.run(environment, dry_run=dry_run, report=_step)
-
-        if outcome.changed:
-            _done(outcome.detail)
-        else:
-            _note(outcome.detail)
-        _report_timing(watch)
-        raise typer.Exit(0)
-    except CairnError as exc:
-        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
-        _report_timing(watch)
-        raise typer.Exit(2) from exc
-    except KeyboardInterrupt:
-        typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
-        raise typer.Exit(130) from None
-
-
-@app.command(
-    "adopt",
-    help=(
-        "Read the frappe_docker deployment already running on this host and print an "
-        "environment descriptor for it. Writes nothing — review the output, then install it. "
-        "With --manifest, also checks that the manifest's apps match the site's."
-    ),
-)
-def adopt_command(
-    environment: Annotated[
-        str, typer.Option("--environment", help="Name for this environment in the descriptor.")
-    ] = "production",
-    project: Annotated[
-        str | None,
-        typer.Option("--project", help="Compose project to read; default: the only one running."),
-    ] = None,
-    manifest_path: Annotated[
-        Path | None,
-        typer.Option("--manifest", help="Cross-check this manifest's apps against the site."),
-    ] = None,
-) -> None:
-    """Print a descriptor derived from the running deployment (BR-CLI-020).
-
-    Deliberately outside `_run_in_project`: a host being adopted has neither a cairn project nor
-    a manifest yet, and requiring either would make the command useless exactly when it is
-    needed. The manifest is read only when asked for, purely to cross-check.
-    """
-    try:
-        found = adopt.survey(project)
-
-        manifest = config.load_manifest(manifest_path) if manifest_path is not None else None
-        for line in adopt.report(found, manifest):
-            _note(line)
-        _note("")
-
-        if found.is_multi_site:
-            raise CairnError(
-                f"This host serves {len(found.sites)} sites and a descriptor names one. "
-                f"No descriptor was generated — decide how multiple sites should be handled "
-                f"first."
-            )
-
-        try:
-            rendered = adopt.render(found, environment)
-            adopt.validate(rendered)
-        except ValueError as exc:
-            raise CairnError(
-                f"Not enough could be determined to describe this host: {exc}. The findings "
-                f"above say what is missing."
-            ) from exc
-
-        typer.echo(rendered, nl=False)
-        _note(f"Review the above, then install it as {descriptor.DESCRIPTOR_PATH}.")
-    except CairnError as exc:
-        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(2) from exc
-
-
-@app.command(
-    "systemd-units",
-    help=(
-        "Print a systemd service and timer that run `cairn reconcile` on this host. cairn "
-        "prints them and installs nothing — review them, then install them yourself."
-    ),
-)
-def systemd_units_command(
-    interval: Annotated[
-        str, typer.Option("--interval", help="How often to poll, as a systemd time span.")
-    ] = systemd.DEFAULT_INTERVAL,
-    user: Annotated[str, typer.Option("--user", help="The user the service runs as.")] = "root",
-) -> None:
-    """Print the systemd units for `cairn reconcile` (BR-CLI-019)."""
-    rendered = systemd.units(interval=interval, user=user)
-
-    _note("Assumed for this host:")
-    for line in rendered.assumptions:
-        _note(f"  {line}")
-    _note("")
-
-    typer.echo(rendered.render())
-
-    for line in systemd.install_hint():
-        _note(line)
+    run(_action)
 
 
 @app.command(
@@ -949,9 +734,88 @@ def doctor_command(
     Reports every check before exiting non-zero on any failure (BR-CLI-007, BR-CLI-012).
     A missing manifest only warns here (`doctor` legitimately runs before one exists).
     """
-    _run(lambda: doctor.run(manifest_path=manifest_path))
+    run(lambda: doctor.run_build(manifest_path=manifest_path))
 
 
-def run() -> None:
-    """Console-script entry point for the ``cairn`` command."""
+@app.command(
+    "setup",
+    help=(
+        "Provision this machine to build: checks prerequisites, shares /etc/cairn with a "
+        "group, runs a local TLS-secured registry, and installs (but does not start) the "
+        "build timer. Must be run with sudo. Never touches a running deployment."
+    ),
+)
+def setup_command(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print every action, and change nothing.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Replace existing files (the old ones are kept).")
+    ] = False,
+    only: Annotated[
+        str | None,
+        typer.Option("--only", help=f"Run one stage: {', '.join(BUILD_STAGES)}."),
+    ] = None,
+    workdir: Annotated[
+        Path,
+        typer.Option("--workdir", help="The deployment directory cairn.toml lives in."),
+    ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Deployment manifest for the build timer."),
+    ] = None,
+    environment: Annotated[
+        str, typer.Option("--environment", help="Environment the build timer advances.")
+    ] = "production",
+    private_ip: Annotated[
+        str | None,
+        typer.Option("--private-ip", help="Also put this IP in the registry certificate."),
+    ] = None,
+    build_interval: Annotated[
+        str, typer.Option("--build-interval", help="Build poll interval.")
+    ] = "15min",
+    skip_disk_free: Annotated[
+        bool,
+        typer.Option(
+            "--skip-disk-free", help="Proceed even if free disk space is below the minimum."
+        ),
+    ] = False,
+    admin_group: Annotated[
+        str, typer.Option("--admin-group", help="Group /etc/cairn is shared with.")
+    ] = "cairn-admins",
+    no_admin_group: Annotated[
+        bool,
+        typer.Option(
+            "--no-admin-group", help="Skip sharing /etc/cairn with a group; leave it as found."
+        ),
+    ] = False,
+) -> None:
+    """Provision a build machine (BR-CLI-021, BR-DEPLOY-021).
+
+    Root-gated: exits reporting the shortfall rather than attempting a partial run without
+    the privilege its actions require.
+    """
+    options = SetupOptions(
+        dry_run=dry_run,
+        force=force,
+        workdir=workdir,
+        manifest=manifest_path,
+        environment=environment,
+        private_ip=private_ip,
+        build_interval=build_interval,
+        skip_disk_free=skip_disk_free,
+        admin_group=None if no_admin_group else admin_group,
+    )
+    runner = Runner(dry_run=dry_run, force=force)
+    raise typer.Exit(
+        execute(runner, options, BUILD_STAGE_FUNCS, BUILD_STAGES, only, program="cairn-build")
+    )
+
+
+def main() -> None:
+    """Console-script entry point for the ``cairn-build`` command."""
     app()
+
+
+if __name__ == "__main__":
+    main()

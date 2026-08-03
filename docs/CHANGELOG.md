@@ -9,6 +9,93 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (yet later still — `06-cli.md` reorganized into role sections, not split into two areas)
+
+Brian asked whether `BR-CLI`/`06-cli.md` should split into two areas to mirror the
+`cairn-build`/`cairn-adopt` binary split. Answer: no — `05-config.md` already solved the
+identical tension (two roles, `BR-CFG`) with one file sectioned `A. Target` / `B. Build`
+rather than two area files, precisely because most of what a CLI-conventions area holds
+(logging, `--json`, config discovery, help text) is shared house style that applies
+identically to both binaries; splitting would either duplicate that content across two
+files or need a third "shared" area just to hold it.
+
+Restructured `06-cli.md` to the same pattern: **Substrate** (the one-package/two-CLI fact),
+**A. `cairn-build` commands**, **B. `cairn-adopt` commands**, **C. Commands on both CLIs**
+(`doctor`, `setup`), **D. Shared conventions**. This also corrected a placement error from
+the split above: `BR-CLI-009` (existence guards) and `BR-CLI-010` (prod gate) are entirely
+about the pointer verbs (`new-tag`/`retag`/`retire`) — build-only — and had been left under
+a general "Guards & safety" heading; `BR-CLI-016` (build transcript) is build-only in the
+same way and had been left under "Conventions." All three moved into section A. No
+requirement text changed, no ID renumbered — only which section each lives under.
+
+---
+
+## 2026-08-03 (later still yet — `BR-DATA-008` brought into line with the already-struck `install-app` opt-in)
+
+Caught while auditing the docs during the `cairn-build`/`cairn-adopt` split above: `BR-DATA-008`
+still described the **opt-in** `bench install-app <apps>` path `ADR-023` originally proposed —
+but `ADR-037`/`BR-DEPLOY-003a` had already struck that path entirely, back on 2026-07-25, and
+`BR-DATA-008` was simply never updated to match. Two places in the docs disagreed about whether
+cairn ever runs `install-app`.
+
+Brian clarified the intended behavior: cairn itself must never initiate `bench install-app`,
+under any circumstance — but the human operator legitimately may need to run it by hand, when a
+newly-deployed image introduces a Frappe App the target site has never had installed. Rewrote
+`BR-DATA-008` to say exactly that (an operator-only, by-hand gap, never a cairn code path), and
+added a "superseded" cross-link from `ADR-023` to `ADR-037`, which struck it but never linked
+back.
+
+---
+
+## 2026-08-03 (later still — `cairn-build` / `cairn-adopt`: two CLIs replace the unified `cairn` binary)
+
+Raised while drafting the `userdocs/` Get Started guide from a real TEST-VPS deployment: a
+single onboarding narrative kept forcing an assumption about which reader was reading, since
+"stand up frappe_docker, then adopt it" and "build and push an image" are genuinely different
+stories that one linear page can't tell without picking one. Brian also flagged that
+"reconciler" reads, to anyone who knows ERPNext, like an accounting feature name (Bank
+Reconciliation Tool, Payment Reconciliation) rather than a deploy agent — a real domain
+collision, not a style complaint — and asked whether cairn's single binary should split, the
+way a Rust project might split into a shared lib crate plus two bin crates.
+
+Landed as `ADR-046` (supersedes `ADR-018`; amends `ADR-028`, `ADR-035`, `ADR-040`, `ADR-043`):
+still **one package** (`datahenge-cairn`, no dependency/workspace split — that question,
+raised mid-discussion, turned out to be moot, since the shared code was never going to be a
+separate distribution), but **two console-script CLIs** in place of the unified `cairn`:
+`cairn-build` (build/control) and `cairn-adopt` (target). No unified `cairn` command, no
+`datahenge-cairn` alias (its only reason to exist — a PyPI name collision fallback — no longer
+applies once neither binary is named `cairn`).
+
+Consequences threaded through the requirements:
+- **`cairn doctor`'s role-detection is retired** (`ADR-028` superseded) — `cairn-build doctor`
+  and `cairn-adopt doctor` each run exactly one fixed check set; the binary invoked is the role
+  signal now.
+- **`cairn adopt` is renamed `cairn-adopt examine`** — `cairn-adopt adopt` read as a stutter and
+  wrongly implied a change was being made, when the command is a strict read-only survey.
+  "examine" pairs with `doctor`'s existing diagnostic register.
+- **`cairn-provision` is retired as a separate program** (`ADR-040`, `ADR-043` amended) — its
+  work becomes `setup`, a privilege-gated subcommand nested in each CLI (`cairn-build setup`,
+  `cairn-adopt setup`), which also removes the `--role` flag entirely: each CLI's `setup`
+  provisions only what that role needs. `install` was considered and rejected as the subcommand
+  name — cairn already disclaims installing a Frappe App (`BR-DEPLOY-003a`), and reusing
+  "install" for cairn's own host bootstrapping would echo that. The seven-point installer
+  contract (`BR-DEPLOY-021`) and `/etc/cairn` group-sharing (`ADR-043`) carry over unchanged.
+
+Revised `BR-CLI-001` through `BR-CLI-020`, added `BR-CLI-021` (`setup`), revised
+`BR-DEPLOY-021`/`022`'s installer language, and rewrote `00-overview.md`'s "two roles" section
+to match. Also fixed imprecise wording surfaced along the way: "cairn never installs an app"
+now reads "cairn never installs a Frappe App" everywhere it appears in living text
+(`BR-DEPLOY-003a`, `06-cli.md`, `next-steps.md`, `High Level Motivations and Workflows.md`) —
+dated historical entries in `CHANGELOG.md`/`01-decisions-closed.md`/`03-discussion-log.md` were
+left as-is, since rewriting a dated record would misrepresent what was actually said at the
+time.
+
+Code has not changed yet — `src/cairn/cli.py` still implements the old single-binary surface,
+and `README.md`/`CONFIGURATION.md` still describe it. That catch-up is deliberately a separate,
+later step.
+
+---
+
 ## 2026-08-03 (later — new `DOCS` requirement area: published documentation site)
 
 Brian asked to add a requirement for high-quality online documentation, GitHub Pages-based

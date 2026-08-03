@@ -1,4 +1,4 @@
-"""Tests for the provisioning installer (`BR-DEPLOY-021`, `ADR-040`).
+"""Tests for `setup` — `cairn-build setup` / `cairn-adopt setup` (`BR-DEPLOY-021`, `ADR-046`).
 
 This code runs **as root on client infrastructure**, which is the whole reason it is Python and
 not shell. The contract in `BR-DEPLOY-021` is what these tests hold it to: idempotent, a truthful
@@ -16,20 +16,12 @@ from pathlib import Path
 
 import pytest
 
+from cairn import adopt as adopt_module
 from cairn import provision
 
 
-def _options(**overrides):
-    """Parsed arguments, with a role and a workdir that exist."""
-    argv = ["--role", overrides.pop("role", "both")]
-    for key, value in overrides.pop("flags", {}).items():
-        argv += [key, str(value)]
-    for flag in overrides.pop("switches", []):
-        argv.append(flag)
-    options = provision.parse_args(argv)
-    for key, value in overrides.items():
-        setattr(options, key, value)
-    return options
+def _options(**overrides) -> provision.SetupOptions:
+    return provision.SetupOptions(**overrides)
 
 
 class Recorder(provision.Runner):
@@ -67,11 +59,11 @@ class Recorder(provision.Runner):
 
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
-    """Redirect every path the installer writes to, so no test can touch the real host.
+    """Redirect every path setup writes to, so no test can touch the real host.
 
-    Also gives ``_cairn_executable()`` a real sibling to find, at a known path, so tests that
-    exercise the timers/descriptor stages resolve deterministically instead of depending on
-    whatever happens to be on ``PATH`` in the environment running the suite.
+    Also gives ``_executable()`` real siblings to find, at known paths, so tests that
+    exercise the timers stage resolve deterministically instead of depending on whatever
+    happens to be on ``PATH`` in the environment running the suite.
     """
     for name, relative in (
         ("CERT_DIR", "etc/cairn"),
@@ -85,88 +77,55 @@ def sandbox(tmp_path, monkeypatch):
 
     bindir = tmp_path / "bin"
     bindir.mkdir(parents=True)
-    (bindir / "cairn").touch()
-    monkeypatch.setattr(sys, "argv", [str(bindir / "cairn-provision")])
+    (bindir / "cairn-build").touch()
+    (bindir / "cairn-adopt").touch()
+    monkeypatch.setattr(sys, "argv", [str(bindir / "cairn-build")])
 
     workdir = tmp_path / "opt/cairn"
     workdir.mkdir(parents=True)
     return workdir
 
 
-# --- roles: each host does only what its role implies ------------------------
+# --- two fixed stage lists, no role flag (`ADR-046`) -------------------------
 
 
-def test_a_builder_neither_surveys_nor_backs_up_nor_is_described():
+def test_build_setup_has_no_target_stages():
     """A build machine has no ERPNext site. `bench backup` there would be asking a question of
     a container that does not exist, and a descriptor describes a *running* deployment."""
-    assert "backup" not in provision.BUILDER_STAGES
-    assert "recon" not in provision.BUILDER_STAGES
-    assert "descriptor" not in provision.BUILDER_STAGES
+    assert "backup" not in provision.BUILD_STAGES
+    assert "recon" not in provision.BUILD_STAGES
+    assert "descriptor" not in provision.BUILD_STAGES
 
 
-def test_a_target_hosts_no_registry():
+def test_adopt_setup_hosts_no_registry():
     """It pulls from the builder's."""
-    assert "registry" not in provision.TARGET_STAGES
+    assert "registry" not in provision.ADOPT_STAGES
 
 
-def test_a_target_backs_up_before_anything_else_changes():
-    stages = provision.TARGET_STAGES
+def test_adopt_setup_backs_up_before_the_descriptor():
+    stages = provision.ADOPT_STAGES
     assert "backup" in stages
     assert stages.index("backup") < stages.index("descriptor")
 
 
-def test_both_is_the_union_and_still_backs_up_first():
-    """The bootstrap case: one box doing each. The ordering guarantee must survive it."""
-    stages = provision.BOTH_STAGES
-    assert set(stages) == set(provision.BUILDER_STAGES) | set(provision.TARGET_STAGES)
-    assert stages.index("backup") < stages.index("registry")
-    assert stages.index("preflight") == 0
-
-
-def test_descriptor_precedes_registry_on_a_bootstrap_box():
-    """`cairn adopt` needs exactly one compose project running to auto-detect it. If `registry`
-    ran first, its own `cairn-registry` project would make every fresh `--role both` install
-    ambiguous for a reason that has nothing to do with the actual site."""
-    stages = provision.BOTH_STAGES
-    assert stages.index("descriptor") < stages.index("registry")
-
-
-@pytest.mark.parametrize(
-    ("stage", "role", "expected"),
-    [
-        ("backup", "builder", "A builder has none"),
-        ("recon", "builder", "no running deployment to survey"),
-        ("descriptor", "builder", "a build machine has none"),
-        ("registry", "target", "belongs on the build machine"),
-    ],
-)
-def test_a_stage_run_against_the_wrong_role_says_why(stage, role, expected):
-    """`--only` lets a stage be invoked directly, so each must refuse the wrong role itself
-    rather than relying on the stage list to have filtered it."""
-    runner = Recorder()
-
-    with pytest.raises(provision.Aborted, match=expected):
-        provision.STAGES[stage](runner, _options(role=role))
-
-
-def test_admin_group_stage_runs_before_registry_and_descriptor():
+def test_admin_group_stage_runs_before_every_stage_that_writes_under_it():
     """The setgid bit must predate every file those stages write (`ADR-043`)."""
-    for stages in (provision.BUILDER_STAGES, provision.TARGET_STAGES, provision.BOTH_STAGES):
-        assert stages.index("admin-group") < stages.index("timers")
-        if "registry" in stages:
-            assert stages.index("admin-group") < stages.index("registry")
-        if "descriptor" in stages:
-            assert stages.index("admin-group") < stages.index("descriptor")
+    assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("registry")
+    assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("timers")
+    assert provision.ADOPT_STAGES.index("admin-group") < provision.ADOPT_STAGES.index("descriptor")
+    assert provision.ADOPT_STAGES.index("admin-group") < provision.ADOPT_STAGES.index("timers")
 
 
 def test_an_unknown_stage_lists_the_real_ones():
     with pytest.raises(provision.Aborted, match="unknown stage"):
-        provision.stages_for("both", "registery")
+        provision.stages_for(provision.BUILD_STAGES, provision.BUILD_STAGE_FUNCS, "registery")
 
 
-def test_a_stage_outside_the_role_is_refused_by_name():
-    with pytest.raises(provision.Aborted, match="does not apply to role"):
-        provision.stages_for("target", "registry")
+def test_a_stage_outside_this_setup_is_reported_like_a_typo():
+    """`registry` is a `cairn-build setup` stage; `cairn-adopt setup` doesn't know it exists,
+    so asking for it by `--only` is reported the same way a genuine typo would be."""
+    with pytest.raises(provision.Aborted, match="unknown stage 'registry'"):
+        provision.stages_for(provision.ADOPT_STAGES, provision.ADOPT_STAGE_FUNCS, "registry")
 
 
 # --- rule 5: gate before acting ---------------------------------------------
@@ -179,24 +138,24 @@ def test_preflight_reports_every_check_before_stopping(monkeypatch):
     monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
 
     with pytest.raises(provision.Aborted, match="prerequisite"):
-        provision.stage_preflight(runner, _options(role="target"))
+        provision.stage_preflight_adopt(runner, _options())
 
     assert "docker" in runner.output
     assert "free disk" in runner.output
     assert "available memory" in runner.output
 
 
-def test_preflight_asks_a_builder_for_build_tools_and_a_target_for_none(monkeypatch):
+def test_preflight_asks_a_builder_for_build_tools_and_an_adopt_setup_for_none(monkeypatch):
     monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
 
     builder = Recorder()
     with pytest.raises(provision.Aborted):
-        provision.stage_preflight(builder, _options(role="builder"))
+        provision.stage_preflight_build(builder, _options())
     assert "buildx" in builder.output
 
     target = Recorder()
     with pytest.raises(provision.Aborted):
-        provision.stage_preflight(target, _options(role="target"))
+        provision.stage_preflight_adopt(target, _options())
     assert "buildx" not in target.output
 
 
@@ -245,7 +204,7 @@ def test_skip_disk_free_overrides_only_the_disk_check(monkeypatch):
     runner = Recorder()
 
     with pytest.raises(provision.Aborted, match="root"):
-        provision.stage_preflight(runner, _options(role="target", skip_disk_free=True))
+        provision.stage_preflight_adopt(runner, _options(skip_disk_free=True))
 
     assert "FAIL" in runner.output  # the disk failure is still reported, not hidden
     assert "overridden by --skip-disk-free" in runner.output
@@ -265,7 +224,7 @@ def test_skip_disk_free_lets_a_short_disk_run_proceed(monkeypatch):
     )
     runner = Recorder()
 
-    provision.stage_preflight(runner, _options(role="target", skip_disk_free=True))
+    provision.stage_preflight_adopt(runner, _options(skip_disk_free=True))
 
     assert any("overridden" in warning for warning in runner.report.warnings)
 
@@ -285,31 +244,31 @@ def test_unreadable_meminfo_is_a_failed_check_not_a_crash(tmp_path):
     assert provision.read_available_memory_gb(tmp_path / "absent") is None
 
 
-# --- locating the sibling `cairn` executable ---------------------------------
+# --- locating the sibling executable -----------------------------------------
 
 
-def test_cairn_executable_prefers_a_sibling_binary(tmp_path, monkeypatch):
+def test_executable_prefers_a_sibling_binary(tmp_path, monkeypatch):
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    (bindir / "cairn").touch()
-    monkeypatch.setattr(sys, "argv", [str(bindir / "cairn-provision")])
+    (bindir / "cairn-adopt").touch()
+    monkeypatch.setattr(sys, "argv", [str(bindir / "cairn-adopt")])
 
-    assert provision._cairn_executable() == bindir / "cairn"
-
-
-def test_cairn_executable_falls_back_to_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "argv", [str(tmp_path / "nowhere" / "cairn-provision")])
-    monkeypatch.setattr(provision.shutil, "which", lambda name: "/usr/local/bin/cairn")
-
-    assert provision._cairn_executable() == Path("/usr/local/bin/cairn")
+    assert provision._executable("cairn-adopt") == bindir / "cairn-adopt"
 
 
-def test_cairn_executable_raises_when_absent(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "argv", [str(tmp_path / "nowhere" / "cairn-provision")])
+def test_executable_falls_back_to_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "argv", [str(tmp_path / "nowhere" / "cairn-build")])
+    monkeypatch.setattr(provision.shutil, "which", lambda name: "/usr/local/bin/cairn-build")
+
+    assert provision._executable("cairn-build") == Path("/usr/local/bin/cairn-build")
+
+
+def test_executable_raises_when_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "argv", [str(tmp_path / "nowhere" / "cairn-build")])
     monkeypatch.setattr(provision.shutil, "which", lambda name: None)
 
-    with pytest.raises(provision.Aborted, match="cannot find the `cairn` executable"):
-        provision._cairn_executable()
+    with pytest.raises(provision.Aborted, match="cannot find the `cairn-build` executable"):
+        provision._executable("cairn-build")
 
 
 # --- rule 2: the dry run is truthful ----------------------------------------
@@ -429,7 +388,7 @@ def test_the_certificate_key_is_owner_only(sandbox, monkeypatch):
     monkeypatch.setattr(provision.os, "chmod", lambda path, mode: modes.setdefault(path, mode))
     runner = Recorder(answers={"curl": "ok"})
 
-    provision.stage_registry(runner, _options(role="builder", workdir=sandbox, force=True))
+    provision.stage_registry(runner, _options(workdir=sandbox, force=True))
 
     assert modes[provision.CERT_DIR / "registry.key"] == 0o600
 
@@ -452,7 +411,7 @@ def test_admin_group_is_created_when_absent(sandbox, monkeypatch):
     monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
     runner = Recorder()
 
-    provision.stage_admin_group(runner, _options(role="both"))
+    provision.stage_admin_group(runner, _options())
 
     assert runner.ran("groupadd cairn-admins")
     assert any("created group" in line for line in runner.report.done)
@@ -466,7 +425,7 @@ def test_admin_group_left_alone_when_it_already_exists(sandbox, monkeypatch):
     monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
     runner = Recorder()
 
-    provision.stage_admin_group(runner, _options(role="both"))
+    provision.stage_admin_group(runner, _options())
 
     assert not runner.ran("groupadd")
     assert any("already exists" in line for line in runner.report.skipped)
@@ -477,9 +436,7 @@ def test_admin_group_name_is_configurable(sandbox, monkeypatch):
     monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
     runner = Recorder()
 
-    provision.stage_admin_group(
-        runner, _options(role="both", flags={"--admin-group": "ops-team"})
-    )
+    provision.stage_admin_group(runner, _options(admin_group="ops-team"))
 
     assert runner.ran("groupadd ops-team")
 
@@ -494,16 +451,17 @@ def test_admin_group_already_correct_is_not_rechowned(sandbox, monkeypatch):
     monkeypatch.setattr(provision.os, "chown", lambda *a: chown_calls.append(a))
     runner = Recorder()
 
-    provision.stage_admin_group(runner, _options(role="both"))
+    provision.stage_admin_group(runner, _options())
 
     assert not chown_calls
     assert any("already correct" in line for line in runner.report.skipped)
 
 
-def test_no_admin_group_flag_skips_the_stage_entirely(sandbox):
+def test_no_admin_group_skips_the_stage_entirely(sandbox):
+    """`--no-admin-group` is wired, at the CLI layer, to `admin_group=None`."""
     runner = Recorder()
 
-    provision.stage_admin_group(runner, _options(role="both", switches=["--no-admin-group"]))
+    provision.stage_admin_group(runner, _options(admin_group=None))
 
     assert not runner.commands
     assert any("skipped" in line for line in runner.report.skipped)
@@ -514,21 +472,13 @@ def test_admin_group_dry_run_writes_nothing(sandbox, monkeypatch):
     monkeypatch.setattr(provision, "_group_gid", lambda name: None)
     runner = Recorder(dry_run=True)
 
-    provision.stage_admin_group(runner, _options(role="both"))
+    provision.stage_admin_group(runner, _options())
 
     assert not provision.CERT_DIR.exists()
 
 
-def test_no_admin_group_flag_clears_the_parsed_option():
-    options = provision.parse_args(["--role", "builder", "--no-admin-group"])
-
-    assert options.admin_group is None
-
-
 def test_admin_group_defaults_to_cairn_admins():
-    options = provision.parse_args(["--role", "builder"])
-
-    assert options.admin_group == provision.DEFAULT_ADMIN_GROUP
+    assert provision.SetupOptions().admin_group == provision.DEFAULT_ADMIN_GROUP
 
 
 # --- the registry ------------------------------------------------------------
@@ -559,9 +509,9 @@ def test_the_registry_binds_to_localhost_only():
 
 
 def test_the_registry_carries_the_cairn_managed_label():
-    """So `cairn adopt` can recognize this project as cairn's own infrastructure by label —
-    never by assuming anything from the `cairn-registry` project name."""
-    assert f'"{provision.CAIRN_MANAGED_LABEL}=true"' in provision.registry_compose()
+    """So `cairn-adopt examine` can recognize this project as cairn's own infrastructure by
+    label — never by assuming anything from the `cairn-registry` project name."""
+    assert f'"{adopt_module.CAIRN_MANAGED_LABEL}=true"' in provision.registry_compose()
 
 
 def test_the_registry_can_delete_versions():
@@ -576,7 +526,7 @@ def test_the_registry_is_verified_over_tls_before_being_claimed(sandbox):
     runner = Recorder(answers={})  # curl answers nothing
 
     with pytest.raises(provision.Aborted, match="did not answer over TLS"):
-        provision.stage_registry(runner, _options(role="builder", workdir=sandbox))
+        provision.stage_registry(runner, _options(workdir=sandbox))
 
 
 def test_the_certificate_is_trusted_in_both_stores(sandbox):
@@ -585,7 +535,7 @@ def test_the_certificate_is_trusted_in_both_stores(sandbox):
     (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
     runner = Recorder(answers={"curl": "ok"})
 
-    provision.stage_registry(runner, _options(role="builder", workdir=sandbox))
+    provision.stage_registry(runner, _options(workdir=sandbox))
 
     system_ca = provision.SYSTEM_CA_DIR / "cairn-registry.crt"
     assert system_ca.read_text(encoding="utf-8") == "cert\n"
@@ -603,7 +553,7 @@ def test_a_renewed_certificate_forces_the_registry_container_to_recreate(sandbox
     (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
     runner = Recorder(answers={"curl": "ok"})
 
-    provision.stage_registry(runner, _options(role="builder", workdir=sandbox, force=True))
+    provision.stage_registry(runner, _options(workdir=sandbox, force=True))
 
     assert runner.ran("up -d --force-recreate")
 
@@ -613,7 +563,7 @@ def test_a_reused_certificate_leaves_the_registry_container_alone(sandbox):
     (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
     runner = Recorder(answers={"curl": "ok"})
 
-    provision.stage_registry(runner, _options(role="builder", workdir=sandbox))
+    provision.stage_registry(runner, _options(workdir=sandbox))
 
     assert runner.ran("up -d")
     assert not runner.ran("--force-recreate")
@@ -627,7 +577,7 @@ def test_a_backup_that_produces_no_dump_stops_the_run(monkeypatch):
     runner = Recorder(answers={"compose ls": '[{"Name": "erp"}]'})  # ls of backups answers nothing
 
     with pytest.raises(provision.Aborted, match="no dump could be found"):
-        provision.stage_backup(runner, _options(role="target"))
+        provision.stage_backup(runner, _options())
 
 
 def test_a_verified_backup_is_recorded_and_the_operator_told_to_copy_it_off(monkeypatch):
@@ -638,7 +588,7 @@ def test_a_verified_backup_is_recorded_and_the_operator_told_to_copy_it_off(monk
         }
     )
 
-    provision.stage_backup(runner, _options(role="target"))
+    provision.stage_backup(runner, _options())
 
     assert any("verified pre-install backup" in note for note in runner.report.done)
     assert any("copy it off" in note for note in runner.report.warnings)
@@ -648,7 +598,7 @@ def test_skipping_the_backup_is_recorded_as_a_warning():
     """Allowed, but never silent — the operator should see it in the summary."""
     runner = Recorder()
 
-    provision.stage_backup(runner, _options(role="target", skip_backup=True))
+    provision.stage_backup(runner, _options(skip_backup=True))
 
     assert any("irreversible" in note for note in runner.report.warnings)
     assert not runner.commands
@@ -659,7 +609,7 @@ def test_backup_backs_up_every_site():
         answers={"compose ls": '[{"Name": "erp"}]', "private/backups": "dump.sql.gz\n"}
     )
 
-    provision.stage_backup(runner, _options(role="target"))
+    provision.stage_backup(runner, _options())
 
     assert runner.ran("--site all backup --with-files")
 
@@ -678,7 +628,7 @@ def test_recon_records_how_to_put_the_stack_back(tmp_path):
         }
     )
 
-    provision.stage_recon(runner, _options(role="target"))
+    provision.stage_recon(runner, _options())
 
     assert runner.report.revert
     note = runner.report.revert[0]
@@ -704,101 +654,123 @@ def test_a_missing_env_file_is_not_an_error(tmp_path):
 def test_recon_on_a_host_with_no_stack_is_a_note_not_a_failure():
     runner = Recorder()
 
-    provision.stage_recon(runner, _options(role="target"))
+    provision.stage_recon(runner, _options())
 
     assert any("no existing stack" in note for note in runner.report.warnings)
 
 
-# --- descriptor --------------------------------------------------------------
+# --- descriptor: calls straight into `adopt`, in-process (`ADR-046`) ---------
 
 
-def test_the_descriptor_comes_from_cairn_adopt(sandbox):
-    rendered = 'environment = "test"\nsite = "erp.test"\n'
-    runner = Recorder(answers={"adopt": rendered})
-
-    provision.stage_descriptor(runner, _options(role="target", workdir=sandbox))
-
-    assert provision.DESCRIPTOR_PATH.read_text(encoding="utf-8") == rendered
-    assert any("adopt" in " ".join(str(p) for p in probe) for probe in runner.probes)
-
-
-def test_a_descriptor_that_does_not_parse_stops_the_run(sandbox):
-    """Rule 6: reconcile refusing it later is a worse failure than refusing now."""
-    runner = Recorder(answers={"adopt": "environment = \n"})
-
-    with pytest.raises(provision.Aborted, match="does not parse"):
-        provision.stage_descriptor(runner, _options(role="target", workdir=sandbox))
+def _survey(**overrides) -> adopt_module.Survey:
+    defaults = dict(
+        project="erp",
+        directory=Path("/opt/frappe_docker"),
+        sites=("erp.test",),
+        image="localhost:5000/erp",
+        tag="test",
+    )
+    return adopt_module.Survey(**{**defaults, **overrides})
 
 
-def test_a_failing_adopt_names_the_command_to_rerun(sandbox):
-    """Rule 7: every action is reportable as something the operator can run by hand."""
-    runner = Recorder(answers={})
+def test_the_descriptor_comes_from_adopt_survey(sandbox, monkeypatch):
+    monkeypatch.setattr(provision.adopt_module, "survey", lambda project=None: _survey())
 
-    with pytest.raises(provision.Aborted, match="adopt"):
-        provision.stage_descriptor(runner, _options(role="target", workdir=sandbox))
+    provision.stage_descriptor(Recorder(), _options(workdir=sandbox))
 
-
-# --- timers ------------------------------------------------------------------
+    written = provision.DESCRIPTOR_PATH.read_text(encoding="utf-8")
+    assert 'site        = "erp.test"' in written
 
 
-UNITS = """\
-# --- /etc/systemd/system/cairn-reconcile.service ---
-[Service]
-Type=oneshot
-ExecStart=cairn reconcile
+def test_stage_descriptor_forwards_the_project_name(sandbox, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        provision.adopt_module,
+        "survey",
+        lambda project=None: (seen.update(project=project), _survey())[1],
+    )
 
-# --- /etc/systemd/system/cairn-reconcile.timer ---
-[Timer]
-OnUnitInactiveSec=5min
-"""
+    provision.stage_descriptor(Recorder(), _options(workdir=sandbox, project="erp-other"))
 
-
-def test_units_are_split_into_a_service_and_a_timer():
-    service, timer = provision.split_units(UNITS)
-
-    assert "[Service]" in service and "[Timer]" not in service
-    assert "[Timer]" in timer and "[Service]" not in timer
+    assert seen["project"] == "erp-other"
 
 
-def test_unexpected_unit_output_fails_loudly_rather_than_installing_half_a_unit():
-    assert provision.split_units("something else entirely") == (None, None)
+def test_a_multi_site_host_stops_before_writing_a_descriptor(sandbox, monkeypatch):
+    """`BR-DEPLOY-014` gives an environment exactly one site — a stop, not a warning."""
+    monkeypatch.setattr(
+        provision.adopt_module, "survey", lambda project=None: _survey(sites=("a.test", "b.test"))
+    )
+
+    with pytest.raises(provision.Aborted, match="serves 2 sites"):
+        provision.stage_descriptor(Recorder(), _options(workdir=sandbox))
+
+    assert not provision.DESCRIPTOR_PATH.exists()
 
 
-def test_the_reconcile_unit_is_pointed_at_the_installed_binary(sandbox, tmp_path):
-    """`cairn-provision` resolves `cairn` as its own sibling, not via a PATH lookup that may
-    not include it under `sudo`."""
-    runner = Recorder(answers={"systemd-units": UNITS})
+def test_an_incomplete_survey_stops_the_run_rather_than_writing_a_bad_descriptor(
+    sandbox, monkeypatch
+):
+    """Rule 6: `reconcile` refusing a bad descriptor later is a worse failure than refusing
+    to write one now."""
+    monkeypatch.setattr(
+        provision.adopt_module, "survey", lambda project=None: adopt_module.Survey(project="erp")
+    )
 
-    provision.stage_timers(runner, _options(role="target", workdir=sandbox))
+    with pytest.raises(provision.Aborted, match="not enough could be determined"):
+        provision.stage_descriptor(Recorder(), _options(workdir=sandbox))
 
-    service = (provision.SYSTEMD_DIR / "cairn-reconcile.service").read_text(encoding="utf-8")
-    assert f"ExecStart={tmp_path}/bin/cairn reconcile" in service
+    assert not provision.DESCRIPTOR_PATH.exists()
 
 
-def test_a_builder_gets_a_build_timer_and_no_reconcile_timer(sandbox):
-    runner = Recorder(answers={"systemd-units": UNITS})
+def test_a_descriptor_is_confirmed_to_parse_after_writing(sandbox, monkeypatch):
+    monkeypatch.setattr(provision.adopt_module, "survey", lambda project=None: _survey())
 
-    provision.stage_timers(runner, _options(role="builder", workdir=sandbox))
+    provision.stage_descriptor(Recorder(), _options(workdir=sandbox))
+
+    import tomllib
+
+    parsed = tomllib.loads(provision.DESCRIPTOR_PATH.read_text(encoding="utf-8"))
+    assert parsed["site"] == "erp.test"
+
+
+# --- timers -------------------------------------------------------------
+
+
+def test_stage_timers_build_writes_only_the_build_timer(sandbox):
+    runner = Recorder()
+
+    provision.stage_timers_build(runner, _options(workdir=sandbox))
 
     assert (provision.SYSTEMD_DIR / "cairn-build.timer").exists()
     assert not (provision.SYSTEMD_DIR / "cairn-reconcile.timer").exists()
 
 
-def test_a_target_gets_a_reconcile_timer_and_no_build_timer(sandbox):
-    runner = Recorder(answers={"systemd-units": UNITS})
+def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path):
+    runner = Recorder()
 
-    provision.stage_timers(runner, _options(role="target", workdir=sandbox))
+    provision.stage_timers_adopt(runner, _options(workdir=sandbox))
 
-    assert (provision.SYSTEMD_DIR / "cairn-reconcile.timer").exists()
+    service = (provision.SYSTEMD_DIR / "cairn-reconcile.service").read_text(encoding="utf-8")
+    assert f"ExecStart={tmp_path}/bin/cairn-adopt reconcile" in service
     assert not (provision.SYSTEMD_DIR / "cairn-build.timer").exists()
 
 
-def test_timers_are_enabled_but_never_started(sandbox):
+def test_build_timer_is_enabled_but_never_started(sandbox):
     """A timer firing before anyone has confirmed the manifest turns one wrong configuration
     into a wrong deploy every quarter of an hour."""
-    runner = Recorder(answers={"systemd-units": UNITS})
+    runner = Recorder()
 
-    provision.stage_timers(runner, _options(role="both", workdir=sandbox))
+    provision.stage_timers_build(runner, _options(workdir=sandbox))
+
+    assert runner.ran("systemctl enable")
+    assert not runner.ran("systemctl start")
+    assert any("NOT started" in note for note in runner.report.warnings)
+
+
+def test_reconcile_timer_is_enabled_but_never_started(sandbox):
+    runner = Recorder()
+
+    provision.stage_timers_adopt(runner, _options(workdir=sandbox))
 
     assert runner.ran("systemctl enable")
     assert not runner.ran("systemctl start")
@@ -809,7 +781,7 @@ def test_the_build_service_sets_a_working_directory():
     """Required, not decoration: cairn finds a manifest not given explicitly by searching
     upward from the working directory."""
     rendered = provision.build_service(
-        _options(role="builder", workdir=Path("/opt/cairn")), Path("/opt/cairn/build.sh")
+        _options(workdir=Path("/opt/cairn")), Path("/opt/cairn/build.sh")
     )
 
     assert "WorkingDirectory=/opt/cairn" in rendered
@@ -818,7 +790,7 @@ def test_the_build_service_sets_a_working_directory():
 def test_the_build_service_does_not_restart_on_failure():
     """A restart loop against a failing build turns a bad build into a busy one."""
     rendered = provision.build_service(
-        _options(role="builder", workdir=Path("/opt/cairn")), Path("/opt/cairn/build.sh")
+        _options(workdir=Path("/opt/cairn")), Path("/opt/cairn/build.sh")
     )
 
     assert "Type=oneshot" in rendered
@@ -827,21 +799,20 @@ def test_the_build_service_does_not_restart_on_failure():
 
 def test_the_build_timer_measures_from_the_end_of_the_last_run():
     """A build takes tens of minutes; the next one must not already be due when it finishes."""
-    rendered = provision.build_timer(_options(role="builder", build_interval="15min"))
+    rendered = provision.build_timer(_options(build_interval="15min"))
 
     assert "OnUnitInactiveSec=15min" in rendered
     assert "OnCalendar=" not in rendered
 
 
-def test_the_build_script_builds_then_advances_the_pointer(monkeypatch):
-    monkeypatch.setattr(provision, "_cairn_executable", lambda: Path("/opt/cairn-venv/bin/cairn"))
+def test_the_build_script_builds_then_advances_the_pointer():
     rendered = provision.build_script(
         _options(
-            role="builder",
             workdir=Path("/opt/cairn"),
             manifest=Path("/opt/cairn/deployments/acme/cairn.toml"),
             environment="test",
-        )
+        ),
+        Path("/opt/cairn-venv/bin/cairn-build"),
     )
 
     assert "build --manifest" in rendered
@@ -849,15 +820,14 @@ def test_the_build_script_builds_then_advances_the_pointer(monkeypatch):
     assert rendered.index("build --manifest") < rendered.index("retag test")
 
 
-def test_a_manifest_path_with_spaces_is_quoted_in_the_script(monkeypatch):
-    monkeypatch.setattr(provision, "_cairn_executable", lambda: Path("/opt/cairn-venv/bin/cairn"))
+def test_a_manifest_path_with_spaces_is_quoted_in_the_script():
     rendered = provision.build_script(
         _options(
-            role="builder",
             workdir=Path("/opt/cairn"),
             manifest=Path("/opt/cairn/my deployments/cairn.toml"),
             environment="test",
-        )
+        ),
+        Path("/opt/cairn-venv/bin/cairn-build"),
     )
 
     assert "'/opt/cairn/my deployments/cairn.toml'" in rendered
@@ -868,28 +838,40 @@ def test_a_manifest_path_with_spaces_is_quoted_in_the_script(monkeypatch):
 
 def test_a_failed_gate_exits_two_and_changes_nothing(monkeypatch):
     monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    runner = provision.Runner(dry_run=False, force=False)
 
-    assert provision.main(["--role", "target", "--only", "preflight"]) == 2
+    code = provision.execute(
+        runner,
+        _options(),
+        provision.ADOPT_STAGE_FUNCS,
+        provision.ADOPT_STAGES,
+        "preflight",
+        program="cairn-adopt",
+    )
+
+    assert code == 2
 
 
-def test_a_dry_run_of_a_whole_role_reports_and_exits_zero(monkeypatch):
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
-    for name in ("recon", "backup", "descriptor", "timers", "registry"):
-        monkeypatch.setitem(provision.STAGES, name, lambda runner, options: None)
-    monkeypatch.setitem(provision.STAGES, "preflight", lambda runner, options: None)
+def test_a_dry_run_of_a_whole_setup_reports_and_exits_zero(monkeypatch):
+    stub_funcs = dict.fromkeys(provision.ADOPT_STAGE_FUNCS, lambda runner, options: None)
+    runner = provision.Runner(dry_run=True, force=False)
 
-    assert provision.main(["--role", "both", "--dry-run"]) == 0
+    code = provision.execute(
+        runner, _options(), stub_funcs, provision.ADOPT_STAGES, None, program="cairn-adopt"
+    )
+
+    assert code == 0
 
 
 def test_the_manifest_defaults_beside_the_workdir():
-    options = provision.parse_args(["--role", "builder", "--workdir", "/opt/cairn"])
+    options = provision.SetupOptions(workdir=Path("/opt/cairn"))
 
     assert options.manifest == Path("/opt/cairn/cairn.toml")
 
 
 def test_an_explicit_manifest_wins():
-    options = provision.parse_args(
-        ["--role", "builder", "--manifest", "/srv/acme/cairn.toml"]
+    options = provision.SetupOptions(
+        workdir=Path("/opt/cairn"), manifest=Path("/srv/acme/cairn.toml")
     )
 
     assert options.manifest == Path("/srv/acme/cairn.toml")

@@ -217,9 +217,9 @@ differs.
   costs about half of a cold one instead of a tenth, and the saving does not improve as your
   change gets smaller. It is the strongest standing argument for eventually maintaining our own
   build recipe, and it is tracked as an open decision rather than acted on.
-- **Installing an app during a deploy.** cairn will not do it, ever. A deploy loop is safe
-  because repeating it changes nothing; installing an app is a one-shot irreversible database
-  change. Adding an app to a live site is a deliberate manual act, exactly as creating the site
+- **Installing a Frappe App during a deploy.** cairn will not do it, ever. A deploy loop is safe
+  because repeating it changes nothing; installing a Frappe App is a one-shot irreversible database
+  change. Adding a Frappe App to a live site is a deliberate manual act, exactly as creating the site
   was.
 - **Anything inside the database.** cairn ships code. It runs the schema migration the framework
   provides and touches nothing else — no volumes, no SQL, no site configuration.

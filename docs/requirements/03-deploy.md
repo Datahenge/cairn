@@ -1,18 +1,18 @@
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-26_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
 `ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
-`ADR-042`, `ADR-043`.
+`ADR-042`, `ADR-043`, `ADR-046`.
 
 ---
 
 ## Pull-based reconcile
 
 **`BR-DEPLOY-001`** — The deploy model is **pull-based**: each target runs an idempotent
-`cairn reconcile` on a **systemd timer**, converging the running stack to desired state,
+`cairn-adopt reconcile` on a **systemd timer**, converging the running stack to desired state,
 **outbound-only** (no inbound connection to the box). A no-change run is a no-op.
 *(ADR-005, ADR-006)*
 
@@ -20,20 +20,20 @@ Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`,
 in the registry (`:dev`/`:test`/`:staging`/`:production`). The target polls that tag's
 **digest** and converges when it changes. *(ADR-010)*
 
-**`BR-DEPLOY-003`** — On a detected change, `cairn reconcile` MUST: pull the image → set
+**`BR-DEPLOY-003`** — On a detected change, `cairn-adopt reconcile` MUST: pull the image → set
 `CUSTOM_IMAGE`/`CUSTOM_TAG` → `docker compose up -d` → run `bench migrate` → verify health.
 cairn performs no volume or SQL writes of its own (`BR-DATA-005`/`006`/`008`).
 *(ADR-014, ADR-023)*
 
-**`BR-DEPLOY-003a`** *(cairn never installs an app)* — `cairn reconcile` MUST NOT run
-`bench install-app`, under any flag or directive. Installing an app is the **operator's**
+**`BR-DEPLOY-003a`** *(cairn never installs a Frappe App)* — `cairn-adopt reconcile` MUST NOT run
+`bench install-app`, under any flag or directive. Installing a Frappe App is the **operator's**
 act, exactly as site creation is (`BR-DEPLOY-007`). An earlier draft of `BR-DEPLOY-003`
 permitted it behind an opt-in directive; that clause was **struck** 2026-07-25 (`ADR-037`).
 
 Three reasons, of which the first is structural:
 
 1. **A convergence loop cannot host a one-shot mutation.** `reconcile` exists to make actual
-   state match desired state, repeatedly and idempotently. `install-app` is irreversible and
+   state match desired state, repeatedly and idempotently. Installing a Frappe App is irreversible and
    must happen exactly once, which would require cairn to remember whether it already had —
    durable state cairn deliberately does not keep (`BR-DEPLOY-019`, `ADR-026`). Without that
    memory it either re-runs on every poll or relies on a flag that goes stale on first use.
@@ -95,7 +95,7 @@ registry pointers, and the image stays environment-agnostic (`BR-BUILD-001`). *(
 
 **`BR-DEPLOY-010`** — The target-side **environment descriptor** declares: image + watched
 tag; which frappe_docker overrides to compose (db, redis, proxy, TLS); domain/host and
-ports; site name; and a **reference** to secrets. `cairn reconcile` MUST **render** the
+ports; site name; and a **reference** to secrets. `cairn-adopt reconcile` MUST **render** the
 final compose stack from it (base + selected overrides, plus `CUSTOM_IMAGE`/`CUSTOM_TAG`/
 `PULL_POLICY`). The descriptor lives on the target and MUST NOT contain secrets. *(ADR-017)*
 
@@ -114,7 +114,7 @@ with the deployment, and MUST contain no secret values (`BR-DEPLOY-011`). *(ADR-
 
 **`BR-DEPLOY-012`** — A target authenticates to the registry via **Docker's credential
 store** (operator runs `docker login ghcr.io` with a read-only pull token at provisioning);
-`cairn reconcile` delegates auth to Docker and MUST NOT store registry credentials. *(ADR-017)*
+`cairn-adopt reconcile` delegates auth to Docker and MUST NOT store registry credentials. *(ADR-017)*
 
 **`BR-DEPLOY-013`** — DB/app secrets are operator-provisioned; cairn wires them via the
 mechanism the descriptor names — **Docker secrets** (`compose.mariadb-secrets.yaml`)
@@ -132,7 +132,7 @@ against Production MUST be **doubly** explicit. Non-prod does not require this g
 
 ## Sequencing, health & failure
 
-**`BR-DEPLOY-016`** — `cairn reconcile` MUST be **single-flight** (locked). The stack is
+**`BR-DEPLOY-016`** — `cairn-adopt reconcile` MUST be **single-flight** (locked). The stack is
 recreated **in place** (`compose up`). `bench migrate` runs after **every** image enable,
 including rollback. *(ADR-014)*
 
@@ -166,16 +166,18 @@ deploy behavior. *(ADR-026)*
   without destroying the shared image — hence `cairn retire` decommissions at cairn's layer
   only (`BR-CLI-009`).
 
-## Provisioning (the installer)
+## Provisioning (`setup`)
 
-**`BR-DEPLOY-021`** *(installer contract)* — Provisioning a build machine or a target MAY be
-performed by an installer **distributed alongside** the CLI — the same package, a separate
-entry point — never by a verb inside `cairn` itself (`ADR-040`). That separation exists to
-preserve two boundaries: cairn emits systemd units and never installs them (`ADR-035`), and
-cairn writes nothing to a data-plane volume (`ADR-022`, `BR-DATA-006`) — a pre-install `bench
-backup` writes into the sites volume and is therefore the operator's act.
+**`BR-DEPLOY-021`** *(installer contract)* — Provisioning a build machine or a target is
+performed by `setup`, a subcommand nested in each role's own CLI (`cairn-build setup`,
+`cairn-adopt setup`, `BR-CLI-021`, `ADR-046`) — never by any other, ordinary subcommand. That
+separation exists to preserve two boundaries: cairn emits systemd units and never installs them
+except via this explicit, privilege-gated path (`ADR-035`), and cairn writes nothing to a
+data-plane volume (`ADR-022`, `BR-DATA-006`) — a pre-install `bench backup` writes into the
+sites volume and is therefore the operator's act, performed only when the operator explicitly
+invokes `setup`.
 
-Where an installer is provided it MUST:
+`setup` MUST:
 
 1. **Be idempotent.** Re-running it MUST converge rather than duplicate or fail. This is what makes
    the second and third machine cheap, which is the reason it exists at all. Convergence covers a
@@ -209,12 +211,13 @@ Where an installer is provided it MUST:
 7. **Not be the only path.** Every action it takes MUST be documented such that an operator can
    perform it by hand. The installer is a convenience, never a dependency.
 
-An installer MUST NOT create sites, volumes, or databases: `BR-DEPLOY-007` keeps that the operator's
+`setup` MUST NOT create sites, volumes, or databases: `BR-DEPLOY-007` keeps that the operator's
 responsibility, and provisioning the *plumbing* does not change it.
-*(ADR-040, ADR-035, ADR-022, BR-DATA-006, BR-DEPLOY-007, BR-DEPLOY-011, BR-CFG-010, BR-CLI-011)*
+*(ADR-046, ADR-040, ADR-035, ADR-022, BR-DATA-006, BR-DEPLOY-007, BR-DEPLOY-011, BR-CFG-010,
+BR-CLI-011, BR-CLI-021)*
 
-**`BR-DEPLOY-022`** *(shared `/etc/cairn` — default, not mandatory)* — Where an installer is
-provided (`BR-DEPLOY-021`), it MUST, by default and on every role, ensure `/etc/cairn` is
+**`BR-DEPLOY-022`** *(shared `/etc/cairn` — default, not mandatory)* — `setup`
+(`BR-DEPLOY-021`) MUST, by default and on every role, ensure `/etc/cairn` is
 shared with a group (name configurable, e.g. `--admin-group`, default `cairn-admins`) rather
 than left root-only: creating the group if absent, and setting the directory group-owned,
 group-writable, and **setgid** so files later created inside inherit the group automatically.
@@ -222,15 +225,16 @@ An explicit flag (e.g. `--no-admin-group`) MUST allow skipping this and leaving 
 exactly as found. This stage is bound by the same seven-point contract as every other
 (`BR-DEPLOY-021`) — idempotent, reported in `--dry-run`, no secret material, gated on the same
 root check, and its postcondition (the directory's actual group and mode) confirmed rather than
-assumed. cairn itself MUST NOT perform this — creating or chowning a group is a host mutation
-and stays with the installer (`ADR-040`); `cairn doctor` MAY report the directory's current
-group, mode, and the invoking user's membership, but MUST NOT change any of them (`BR-CFG-015`).
+assumed. No other subcommand on either CLI MUST perform this — creating or chowning a group is a
+host mutation and stays with `setup` (`ADR-046`, `ADR-040`); `cairn-build doctor` /
+`cairn-adopt doctor` MAY report the directory's current group, mode, and the invoking user's
+membership, but MUST NOT change any of them (`BR-CFG-015`).
 
 Sharing the directory is not enough on its own: the setgid bit propagates *group ownership* to a
-file created later, but never its permission bits — a file the installer writes still gets
+file created later, but never its permission bits — a file `setup` writes still gets
 whatever mode its own umask leaves it, which is commonly group-**readable** only. Any file under
-`/etc/cairn` the installer writes and an operator is meant to edit without `sudo` (the
-descriptor; `builder.toml` is operator-authored, not installer-written) MUST therefore be written
+`/etc/cairn` that `setup` writes and an operator is meant to edit without `sudo` (the
+descriptor; `builder.toml` is operator-authored, not `setup`-written) MUST therefore be written
 group-**writable** explicitly, not left to inheritance. Key material stays the documented
 exception — owner-only regardless (rule 4).
 *(ADR-042, ADR-043, BR-CFG-015, BR-DEPLOY-021)*

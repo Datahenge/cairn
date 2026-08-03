@@ -1,8 +1,9 @@
-"""Tests for the command surface — exit codes and flag plumbing (BR-CLI-012, BR-CLI-015).
+"""Tests for the `cairn-build` command surface — exit codes and flag plumbing
+(BR-CLI-012, BR-CLI-015).
 
-This file covers only what `cli.py` itself decides:
+This file covers only what `cli_build.py` itself decides:
 
-* the exit code every command leaves behind, which is `_run_in_project`'s whole job
+* the exit code every command leaves behind, which is `cli_support.run`'s whole job
   (BR-CLI-012: systemd and CI detect outcomes from it), and
 * that each flag reaches the module that acts on it.
 
@@ -10,16 +11,13 @@ The work behind the flags is tested where it lives — build planning in `test_b
 transcript policy in `test_transcript.py`, prune selection in `test_prune.py`, image
 reporting in `test_images.py`. Where a module function is pure it is used for real here
 rather than stubbed; only the boundaries that shell out are replaced.
-
-The gap this closes: `transcript.wanted` and `prune.select` were thoroughly tested at the
-module level while nothing verified the CLI passed the right arguments into them, so
-tested logic sat behind untested wiring.
 """
 
 from __future__ import annotations
 
 import json
 import runpy
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -28,27 +26,19 @@ import pytest
 from typer.testing import CliRunner
 
 from cairn import (
-    adopt,
     build,
-    cli,
+    cli_build,
     config,
     doctor,
     engine,
     images,
     prune,
     push,
-    reconcile,
     registry,
     vendor,
 )
 from cairn.config import App, BuildConfig, Frappe, Manifest
-from cairn.errors import (
-    BuildError,
-    ManifestNotFoundError,
-    PushError,
-    ReconcileError,
-    RegistryError,
-)
+from cairn.errors import BuildError, ManifestNotFoundError, PushError, RegistryError
 from cairn.images import LocalImage
 from cairn.resolve import RefKind, Resolution, ResolvedRef
 
@@ -119,7 +109,7 @@ def _image(short, tags=(), *, input_hash="aaa111", minutes_old=0, size=2_750_000
 @pytest.fixture
 def project(tmp_path, monkeypatch):
     """A discovered project root, so no test needs a real vendored repo on disk."""
-    monkeypatch.setattr(cli, "find_project_root", lambda: tmp_path)
+    monkeypatch.setattr(cli_build, "find_project_root", lambda: tmp_path)
     return tmp_path
 
 
@@ -283,22 +273,22 @@ def pointers(registry_repo, monkeypatch) -> PointerStubs:
     return state
 
 
-# --- exit codes through `_run_in_project` (BR-CLI-012, BR-CLI-015) ----------
+# --- exit codes through `run` (BR-CLI-012, BR-CLI-015) ----------------------
 
 
 def test_success_exits_zero(project, monkeypatch):
-    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None, manifest_path=None: 0)
+    monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 0)
 
-    result = runner.invoke(cli.app, ["doctor"])
+    result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 0
 
 
 def test_exit_code_is_the_actions_own_return_value(project, monkeypatch):
     """BR-CLI-012: a failed check must be detectable, so the code is forwarded, not flattened."""
-    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None, manifest_path=None: 1)
+    monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 1)
 
-    result = runner.invoke(cli.app, ["doctor"])
+    result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 1
 
@@ -310,9 +300,9 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
     def _fail(preferred_engine=None, manifest_path=None):
         raise PushError("No registry configured, so images remain local.")
 
-    monkeypatch.setattr(doctor, "run", _fail)
+    monkeypatch.setattr(doctor, "run_build", _fail)
 
-    result = runner.invoke(cli.app, ["doctor"])
+    result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 2
     assert "Error: No registry configured" in result.stderr
@@ -326,9 +316,9 @@ def test_interrupt_exits_130(project, monkeypatch):
     def _interrupt(preferred_engine=None, manifest_path=None):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(doctor, "run", _interrupt)
+    monkeypatch.setattr(doctor, "run_build", _interrupt)
 
-    result = runner.invoke(cli.app, ["doctor"])
+    result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 130
     assert "Interrupted." in result.stderr
@@ -341,9 +331,9 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
     def _bug(preferred_engine=None, manifest_path=None):
         raise ValueError("off by one")
 
-    monkeypatch.setattr(doctor, "run", _bug)
+    monkeypatch.setattr(doctor, "run_build", _bug)
 
-    result = runner.invoke(cli.app, ["doctor"])
+    result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code != 0
     assert "Internal error (ValueError): off by one" in result.stderr
@@ -353,9 +343,9 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
 def test_doctor_needs_no_project_root(tmp_path, monkeypatch):
     """The vendored tree is package-relative now — doctor works from anywhere."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(doctor, "run", lambda preferred_engine=None, manifest_path=None: 0)
+    monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 0)
 
-    result = runner.invoke(cli.app, ["doctor"])
+    result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 0
 
@@ -366,7 +356,7 @@ def test_vendor_status_outside_a_project_exits_two(tmp_path, monkeypatch):
     actionable error, not a traceback."""
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(cli.app, ["vendor", "status"])
+    result = runner.invoke(cli_build.app, ["vendor", "status"])
 
     assert result.exit_code == 2
     assert "No cairn project found" in result.stderr
@@ -376,7 +366,7 @@ def test_vendor_status_outside_a_project_exits_two(tmp_path, monkeypatch):
 
 
 def test_dry_run_reports_the_plan_and_builds_nothing(stubs):
-    result = runner.invoke(cli.app, ["build", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["build", "--dry-run"])
 
     assert result.exit_code == 0
     assert "build command:" in result.stdout
@@ -390,14 +380,14 @@ def test_dry_run_writes_no_transcript(stubs, tmp_path):
     file must still not appear (BR-CLI-016)."""
     destination = tmp_path / "logs" / "dry.log"
 
-    result = runner.invoke(cli.app, ["build", "--dry-run", "--transcript", str(destination)])
+    result = runner.invoke(cli_build.app, ["build", "--dry-run", "--transcript", str(destination)])
 
     assert result.exit_code == 0
     assert not destination.exists()
 
 
 def test_no_cache_reaches_the_plan(stubs):
-    result = runner.invoke(cli.app, ["build", "--no-cache"])
+    result = runner.invoke(cli_build.app, ["build", "--no-cache"])
 
     assert result.exit_code == 0
     assert stubs.seen["plan"]["no_cache"] is True
@@ -409,7 +399,7 @@ def test_manifest_flag_reaches_discovery(stubs, tmp_path):
     elsewhere.parent.mkdir()
     elsewhere.touch()
 
-    result = runner.invoke(cli.app, ["build", "--dry-run", "--manifest", str(elsewhere)])
+    result = runner.invoke(cli_build.app, ["build", "--dry-run", "--manifest", str(elsewhere)])
 
     assert result.exit_code == 0
     assert stubs.seen["manifest_flag"] == elsewhere
@@ -418,7 +408,7 @@ def test_manifest_flag_reaches_discovery(stubs, tmp_path):
 def test_contradictory_transcript_flags_are_rejected(stubs, tmp_path):
     """Asking for a transcript and refusing one is a mistake worth naming, not resolving."""
     result = runner.invoke(
-        cli.app, ["build", "--transcript", str(tmp_path / "t.log"), "--no-transcript"]
+        cli_build.app, ["build", "--transcript", str(tmp_path / "t.log"), "--no-transcript"]
     )
 
     assert result.exit_code == 2
@@ -434,14 +424,14 @@ def test_push_checks_the_registry_before_building(stubs, monkeypatch):
 
     monkeypatch.setattr(push, "assert_registry_configured", _refuse)
 
-    result = runner.invoke(cli.app, ["build", "--push"])
+    result = runner.invoke(cli_build.app, ["build", "--push"])
 
     assert result.exit_code == 2
     assert "run" not in stubs.seen
 
 
 def test_push_uploads_every_reference(stubs):
-    result = runner.invoke(cli.app, ["build", "--push"])
+    result = runner.invoke(cli_build.app, ["build", "--push"])
 
     assert result.exit_code == 0
     assert stubs.seen["registry_checked"] is True
@@ -456,7 +446,7 @@ def test_already_built_inputs_are_not_rebuilt(stubs):
     image nameless for no gain."""
     stubs.held = DIGEST
 
-    result = runner.invoke(cli.app, ["build"])
+    result = runner.invoke(cli_build.app, ["build"])
 
     assert result.exit_code == 0
     assert "Already built" in result.stdout
@@ -466,7 +456,7 @@ def test_already_built_inputs_are_not_rebuilt(stubs):
 def test_rebuild_builds_anyway(stubs):
     stubs.held = DIGEST
 
-    result = runner.invoke(cli.app, ["build", "--rebuild"])
+    result = runner.invoke(cli_build.app, ["build", "--rebuild"])
 
     assert result.exit_code == 0
     assert "run" in stubs.seen
@@ -476,12 +466,12 @@ def test_rebuild_builds_anyway(stubs):
 def test_the_cache_stage_is_named_unless_declined(stubs):
     """Naming the reusable layers is what stops them being mistaken for garbage, so it is
     the default; `--no-cache-tag` is the opt-out."""
-    named = runner.invoke(cli.app, ["build"])
+    named = runner.invoke(cli_build.app, ["build"])
     assert named.exit_code == 0
     assert stubs.seen["cache_tag"] == "cairn-cache/erpnext-btu-v16:builder"
 
     del stubs.seen["cache_tag"]
-    declined = runner.invoke(cli.app, ["build", "--no-cache-tag"])
+    declined = runner.invoke(cli_build.app, ["build", "--no-cache-tag"])
 
     assert declined.exit_code == 0
     assert "cache_tag" not in stubs.seen
@@ -492,7 +482,7 @@ def test_transcript_records_the_run_and_says_where_twice(stubs, tmp_path):
     mention scrolled past minutes of engine output (BR-CLI-016)."""
     destination = tmp_path / "logs" / "build.log"
 
-    result = runner.invoke(cli.app, ["build", "--transcript", str(destination)])
+    result = runner.invoke(cli_build.app, ["build", "--transcript", str(destination)])
 
     assert result.exit_code == 0
     assert stubs.seen["run"]["sink"] is not None  # engine output is teed into the file
@@ -506,7 +496,7 @@ def test_timing_is_reported_even_when_the_build_fails(stubs):
     """BR-CLI-017: "it failed after nine minutes" is as worth knowing as a success time."""
     stubs.fails = BuildError("the engine exited 1")
 
-    result = runner.invoke(cli.app, ["build"])
+    result = runner.invoke(cli_build.app, ["build"])
 
     assert result.exit_code == 2
     assert "Timing" in result.stderr
@@ -523,7 +513,7 @@ def test_failing_to_name_the_cache_stage_does_not_fail_the_build(stubs, monkeypa
     )
     monkeypatch.setattr(build, "tag_cache_stage", lambda build_plan: None)
 
-    result = runner.invoke(cli.app, ["build"])
+    result = runner.invoke(cli_build.app, ["build"])
 
     assert result.exit_code == 0
     assert "Built ghcr.io/datahenge/erpnext-btu-v16:v16" in result.stdout
@@ -540,7 +530,7 @@ def test_a_moving_branch_is_warned_about(stubs, monkeypatch):
         ),
     )
 
-    result = runner.invoke(cli.app, ["build", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["build", "--dry-run"])
 
     assert result.exit_code == 0
     assert "moving branch(es): frappe@v16.0.1, erpnext@v16.0.1" in result.stderr
@@ -552,7 +542,7 @@ def test_a_moving_branch_is_warned_about(stubs, monkeypatch):
 def test_registry_mode_needs_a_manifest_to_know_the_repository(local):
     """Which repository to read comes from the manifest; without one there is no question
     to ask, and guessing a repository would read someone else's images."""
-    result = runner.invoke(cli.app, ["images"])
+    result = runner.invoke(cli_build.app, ["images"])
 
     assert result.exit_code == 2
     assert "--manifest" in result.stderr
@@ -563,7 +553,7 @@ def test_registry_mode_needs_a_configured_registry(registry_repo, monkeypatch):
     beats reporting an empty registry as though it were the answer."""
     monkeypatch.setattr(config, "load_build_config", lambda path=None: BuildConfig())
 
-    result = runner.invoke(cli.app, ["images"])
+    result = runner.invoke(cli_build.app, ["images"])
 
     assert result.exit_code == 2
     assert "--local" in result.stderr
@@ -573,7 +563,7 @@ def test_registry_mode_reads_tags_without_pulling(registry_repo, monkeypatch):
     remote = _remote("aaa111", tags=("v16.0.1-aaa111", "v16", "production"))
     monkeypatch.setattr(images, "inspect_registry", lambda base: ([remote], 2))
 
-    result = runner.invoke(cli.app, ["images"])
+    result = runner.invoke(cli_build.app, ["images"])
 
     assert result.exit_code == 0
     assert "input hash aaa111" in result.stdout
@@ -585,7 +575,7 @@ def test_registry_json_is_parseable(registry_repo, monkeypatch):
     remote = _remote("aaa111", tags=("v16",))
     monkeypatch.setattr(images, "inspect_registry", lambda base: ([remote], 0))
 
-    result = runner.invoke(cli.app, ["images", "--json"])
+    result = runner.invoke(cli_build.app, ["images", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -596,7 +586,7 @@ def test_registry_json_is_parseable(registry_repo, monkeypatch):
 def test_local_images_are_reported_for_people_by_default(local, monkeypatch):
     monkeypatch.setattr(images, "inspect_local", lambda engine_name: ([_image("aaa")], 3))
 
-    result = runner.invoke(cli.app, ["images", "--local"])
+    result = runner.invoke(cli_build.app, ["images", "--local"])
 
     assert result.exit_code == 0
     assert "input hash aaa111" in result.stdout
@@ -607,7 +597,7 @@ def test_json_output_is_parseable(local, monkeypatch):
     progress belongs on stderr."""
     monkeypatch.setattr(images, "inspect_local", lambda engine_name: ([_image("aaa")], 3))
 
-    result = runner.invoke(cli.app, ["images", "--local", "--json"])
+    result = runner.invoke(cli_build.app, ["images", "--local", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -634,15 +624,15 @@ def prunable(local, monkeypatch):
 
 
 def test_dry_run_removes_nothing(prunable):
-    result = runner.invoke(cli.app, ["prune", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["prune", "--dry-run"])
 
     assert result.exit_code == 0
     assert "doomed" not in prunable
 
 
 def test_declining_the_confirmation_removes_nothing(prunable):
-    """The only destructive verb cairn has, so the default answer is no."""
-    result = runner.invoke(cli.app, ["prune"], input="n\n")
+    """The only destructive verb cairn-build has, so the default answer is no."""
+    result = runner.invoke(cli_build.app, ["prune"], input="n\n")
 
     assert result.exit_code == 0
     assert "doomed" not in prunable
@@ -650,7 +640,7 @@ def test_declining_the_confirmation_removes_nothing(prunable):
 
 
 def test_yes_skips_the_confirmation(prunable):
-    result = runner.invoke(cli.app, ["prune", "--yes"])
+    result = runner.invoke(cli_build.app, ["prune", "--yes"])
 
     assert result.exit_code == 0
     assert [image.short_id for image in prunable["doomed"]] == ["bbb000000000"]
@@ -659,7 +649,7 @@ def test_yes_skips_the_confirmation(prunable):
 
 def test_keep_reaches_the_selection(prunable):
     """`--keep 2` leaves the current image plus one predecessor, so nothing is superseded."""
-    result = runner.invoke(cli.app, ["prune", "--keep", "2", "--yes"])
+    result = runner.invoke(cli_build.app, ["prune", "--keep", "2", "--yes"])
 
     assert result.exit_code == 0
     assert "doomed" not in prunable
@@ -668,7 +658,7 @@ def test_keep_reaches_the_selection(prunable):
 
 def test_keep_below_one_is_rejected(prunable):
     """`--keep 0` would delete the image in use; the floor is enforced by the option."""
-    result = runner.invoke(cli.app, ["prune", "--keep", "0", "--yes"])
+    result = runner.invoke(cli_build.app, ["prune", "--keep", "0", "--yes"])
 
     assert result.exit_code == 2
     assert "doomed" not in prunable
@@ -678,7 +668,7 @@ def test_a_failed_removal_exits_nonzero_without_aborting_the_rest(prunable):
     """BR-CLI-018: one failure must not abort the others, but must still be detectable."""
     prunable["failures"] = ["bbb000000000"]
 
-    result = runner.invoke(cli.app, ["prune", "--yes"])
+    result = runner.invoke(cli_build.app, ["prune", "--yes"])
 
     assert result.exit_code == 1
     assert "Could not remove bbb000000000" in result.stderr
@@ -688,7 +678,7 @@ def test_a_failed_removal_exits_nonzero_without_aborting_the_rest(prunable):
 
 
 def test_new_tag_creates_the_pointer(pointers):
-    result = runner.invoke(cli.app, ["new-tag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["new-tag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"] == ("ghcr.io/datahenge/erpnext-btu-v16:v16", "staging")
@@ -697,7 +687,7 @@ def test_new_tag_creates_the_pointer(pointers):
 
 def test_new_tag_refuses_an_undeclared_environment(pointers):
     """No auto-vivification: a typo must not quietly create an environment."""
-    result = runner.invoke(cli.app, ["new-tag", "stagng", "--latest"])
+    result = runner.invoke(cli_build.app, ["new-tag", "stagng", "--latest"])
 
     assert result.exit_code == 2
     assert "No such environment 'stagng'" in result.stderr
@@ -709,7 +699,7 @@ def test_new_tag_refuses_a_pointer_that_already_exists(pointers):
     """Creating over a live pointer would be a deploy wearing the word 'new'."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["new-tag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["new-tag", "staging", "--latest"])
 
     assert result.exit_code == 2
     assert "already exists" in result.stderr
@@ -717,7 +707,7 @@ def test_new_tag_refuses_a_pointer_that_already_exists(pointers):
 
 
 def test_retag_refuses_a_pointer_that_does_not_exist(pointers):
-    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
 
     assert result.exit_code == 2
     assert "does not exist" in result.stderr
@@ -728,7 +718,7 @@ def test_retag_refuses_a_pointer_that_does_not_exist(pointers):
 def test_retag_moves_an_existing_pointer(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "staging"
@@ -737,7 +727,7 @@ def test_retag_moves_an_existing_pointer(pointers):
 def test_dry_run_moves_nothing(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "staging", "--latest", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest", "--dry-run"])
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -749,7 +739,7 @@ def test_a_pointer_already_on_the_image_is_reported_not_rewritten(pointers):
     success message that hides it."""
     pointers.current = pointers.catalog[0].digest
 
-    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert "already points at" in result.stdout
@@ -760,7 +750,7 @@ def test_production_asks_before_moving(pointers):
     """BR-CLI-010: the production gate, and the default answer is no."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "production", "--latest"], input="n\n")
+    result = runner.invoke(cli_build.app, ["retag", "production", "--latest"], input="n\n")
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -770,7 +760,7 @@ def test_production_asks_before_moving(pointers):
 def test_production_moves_when_confirmed(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "production", "--latest"], input="y\n")
+    result = runner.invoke(cli_build.app, ["retag", "production", "--latest"], input="y\n")
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "production"
@@ -779,7 +769,7 @@ def test_production_moves_when_confirmed(pointers):
 def test_yes_skips_the_production_gate_for_automation(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "production", "--latest", "--yes"])
+    result = runner.invoke(cli_build.app, ["retag", "production", "--latest", "--yes"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "production"
@@ -790,21 +780,21 @@ def test_non_production_is_not_gated(pointers):
     of confirming without reading."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert "retag" in pointers.seen
 
 
 def test_a_selector_is_required(pointers):
-    result = runner.invoke(cli.app, ["retag", "staging"])
+    result = runner.invoke(cli_build.app, ["retag", "staging"])
 
     assert result.exit_code == 2
     assert "--latest" in result.stderr
 
 
 def test_selectors_are_mutually_exclusive(pointers):
-    result = runner.invoke(cli.app, ["retag", "staging", "--latest", "--previous"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest", "--previous"])
 
     assert result.exit_code == 2
     assert "only one of" in result.stderr.lower()
@@ -814,7 +804,7 @@ def test_from_promotes_whatever_another_environment_runs(pointers):
     """Promotion reads the *source* environment's pointer, not the newest image."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "staging", "--from", "production"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--from", "production"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][0] == "ghcr.io/datahenge/erpnext-btu-v16:production"
@@ -823,14 +813,14 @@ def test_from_promotes_whatever_another_environment_runs(pointers):
 def test_id_points_at_a_named_tag(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli.app, ["retag", "staging", "--id", "v16.0.1-aaa111"])
+    result = runner.invoke(cli_build.app, ["retag", "staging", "--id", "v16.0.1-aaa111"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][0].endswith(":v16.0.1-aaa111")
 
 
 def test_retire_touches_nothing_and_warns_the_tag_persists(pointers):
-    result = runner.invoke(cli.app, ["retire", "staging"])
+    result = runner.invoke(cli_build.app, ["retire", "staging"])
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -839,207 +829,11 @@ def test_retire_touches_nothing_and_warns_the_tag_persists(pointers):
 
 
 def test_retire_refuses_an_undeclared_environment(pointers):
-    result = runner.invoke(cli.app, ["retire", "nope"])
+    result = runner.invoke(cli_build.app, ["retire", "nope"])
 
     assert result.exit_code == 2
     assert "No such environment 'nope'" in result.stderr
 
-
-# --- reconcile (BR-CLI-008, BR-DEPLOY-003) ---------------------------------
-
-
-@pytest.fixture
-def target(tmp_path, monkeypatch):
-    """A target host: a descriptor on disk, and a stubbed convergence."""
-    path = tmp_path / "environment.toml"
-    path.write_text(
-        "\n".join(
-            [
-                'environment = "production"',
-                'image = "ghcr.io/datahenge/erpnext-btu-v16"',
-                'tag = "production"',
-                'site = "erp.example.com"',
-            ]
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-    return path
-
-
-def test_reconcile_needs_no_project(target, monkeypatch):
-    """A target has no manifest and no vendored tree — only the descriptor."""
-    state = reconcile.State(desired_digest="sha256:aaa", running_digest=None, stack_up=False)
-    monkeypatch.setattr(
-        reconcile,
-        "run",
-        lambda desc, dry_run=False, report=None: reconcile.Outcome(
-            converged=True, changed=True, state=state, detail="Converged to sha256:aaa."
-        ),
-    )
-
-    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(target)])
-
-    assert result.exit_code == 0
-    assert "Converged to sha256:aaa." in result.stdout
-
-
-def test_reconcile_reports_a_no_change_run_without_claiming_a_deploy(target, monkeypatch):
-    """The common case under a timer. It must not read as a deployment having happened."""
-    state = reconcile.State(
-        desired_digest="sha256:aaa", running_digest="sha256:aaa", stack_up=True
-    )
-    monkeypatch.setattr(
-        reconcile,
-        "run",
-        lambda desc, dry_run=False, report=None: reconcile.Outcome(
-            converged=True, changed=False, state=state, detail="Already running sha256:aaa."
-        ),
-    )
-
-    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(target)])
-
-    assert result.exit_code == 0
-    assert "Already running" in result.stderr
-    assert "Converged" not in result.stdout
-
-
-def test_reconcile_halts_and_reports_on_failure(target, monkeypatch):
-    """BR-DEPLOY-018: it stops rather than rolling back, and the exit code says so."""
-
-    def _fail(desc, dry_run=False, report=None):
-        raise ReconcileError("Failed while running bench migrate (exit code 1).")
-
-    monkeypatch.setattr(reconcile, "run", _fail)
-
-    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(target)])
-
-    assert result.exit_code == 2
-    assert "Error: Failed while running bench migrate" in result.stderr
-    assert "Timing" in result.stderr  # how long it ran before failing still matters
-
-
-def test_a_missing_descriptor_names_the_file(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(cli.app, ["reconcile", "--descriptor", str(tmp_path / "absent.toml")])
-
-    assert result.exit_code == 2
-    assert "absent.toml" in result.stderr
-
-
-# --- systemd units (BR-CLI-019) --------------------------------------------
-
-
-def test_systemd_units_are_printed_to_stdout():
-    """Printed, never installed — so stdout must be the units themselves."""
-    result = runner.invoke(cli.app, ["systemd-units"])
-
-    assert result.exit_code == 0
-    assert "[Timer]" in result.stdout
-    assert "Type=oneshot" in result.stdout
-    assert "cairn-reconcile.service" in result.stdout
-
-
-def test_systemd_units_report_what_they_assumed(monkeypatch):
-    """BR-CLI-019: a host-specific guess must be visible before installation, not after."""
-    result = runner.invoke(cli.app, ["systemd-units", "--interval", "15min", "--user", "cairn"])
-
-    assert result.exit_code == 0
-    assert "interval     15min" in result.stderr
-    assert "user         cairn" in result.stderr
-    assert "OnUnitInactiveSec=15min" in result.stdout
-    assert "User=cairn" in result.stdout
-
-
-# --- adopt (BR-CLI-020) ----------------------------------------------------
-
-
-def _survey(sites=("erp.acme.test",), apps=("frappe", "erpnext"), image="localhost:5000/erp"):
-    return adopt.Survey(
-        project="erp-acme",
-        directory=Path("/opt/frappe_docker"),
-        overrides=("mariadb", "redis"),
-        sites=tuple(sites),
-        apps=tuple(apps),
-        image=image,
-        tag="test",
-    )
-
-
-def test_adopt_needs_no_project_and_prints_a_descriptor(tmp_path, monkeypatch):
-    """A host being adopted has neither a cairn project nor a manifest yet."""
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey())
-
-    result = runner.invoke(cli.app, ["adopt", "--environment", "test"])
-
-    assert result.exit_code == 0
-    assert 'environment = "test"' in result.stdout
-    assert 'site        = "erp.acme.test"' in result.stdout
-
-
-def test_adopt_writes_nothing(tmp_path, monkeypatch):
-    """BR-CLI-020: it reads and prints. The descriptor goes to stdout, never to disk."""
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey())
-
-    runner.invoke(cli.app, ["adopt"])
-
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_adopt_refuses_a_multi_site_host(tmp_path, monkeypatch):
-    """Converging it would drop the other sites from the proxy config, so this is a stop."""
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        adopt, "survey", lambda project=None: _survey(sites=("a.test", "b.test"))
-    )
-
-    result = runner.invoke(cli.app, ["adopt"])
-
-    assert result.exit_code == 2
-    assert "serves 2 sites" in result.stderr
-    assert "environment =" not in result.stdout
-
-
-def test_adopt_reports_what_it_could_not_determine(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    incomplete = adopt.Survey(
-        findings=[adopt.Finding("compose project", "`docker compose ls` did not answer")]
-    )
-    monkeypatch.setattr(adopt, "survey", lambda project=None: incomplete)
-
-    result = runner.invoke(cli.app, ["adopt"])
-
-    assert result.exit_code == 2
-    assert "did not answer" in result.stderr
-    assert "Not enough could be determined" in result.stderr
-
-
-def test_adopt_cross_checks_the_manifest_when_given_one(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey(apps=("frappe", "erpnext")))
-    manifest = tmp_path / "cairn.toml"
-    manifest.touch()
-    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest())
-
-    result = runner.invoke(cli.app, ["adopt", "--manifest", str(manifest)])
-
-    assert result.exit_code == 0
-    assert "Manifest matches" in result.stderr
-
-
-def test_adopt_forwards_the_project_name(tmp_path, monkeypatch):
-    seen = {}
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        adopt, "survey", lambda project=None: (seen.update(project=project), _survey())[1]
-    )
-
-    runner.invoke(cli.app, ["adopt", "--project", "erp-other"])
-
-    assert seen["project"] == "erp-other"
 
 # --- push (BR-CLI-003) -----------------------------------------------------
 
@@ -1054,19 +848,19 @@ def test_id_pushes_that_tag_without_resolving_refs(stubs, monkeypatch):
 
     monkeypatch.setattr(build, "plan", _no_planning)
 
-    result = runner.invoke(cli.app, ["push", "--id", "v16.0.1"])
+    result = runner.invoke(cli_build.app, ["push", "--id", "v16.0.1"])
 
     assert result.exit_code == 0
     assert stubs.seen["pushed"] == ["ghcr.io/datahenge/erpnext-btu-v16:v16.0.1"]
 
 
 def test_without_id_the_manifests_own_tags_are_pushed(stubs, monkeypatch):
-    """So that what is pushed is exactly what `cairn build` would have produced."""
+    """So that what is pushed is exactly what `cairn-build build` would have produced."""
     monkeypatch.setattr(
         engine, "detect", lambda preferred=None: engine.BuildEngine(engine.DOCKER, "27.3.1")
     )
 
-    result = runner.invoke(cli.app, ["push"])
+    result = runner.invoke(cli_build.app, ["push"])
 
     assert result.exit_code == 0
     assert stubs.seen["pushed"] == [
@@ -1081,7 +875,7 @@ def test_a_missing_manifest_is_an_actionable_error(project, monkeypatch):
 
     monkeypatch.setattr(config, "find_manifest", _missing)
 
-    result = runner.invoke(cli.app, ["push"])
+    result = runner.invoke(cli_build.app, ["push"])
 
     assert result.exit_code == 2
     assert "Error: No cairn.toml found" in result.stderr
@@ -1100,7 +894,7 @@ def test_vendor_status_forwards_the_source_and_its_exit_code(project, monkeypatc
 
     monkeypatch.setattr(vendor, "status", _status)
 
-    result = runner.invoke(cli.app, ["vendor", "status", "frappe_docker"])
+    result = runner.invoke(cli_build.app, ["vendor", "status", "frappe_docker"])
 
     assert result.exit_code == 1
     assert seen["args"] == (project, "frappe_docker")
@@ -1115,10 +909,46 @@ def test_vendor_sync_defaults_to_every_source(project, monkeypatch):
 
     monkeypatch.setattr(vendor, "sync", _sync)
 
-    result = runner.invoke(cli.app, ["vendor", "sync"])
+    result = runner.invoke(cli_build.app, ["vendor", "sync"])
 
     assert result.exit_code == 0
     assert seen["args"] == (project, None)
+
+
+# --- setup (BR-CLI-021) -----------------------------------------------------
+
+
+def test_setup_is_root_gated(tmp_path, monkeypatch):
+    """Exits reporting the shortfall rather than attempting a partial run (`BR-DEPLOY-021`)."""
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision
+
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+
+    result = runner.invoke(cli_build.app, ["setup", "--dry-run"])
+
+    assert result.exit_code == 2
+    assert "root" in result.stderr
+
+
+def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision
+
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(
+        provision, "_check_command", lambda r, label, c: provision.Check(label, True, "ok")
+    )
+    monkeypatch.setattr(provision, "_check_memory", lambda: provision.Check("memory", True, "ok"))
+    monkeypatch.setattr(
+        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
+    )
+
+    result = runner.invoke(cli_build.app, ["setup", "--only", "preflight", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[preflight]" in result.stderr
+    assert "[admin-group]" not in result.stderr
 
 
 # --- surfaces every command shares (BR-CLI-015) ----------------------------
@@ -1132,21 +962,22 @@ def test_vendor_sync_defaults_to_every_source(project, monkeypatch):
         ["images"],
         ["prune"],
         ["doctor"],
+        ["setup"],
         ["vendor", "status"],
         ["vendor", "sync"],
     ],
 )
 def test_every_command_has_help(command):
     """BR-CLI-015: `--help` everywhere, and it must not need a project to answer."""
-    result = runner.invoke(cli.app, [*command, "--help"])
+    result = runner.invoke(cli_build.app, [*command, "--help"])
 
     assert result.exit_code == 0
     assert result.stdout.strip()
 
 
 def test_no_arguments_shows_help_rather_than_failing():
-    """Typing `cairn` alone is a question, not an error."""
-    result = runner.invoke(cli.app, [])
+    """Typing `cairn-build` alone is a question, not an error."""
+    result = runner.invoke(cli_build.app, [])
 
     assert "Usage" in result.stdout
 
@@ -1154,28 +985,31 @@ def test_no_arguments_shows_help_rather_than_failing():
 def test_version_is_reported_without_a_project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(cli.app, ["--version"])
+    result = runner.invoke(cli_build.app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.stdout.startswith("cairn ")
+    assert result.stdout.startswith("cairn-build ")
 
 
 def test_the_console_script_entry_point_runs_the_app(monkeypatch):
-    """`pyproject.toml` points the `cairn` command at this function; if it stopped invoking
-    the app, an installed cairn would do nothing and no other test would notice."""
+    """`pyproject.toml` points the `cairn-build` command at this function; if it stopped
+    invoking the app, an installed cairn-build would do nothing and no other test would
+    notice."""
     invoked = []
-    monkeypatch.setattr(cli, "app", lambda: invoked.append(True))
+    monkeypatch.setattr(cli_build, "app", lambda: invoked.append(True))
 
-    cli.run()
+    cli_build.main()
 
     assert invoked == [True]
 
 
-def test_python_dash_m_cairn_runs_the_app(monkeypatch):
-    """`python -m cairn` is a documented invocation, so its module guard must actually fire."""
-    invoked = []
-    monkeypatch.setattr(cli, "run", lambda: invoked.append(True))
+def test_python_dash_m_cairn_build_runs_the_app(monkeypatch):
+    """`python -m cairn.cli_build` is a documented invocation, so its module guard must
+    actually fire — proven by letting it really run `--help` and checking it exits 0,
+    since a fresh `runpy` execution has its own module namespace to monkeypatch into."""
+    monkeypatch.setattr(sys, "argv", ["cairn-build", "--help"])
 
-    runpy.run_module("cairn", run_name="__main__")
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("cairn.cli_build", run_name="__main__")
 
-    assert invoked == [True]
+    assert excinfo.value.code == 0

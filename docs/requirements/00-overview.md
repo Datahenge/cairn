@@ -24,23 +24,28 @@ ERPNext deployment **reproducible, immutable, and low-thought**, across two pill
 reproducible image builds and deploy lifecycle (git ref → image tag → running stack) —
 with a strict **data-plane boundary** (cairn ships code, not data).
 
-## Two roles, one tool
+## Two roles, two CLIs, one package
 
-cairn runs in one of two roles, detected from context rather than chosen with a flag:
+cairn runs in one of two roles, and — since `ADR-046` — the role is chosen by **which
+binary you invoke**, not detected at runtime:
 
-- **Build/control** — runs on the developer's laptop. Builds images from a manifest,
-  manages the vendored tree, and pushes tagged images to the registry. Covered by
-  `VEND` and `BUILD` below.
-- **Reconcile** — runs on the deployment target. Pulls images and reconciles the
-  running compose stack toward the manifest's desired state; never builds. Covered
-  by `DEPLOY` and `DATA` below.
+- **`cairn-build`** (build/control) — runs on the developer's laptop. Builds images from
+  a manifest, manages the vendored tree, and pushes tagged images to the registry.
+  Covered by `VEND` and `BUILD` below.
+- **`cairn-adopt`** (target) — runs on the deployment target. Surveys an existing
+  frappe_docker deployment into a descriptor (`examine`), then pulls images and
+  reconciles the running compose stack toward the manifest's desired state
+  (`reconcile`); never builds. Covered by `DEPLOY` and `DATA` below.
 
-This is **one package, one repo, not two programs** (`ADR-018`): both roles share the
-same config models, registry logic, and compose rendering. The separation is enforced
-by **credentials**, not code — a target holds only a read-only pull token, so even the
-full CLI there cannot build, push, or retag. Commands that are role-aware detect their
-role from context (e.g. `cairn doctor`, `ADR-028`); the common case takes no flag, per
-`BR-CLI-014`'s minimal-typing goal.
+Both remain **one package, one repo** (`ADR-046`, superseding `ADR-018`'s single-binary
+answer but not its one-package one): the two entry points share the same config models,
+registry logic, and compose rendering internally. Role separation is now enforced at two
+levels — which binary is installed/invoked, and, for anything registry-side, still by
+**credentials** (a target's pull-only token means even `cairn-adopt` cannot push or
+retag). There is no more runtime role-detection (`ADR-028` retired) and no more `--role`
+flag on the privileged installer (folded into each CLI's own `setup` subcommand,
+`BR-CLI-021`) — the common, no-flag case `BR-CLI-014` wants is now the default shape of
+the command surface itself.
 
 ## Table of contents (BR areas)
 

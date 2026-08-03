@@ -1,11 +1,12 @@
 # BR-DATA — Data-Plane Boundary Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-07-24_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
 
 `DATA` is a **boundary area**, not a feature area: cairn ships code, not data. These
-requirements are almost entirely prohibitions, with two sanctioned Frappe-command
-exceptions. Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-012`, `ADR-013`, `ADR-014`,
-`ADR-022`, `ADR-023`.
+requirements are almost entirely prohibitions, with one sanctioned Frappe-command
+exception (`migrate`) and one activation gap that is always the operator's, never
+cairn's (`install-app`). Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-012`,
+`ADR-013`, `ADR-014`, `ADR-022`, `ADR-023`, `ADR-037`.
 
 ---
 
@@ -36,11 +37,15 @@ supersedes the seeding allowance formerly in `BR-CFG-006`)*
 **`BR-DATA-007`** *(rollback is image-only)* — cairn's rollback reverts the image (and
 re-points containers) only; it MUST NOT restore or roll back the database. *(ADR-012, ADR-022)*
 
-**`BR-DATA-008`** *(sanctioned exception — opt-in only)* — Activating an app present in the
-image but not yet installed on the target site requires `bench install-app` (which `migrate`
-does not do). cairn MAY run `bench install-app <apps>` on a target, but **only via explicit
-opt-in — never by default**; a default deploy MUST NOT change a site's installed-app set.
-`install-app` is invoked opaquely. Delivery mechanism is a `DEPLOY` concern. *(ADR-023)*
+**`BR-DATA-008`** *(a known gap — always the operator's, never cairn's)* — Activating a
+Frappe App that ships in a newly-deployed image but was never previously installed on the
+target site requires `bench install-app` (which `migrate` does not do — migrate only patches
+apps already installed). cairn MUST NOT run it, under any flag or directive, automatically or
+opt-in (`BR-DEPLOY-003a`, superseding the opt-in path `ADR-023` originally proposed — `ADR-037`
+struck it entirely once implementation showed nothing could carry the directive across a
+reconcile loop). The operator runs it **by hand** against the live site, exactly as initial
+site creation is the operator's act (`BR-DEPLOY-007`). *(BR-DEPLOY-003a, BR-DEPLOY-007,
+ADR-037)*
 
 ---
 

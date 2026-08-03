@@ -1,4 +1,5 @@
-"""Tests for the ``cairn doctor`` preflight checks (BR-CLI-007, BR-CLI-012).
+"""Tests for the `cairn-build doctor` / `cairn-adopt doctor` preflight checks
+(BR-CLI-007, BR-CLI-012).
 
 Engine detection lives in ``test_engine.py`` and config parsing in ``test_config.py``;
 these tests cover how doctor composes, reports, and exits.
@@ -235,7 +236,7 @@ def test_buildx_checked_only_for_docker(
         doctor, "check_buildx", lambda: doctor.CheckResult.of("docker buildx", True, "x")
     )
 
-    labels = [r.label for r in doctor.run_checks()]
+    labels = [r.label for r in doctor.run_build_checks()]
 
     assert labels == [
         "config",
@@ -255,7 +256,7 @@ def test_buildx_not_checked_for_podman(
     """ADR-027: a podman machine is never told to install a Docker plugin it won't use."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
 
-    labels = [r.label for r in doctor.run_checks()]
+    labels = [r.label for r in doctor.run_build_checks()]
 
     assert "docker buildx" not in labels
     assert labels == [
@@ -280,7 +281,7 @@ def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass
 
     monkeypatch.setattr(doctor.engine, "detect", _detect)
 
-    doctor.run_checks()
+    doctor.run_build_checks()
 
     assert seen == ["podman"]
 
@@ -301,7 +302,7 @@ def test_explicit_engine_overrides_configured_one(
         doctor, "check_buildx", lambda: doctor.CheckResult.of("docker buildx", True, "x")
     )
 
-    doctor.run_checks(preferred_engine="docker")
+    doctor.run_build_checks(preferred_engine="docker")
 
     assert seen == ["docker"]
 
@@ -313,7 +314,7 @@ def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok, shared_conf
     monkeypatch.setattr(doctor.vendor, "assert_no_nested_git", _boom)
     monkeypatch.setattr(doctor.vendor, "assert_build_inputs", _boom)
 
-    results = doctor.run_checks()
+    results = doctor.run_build_checks()
 
     assert [r.status for r in results] == [
         doctor.Status.OK,  # config
@@ -363,25 +364,25 @@ def test_report_exit_code_nonzero_on_any_failure():
     assert doctor.report(results) == 1
 
 
-# --- role detection (`ADR-028`) ----------------------------------------------
+# --- two fixed entry points, no role detection (`ADR-046`) -------------------
 
 
-def test_run_checks_dispatches_to_target_when_a_descriptor_exists(monkeypatch):
-    monkeypatch.setattr(doctor.descriptor, "exists", lambda: True)
-    monkeypatch.setattr(doctor, "run_target_checks", lambda: ["target-sentinel"])
-
-    assert doctor.run_checks() == ["target-sentinel"]
-
-
-def test_run_checks_dispatches_to_build_when_no_descriptor(monkeypatch):
-    monkeypatch.setattr(doctor.descriptor, "exists", lambda: False)
+def test_run_build_reports_and_returns_the_exit_code(monkeypatch):
+    """`cairn-build doctor` always runs the build checks — nothing to detect."""
     monkeypatch.setattr(
-        doctor,
-        "run_build_checks",
-        lambda preferred_engine=None, manifest_path=None: ["build-sentinel"],
+        doctor, "run_build_checks", lambda preferred_engine=None, manifest_path=None: []
     )
+    monkeypatch.setattr(doctor, "report", lambda results: 0)
 
-    assert doctor.run_checks() == ["build-sentinel"]
+    assert doctor.run_build() == 0
+
+
+def test_run_target_reports_and_returns_the_exit_code(monkeypatch):
+    """`cairn-adopt doctor` always runs the target checks — nothing to detect."""
+    monkeypatch.setattr(doctor, "run_target_checks", lambda: [])
+    monkeypatch.setattr(doctor, "report", lambda results: 1)
+
+    assert doctor.run_target() == 1
 
 
 # --- target checks (`ADR-028`) ------------------------------------------------

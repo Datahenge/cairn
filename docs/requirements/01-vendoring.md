@@ -1,6 +1,6 @@
 # BR-VEND — Vendoring Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
 
 Requirements for how cairn vendors the upstream `frappe_docker` tooling. Conventions: see
 `/CLAUDE.md`. Decisions cited: `ADR-001`, `ADR-004`, `ADR-007`, `ADR-008`, `ADR-020`.
@@ -55,4 +55,4 @@ MUST NOT upgrade or re-sync the pin automatically as a side effect of any other 
 
 ## Cross-references
 - `BR-VEND-005` / `BR-VEND-006` are enforced at build time; `BUILD` cites them.
-- The `cairn vendor status | sync` command surface is specified under `BR-CLI`.
+- The `cairn-build vendor status | sync` command surface is specified under `BR-CLI`.

@@ -1,6 +1,6 @@
 # BR-BUILD — Image Build Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-07-25_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
 
 Requirements for building a custom ERPNext image from a manifest, using the vendored
 `frappe_docker` `custom/Containerfile`. Conventions: see `/CLAUDE.md`. Decisions cited:
@@ -198,4 +198,4 @@ BR-DEPLOY-022, ADR-017)*
 
 ## Cross-references
 - Preconditions `BR-VEND-005` / `BR-VEND-006` are enforced here.
-- The `cairn build` command surface is specified under `BR-CLI`.
+- The `cairn-build build` command surface is specified under `BR-CLI`.

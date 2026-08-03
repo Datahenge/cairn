@@ -170,8 +170,8 @@ descriptor into a wrong deploy every five minutes.
   checks no longer fail outright on a target, they just ask the wrong questions of it (git,
   build engine) instead of the right ones (systemd, registry reachability). Still the most
   obvious gap the first live run will expose, just a quieter one now than a crash.
-- **~~`ADR-037`~~ — closed 2026-07-25: cairn never installs an app.** The clause was struck
-  rather than implemented. If an app must be added to a live environment, that is
+- **~~`ADR-037`~~ — closed 2026-07-25: cairn never installs a Frappe App.** The clause was struck
+  rather than implemented. If a Frappe App must be added to a live environment, that is
   `bench install-app`, run by hand, exactly as site creation already is.
 - **`BR-DEPLOY-006`** — the target-side GC pass (keep last N images, **never** touch volumes).
   `cairn prune` is its build-machine analogue and the same label-scoping applies.

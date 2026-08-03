@@ -1,29 +1,28 @@
-"""Preflight checks behind ``cairn doctor`` (BR-CLI-007).
+"""Preflight checks behind `cairn-build doctor` / `cairn-adopt doctor` (`BR-CLI-007`).
 
-Answers one question, but which one depends on the machine: *can this machine build?* on
-a builder, *can this machine converge?* on a target. Every check runs even after one
-fails, so a single invocation reports the full picture; each failure names its fix
+Two fixed check sets, one per binary — no role detection (`ADR-028` retired by `ADR-046`):
+the binary invoked already says which questions apply, *can this machine build?* for
+`cairn-build`, *can this machine converge?* for `cairn-adopt`. Every check runs even after
+one fails, so a single invocation reports the full picture; each failure names its fix
 (BR-CLI-015) and any failure makes the exit code non-zero (BR-CLI-012).
 
-**Role detection** (`ADR-028`): a descriptor at the fixed path (`ADR-034`) means this
-host is a target; its absence means build/control. No flag, and none needed — the same
-signal `cairn doctor`'s docstring and `cairn systemd-units` already rely on.
+**`cairn-build doctor` checks:** config valid (`BR-CFG-012`); a usable build engine —
+docker or podman (`ADR-027`) — plus buildx when the engine is docker; ``git``, which every
+manifest ref is resolved with (`BR-BUILD-005`); and the vendored tree clean (BR-VEND-005),
+free of upstream git metadata (BR-VEND-007), and complete in its build inputs
+(BR-VEND-006).
 
-**Build/control checks:** config valid (`BR-CFG-012`); a usable build engine — docker or
-podman (`ADR-027`) — plus buildx when the engine is docker; ``git``, which every manifest
-ref is resolved with (`BR-BUILD-005`); and the vendored tree clean (BR-VEND-005), free of
-upstream git metadata (BR-VEND-007), and complete in its build inputs (BR-VEND-006).
+**`cairn-adopt doctor` checks:** the descriptor itself parses; Docker is installed and its
+daemon reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is
+present; the reconcile timer, if installed, is active; and the descriptor's watched tag
+resolves in the registry — the exact read `reconcile` performs on every poll, so a failure
+here is a failure `reconcile` would also hit.
 
-**Target checks:** the descriptor itself parses; Docker is installed and its daemon
-reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is present;
-the reconcile timer, if installed, is active; and the descriptor's watched tag resolves
-in the registry — the exact read `reconcile` performs on every poll, so a failure here is
-a failure `reconcile` would also hit.
-
-A **missing** manifest is a warning, not a failure, on a build/control host: doctor is a
+A **missing** manifest is a warning, not a failure, on `cairn-build doctor`: it is a
 machine preflight, run legitimately before a manifest exists. A **malformed** one fails.
-The reconcile timer not yet being installed is a warning on a target, not a failure — it
-legitimately isn't, before the first manual `cairn reconcile` has succeeded.
+The reconcile timer not yet being installed is a warning on `cairn-adopt doctor`, not a
+failure — it legitimately isn't, before the first manual `cairn-adopt reconcile` has
+succeeded.
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ _LABEL_WIDTH = 16
 _PROBE_TIMEOUT_SECONDS = 15
 
 #: Shared machine-scoped directory both roles use — `builder.toml` (`ADR-041`), the
-#: environment descriptor (`ADR-034`), and whatever group `cairn-provision` sets it up
+#: environment descriptor (`ADR-034`), and whatever group `setup` sets it up
 #: with (`ADR-043`).
 SHARED_CONFIG_DIR = Path("/etc/cairn")
 
@@ -88,23 +87,14 @@ class CheckResult:
         return cls(label, Status.OK if ok else Status.FAIL, detail)
 
 
-def run(preferred_engine: str | None = None, manifest_path: Path | None = None) -> int:
-    """Run every check, report the results, and return the exit code."""
-    return report(run_checks(preferred_engine, manifest_path))
+def run_build(preferred_engine: str | None = None, manifest_path: Path | None = None) -> int:
+    """Run `cairn-build doctor`'s checks, report the results, and return the exit code."""
+    return report(run_build_checks(preferred_engine, manifest_path))
 
 
-def run_checks(
-    preferred_engine: str | None = None, manifest_path: Path | None = None
-) -> list[CheckResult]:
-    """Run this host's role-appropriate preflight checks (BR-CLI-007, `ADR-028`).
-
-    A descriptor at the fixed path means this host is a target; its absence means
-    build/control. *preferred_engine* and *manifest_path* only ever matter on the
-    build/control branch.
-    """
-    if descriptor.exists():
-        return run_target_checks()
-    return run_build_checks(preferred_engine, manifest_path)
+def run_target() -> int:
+    """Run `cairn-adopt doctor`'s checks, report the results, and return the exit code."""
+    return report(run_target_checks())
 
 
 def run_build_checks(
@@ -136,7 +126,7 @@ def run_build_checks(
 
 
 def run_target_checks() -> list[CheckResult]:
-    """Run the target preflight checks in order and return their results (`ADR-028`).
+    """Run the target preflight checks in order and return their results.
 
     The descriptor is checked first because the registry check needs the reference it
     names; if it fails to load there is nothing to check the registry against.
@@ -190,8 +180,8 @@ def check_shared_config_dir() -> CheckResult:
         return CheckResult(
             label,
             Status.WARN,
-            f"{SHARED_CONFIG_DIR} does not exist yet — run cairn-provision, or create it "
-            f"by hand",
+            f"{SHARED_CONFIG_DIR} does not exist yet — run this CLI's `setup` subcommand, "
+            f"or create it by hand",
         )
 
     try:
@@ -267,7 +257,7 @@ def check_reconcile_timer() -> CheckResult:
     """Report whether the reconcile timer is installed and active.
 
     A warning, not a failure: a target legitimately has no timer yet before the first
-    manual `cairn reconcile` has succeeded — installing it earlier is what turns one wrong
+    manual `cairn-adopt reconcile` has succeeded — installing it earlier is what turns one wrong
     descriptor into a wrong deploy every few minutes, which is why `systemd-units` prints
     rather than installs. Unlike `check_compose`, a nonzero exit here is the *normal* answer
     for "not active" (`systemctl is-active`'s documented behaviour) — not a failure to run.
@@ -286,8 +276,8 @@ def check_reconcile_timer() -> CheckResult:
     return CheckResult(
         label,
         Status.WARN,
-        f"{unit} is {state} — install it with `cairn systemd-units` once a manual "
-        f"`cairn reconcile` has succeeded",
+        f"{unit} is {state} — install it with `cairn-adopt systemd-units` once a manual "
+        f"`cairn-adopt reconcile` has succeeded",
     )
 
 
