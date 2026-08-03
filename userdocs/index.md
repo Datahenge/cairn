@@ -10,11 +10,11 @@ boundary keeps cairn out of your databases and volumes entirely — it ships cod
 data.
 
 !!! note "This site is a work in progress"
-    The full guides are still being written here. In the meantime, the most complete
-    documentation lives in the repository itself:
+    [Get Started](get-started/index.md) is verified against a real deployment as it's
+    written, and covers installation and prerequisites so far. The Guides and Reference
+    sections are still placeholders — in the meantime, the most complete documentation for
+    those topics lives in the repository itself:
 
-    - [README](https://github.com/Datahenge/cairn/blob/main/README.md) — overview,
-      installation, and the two roles cairn runs in
     - [Configuration](https://github.com/Datahenge/cairn/blob/main/docs/technical/CONFIGURATION.md)
     - [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
     - [About GHCR](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_GHCR.md)

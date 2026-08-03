@@ -9,6 +9,26 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (even later — Get Started, verified against a live test VPS)
+
+Began writing `userdocs/get-started/index.md` for real, sourced from a live install/config
+session against a client test VPS rather than written speculatively (`W-012`).
+
+- **Wrote prerequisites, install, and `doctor` sections**, each confirmed against real
+  command output (Docker v29.6.2, git v2.47.3, `sudo pipx install --global datahenge-cairn`,
+  `cairn-build doctor` — 8 checks, 2 expected warnings on an unconfigured machine).
+- **Trimmed `userdocs/index.md`'s work-in-progress note** — no longer forwards installation
+  questions to the stale README section now that Get Started covers that ground itself;
+  Guides/Reference topics still forward to the root-level technical docs.
+- **Marked `W-012` `in_progress`** in `open/OPEN_WORK.md` — manifest-writing and first build
+  are next; `README.md` gets cut down to a docs-site pointer once Get Started covers install
+  through a verified first build.
+- **Clarified, mid-session, that `cairn-adopt examine` is a target-side command** and must not
+  be folded into the builder-role Get Started flow — a builder cannot assume co-location with
+  any target's running Compose project. Adopting an already-running deployment is its own,
+  separate guide, written from the target's side, once `cairn-adopt`'s own Get Started
+  content exists.
+
 ## 2026-08-03 (later still — documentation review session)
 
 Full documentation review pass (frontmatter, clarity, dedup, link integrity, sprawl control)
