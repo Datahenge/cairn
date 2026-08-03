@@ -119,16 +119,6 @@ def test_valid_config_reports_app_count_and_sources(monkeypatch):
     assert build_config is not None
 
 
-def test_warning_does_not_affect_exit_code(monkeypatch):
-    """BR-CLI-012: only failures are non-zero; a warning still exits 0."""
-    results = [
-        doctor.CheckResult("config", doctor.Status.WARN, "no cairn.toml"),
-        doctor.CheckResult.of("build engine", True, "podman v5.4.2"),
-    ]
-
-    assert doctor.report(results) == 0
-
-
 # --- shared config dir (BR-CFG-015, ADR-043) --------------------------------
 
 
@@ -351,17 +341,26 @@ def test_guard_reports_success():
 # --- exit codes (BR-CLI-012) ------------------------------------------------
 
 
-def test_report_exit_code_zero_when_all_pass():
-    results = [doctor.CheckResult.of("a", True, "ok"), doctor.CheckResult.of("b", True, "ok")]
-
-    assert doctor.report(results) == 0
-
-
-def test_report_exit_code_nonzero_on_any_failure():
-    """BR-CLI-012: any failed check makes the exit code non-zero, so systemd/CI notice."""
-    results = [doctor.CheckResult.of("a", True, "ok"), doctor.CheckResult.of("b", False, "bad")]
-
-    assert doctor.report(results) == 1
+@pytest.mark.parametrize(
+    ("results", "expected_code"),
+    [
+        (
+            # a warning still exits 0 — only failures are non-zero.
+            [
+                doctor.CheckResult("config", doctor.Status.WARN, "no cairn.toml"),
+                doctor.CheckResult.of("build engine", True, "podman v5.4.2"),
+            ],
+            0,
+        ),
+        ([doctor.CheckResult.of("a", True, "ok"), doctor.CheckResult.of("b", True, "ok")], 0),
+        # any failed check makes the exit code non-zero, so systemd/CI notice.
+        ([doctor.CheckResult.of("a", True, "ok"), doctor.CheckResult.of("b", False, "bad")], 1),
+    ],
+    ids=["warning-only", "all-pass", "any-failure"],
+)
+def test_report_exit_code(results, expected_code):
+    """BR-CLI-012: only failures are non-zero; a warning still exits 0."""
+    assert doctor.report(results) == expected_code
 
 
 # --- two fixed entry points, no role detection (`ADR-046`) -------------------
@@ -447,61 +446,43 @@ def test_check_docker_fails_when_daemon_unreachable(monkeypatch):
     assert "not reachable" in result.detail
 
 
-def test_check_compose_passes_when_the_plugin_answers(monkeypatch):
-    monkeypatch.setattr(
-        doctor, "_run", lambda command: _completed(0, stdout="Docker Compose v2.29.0")
-    )
+@pytest.mark.parametrize(
+    ("run_stub", "expected_status", "expected_detail"),
+    [
+        (lambda command: _completed(0, stdout="Docker Compose v2.29.0"), doctor.Status.OK, "Compose"),
+        (lambda command: _completed(1, stderr="unknown command"), doctor.Status.FAIL, "unknown command"),
+        (lambda command: None, doctor.Status.FAIL, None),
+    ],
+    ids=["plugin-answers", "nonzero-exit", "docker-absent"],
+)
+def test_check_compose(monkeypatch, run_stub, expected_status, expected_detail):
+    monkeypatch.setattr(doctor, "_run", run_stub)
 
     result = doctor.check_compose()
 
-    assert result.status is doctor.Status.OK
-    assert "Compose" in result.detail
+    assert result.status is expected_status
+    if expected_detail is not None:
+        assert expected_detail in result.detail
 
 
-def test_check_compose_fails_on_a_nonzero_exit(monkeypatch):
-    monkeypatch.setattr(
-        doctor, "_run", lambda command: _completed(1, stderr="unknown command")
-    )
-
-    result = doctor.check_compose()
-
-    assert result.status is doctor.Status.FAIL
-    assert "unknown command" in result.detail
-
-
-def test_check_compose_fails_when_docker_itself_is_absent(monkeypatch):
-    monkeypatch.setattr(doctor, "_run", lambda command: None)
-
-    result = doctor.check_compose()
-
-    assert result.status is doctor.Status.FAIL
-
-
-def test_check_reconcile_timer_is_ok_when_active(monkeypatch):
-    monkeypatch.setattr(doctor, "_run", lambda command: _completed(0, stdout="active\n"))
+@pytest.mark.parametrize(
+    ("run_stub", "expected_status", "expected_detail"),
+    [
+        (lambda command: _completed(0, stdout="active\n"), doctor.Status.OK, None),
+        # not a failure: legitimately true before the first manual reconcile.
+        (lambda command: _completed(3, stdout="inactive\n"), doctor.Status.WARN, "inactive"),
+        (lambda command: None, doctor.Status.WARN, "not available"),
+    ],
+    ids=["active", "inactive", "systemd-absent"],
+)
+def test_check_reconcile_timer(monkeypatch, run_stub, expected_status, expected_detail):
+    monkeypatch.setattr(doctor, "_run", run_stub)
 
     result = doctor.check_reconcile_timer()
 
-    assert result.status is doctor.Status.OK
-
-
-def test_check_reconcile_timer_warns_when_inactive(monkeypatch):
-    """Not a failure: legitimately true before the first manual reconcile."""
-    monkeypatch.setattr(doctor, "_run", lambda command: _completed(3, stdout="inactive\n"))
-
-    result = doctor.check_reconcile_timer()
-
-    assert result.status is doctor.Status.WARN
-    assert "inactive" in result.detail
-
-
-def test_check_reconcile_timer_warns_when_systemd_absent(monkeypatch):
-    monkeypatch.setattr(doctor, "_run", lambda command: None)
-
-    result = doctor.check_reconcile_timer()
-
-    assert result.status is doctor.Status.WARN
-    assert "not available" in result.detail
+    assert result.status is expected_status
+    if expected_detail is not None:
+        assert expected_detail in result.detail
 
 
 def test_check_registry_reachable_reads_the_descriptors_own_reference(monkeypatch):

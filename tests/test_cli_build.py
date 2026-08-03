@@ -884,35 +884,30 @@ def test_a_missing_manifest_is_an_actionable_error(project, monkeypatch):
 # --- vendor (BR-CLI-006) ---------------------------------------------------
 
 
-def test_vendor_status_forwards_the_source_and_its_exit_code(project, monkeypatch):
+@pytest.mark.parametrize(
+    ("vendor_attr", "cli_args", "expected_source", "returned_code"),
+    [
+        ("status", ["vendor", "status", "frappe_docker"], "frappe_docker", 1),
+        ("sync", ["vendor", "sync"], None, 0),
+    ],
+    ids=["status", "sync-defaults-to-every-source"],
+)
+def test_vendor_command_forwards_the_source_and_exit_code(
+    project, monkeypatch, vendor_attr, cli_args, expected_source, returned_code
+):
     """A thin wrapper: ventwig's exit code is authoritative and must survive the trip."""
     seen: dict = {}
 
-    def _status(root, source=None):
+    def _stub(root, source=None):
         seen["args"] = (root, source)
-        return 1
+        return returned_code
 
-    monkeypatch.setattr(vendor, "status", _status)
+    monkeypatch.setattr(vendor, vendor_attr, _stub)
 
-    result = runner.invoke(cli_build.app, ["vendor", "status", "frappe_docker"])
+    result = runner.invoke(cli_build.app, cli_args)
 
-    assert result.exit_code == 1
-    assert seen["args"] == (project, "frappe_docker")
-
-
-def test_vendor_sync_defaults_to_every_source(project, monkeypatch):
-    seen: dict = {}
-
-    def _sync(root, source=None):
-        seen["args"] = (root, source)
-        return 0
-
-    monkeypatch.setattr(vendor, "sync", _sync)
-
-    result = runner.invoke(cli_build.app, ["vendor", "sync"])
-
-    assert result.exit_code == 0
-    assert seen["args"] == (project, None)
+    assert result.exit_code == returned_code
+    assert seen["args"] == (project, expected_source)
 
 
 # --- setup (BR-CLI-021) -----------------------------------------------------

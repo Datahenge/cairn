@@ -86,13 +86,10 @@ def test_swapping_two_apps_urls_changes_the_hash():
 
 
 # --- input hash / tags (BR-BUILD-008) ---------------------------------------
-
-
-def test_changed_build_arg_changes_the_input_hash():
-    """Same sources, different Python version -> a different image, so a different tag."""
-    other = {**BUILD_ARGS, "PYTHON_VERSION": "3.13.1"}
-
-    assert tagging.input_hash(_resolution(), other) != tagging.input_hash(_resolution(), BUILD_ARGS)
+#
+# A changed build-arg changing the input hash (and thus the tag) is already covered above by
+# test_build_args_change_the_tag_but_not_the_cache_bust, which also asserts the cache_bust
+# invariant that would otherwise go unchecked.
 
 
 @pytest.mark.parametrize(

@@ -500,4 +500,4 @@ def test_nothing_is_written_by_a_survey(monkeypatch, tmp_path):
     adopt.render(adopt.survey(), "test")
 
     assert sorted(p.name for p in tmp_path.iterdir()) == before
-    assert not Path(descriptor.DESCRIPTOR_PATH).exists() or True  # never created by us
+    assert not Path(descriptor.DESCRIPTOR_PATH).exists()  # never created by us

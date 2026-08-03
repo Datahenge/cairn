@@ -33,38 +33,33 @@ def _stub(monkeypatch, stdout: str = "", returncode: int = 0, stderr: str = ""):
 # --- kind detection (BR-BUILD-005) ------------------------------------------
 
 
-def test_branch_resolves_and_is_marked_moving(monkeypatch):
-    """BR-BUILD-005: a branch resolves, but is flagged as able to move."""
-    _stub(monkeypatch, f"{BRANCH_SHA}\trefs/heads/version-16\n")
+@pytest.mark.parametrize(
+    ("ref", "stdout", "expected_commit", "expected_kind", "expected_moving"),
+    [
+        # BR-BUILD-005: a branch resolves, but is flagged as able to move.
+        ("version-16", f"{BRANCH_SHA}\trefs/heads/version-16\n", BRANCH_SHA, resolve.RefKind.BRANCH, True),
+        ("v15.0.0", f"{TAG_OBJECT_SHA}\trefs/tags/v15.0.0\n", TAG_OBJECT_SHA, resolve.RefKind.TAG, False),
+        # an annotated tag names a tag object; the build checks out what it peels to.
+        (
+            "v15.0.0",
+            f"{TAG_OBJECT_SHA}\trefs/tags/v15.0.0\n{PEELED_SHA}\trefs/tags/v15.0.0^{{}}\n",
+            PEELED_SHA,
+            resolve.RefKind.TAG,
+            False,
+        ),
+    ],
+    ids=["branch", "lightweight-tag", "annotated-tag"],
+)
+def test_a_ref_resolves_to_its_commit_and_kind(
+    monkeypatch, ref, stdout, expected_commit, expected_kind, expected_moving
+):
+    _stub(monkeypatch, stdout)
 
-    resolved = resolve.resolve_ref("erpnext", "https://example.com/erpnext", "version-16")
+    resolved = resolve.resolve_ref("erpnext", "https://example.com/erpnext", ref)
 
-    assert resolved.commit == BRANCH_SHA
-    assert resolved.kind is resolve.RefKind.BRANCH
-    assert resolved.is_moving
-
-
-def test_lightweight_tag_resolves_and_is_not_moving(monkeypatch):
-    _stub(monkeypatch, f"{TAG_OBJECT_SHA}\trefs/tags/v15.0.0\n")
-
-    resolved = resolve.resolve_ref("erpnext", "https://example.com/erpnext", "v15.0.0")
-
-    assert resolved.commit == TAG_OBJECT_SHA
-    assert resolved.kind is resolve.RefKind.TAG
-    assert not resolved.is_moving
-
-
-def test_annotated_tag_resolves_to_the_peeled_commit(monkeypatch):
-    """An annotated tag names a tag object; the build checks out what it peels to."""
-    _stub(
-        monkeypatch,
-        f"{TAG_OBJECT_SHA}\trefs/tags/v15.0.0\n{PEELED_SHA}\trefs/tags/v15.0.0^{{}}\n",
-    )
-
-    resolved = resolve.resolve_ref("erpnext", "https://example.com/erpnext", "v15.0.0")
-
-    assert resolved.commit == PEELED_SHA
-    assert resolved.kind is resolve.RefKind.TAG
+    assert resolved.commit == expected_commit
+    assert resolved.kind is expected_kind
+    assert resolved.is_moving is expected_moving
 
 
 def test_peeled_pattern_is_requested_explicitly(monkeypatch):
@@ -116,36 +111,33 @@ def test_unknown_ref_names_the_rule(monkeypatch):
         resolve.resolve_ref("btu", "https://example.com/btu", "nope")
 
 
-def test_unreachable_remote_is_actionable(monkeypatch):
-    """A failed ls-remote surfaces git's own last line plus the likely fix."""
+def _raise_file_not_found(*args, **kwargs):
+    raise FileNotFoundError("git")
+
+
+def _raise_timeout(*args, **kwargs):
+    raise subprocess.TimeoutExpired(cmd="git", timeout=60)
+
+
+@pytest.mark.parametrize(
+    ("run_stub", "expected"),
+    [
+        (
+            lambda *a, **k: _completed(returncode=128, stderr="fatal: repository not found\n"),
+            "repository not found",
+        ),
+        (_raise_file_not_found, "`git` not found on PATH"),
+        (_raise_timeout, "timed out"),
+    ],
+    ids=["unreachable-remote", "missing-git-binary", "timeout"],
+)
+def test_a_failed_lookup_is_actionable(monkeypatch, run_stub, expected):
+    """A failed ls-remote surfaces something actionable regardless of failure mode: git's own
+    last line plus the likely fix, a missing binary, or a timeout."""
     monkeypatch.setattr(resolve, "_run", resolve._run)  # use the real wrapper
-    monkeypatch.setattr(
-        resolve.subprocess,
-        "run",
-        lambda *a, **k: _completed(returncode=128, stderr="fatal: repository not found\n"),
-    )
+    monkeypatch.setattr(resolve.subprocess, "run", run_stub)
 
-    with pytest.raises(RefResolutionError, match="repository not found"):
-        resolve.resolve_ref("btu", "https://example.com/nope", "main")
-
-
-def test_missing_git_binary_is_actionable(monkeypatch):
-    def _raise(*args, **kwargs):
-        raise FileNotFoundError("git")
-
-    monkeypatch.setattr(resolve.subprocess, "run", _raise)
-
-    with pytest.raises(RefResolutionError, match="`git` not found on PATH"):
-        resolve.resolve_ref("btu", "https://example.com/btu", "main")
-
-
-def test_timeout_is_actionable(monkeypatch):
-    def _raise(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="git", timeout=60)
-
-    monkeypatch.setattr(resolve.subprocess, "run", _raise)
-
-    with pytest.raises(RefResolutionError, match="timed out"):
+    with pytest.raises(RefResolutionError, match=expected):
         resolve.resolve_ref("btu", "https://example.com/btu", "main")
 
 

@@ -69,25 +69,22 @@ def commands(monkeypatch):
 # --- the convergence decision (BR-DEPLOY-001) -------------------------------
 
 
-def test_a_matching_digest_with_a_running_stack_is_converged():
-    state = reconcile.State(desired_digest=DESIRED, running_digest=DESIRED, stack_up=True)
+@pytest.mark.parametrize(
+    ("running_digest", "stack_up", "expected_converged"),
+    [
+        (DESIRED, True, True),
+        # a host that pulled an image and then died is not converged, and reporting it as
+        # success is how a timer comes to hide an outage.
+        (DESIRED, False, False),
+        (OTHER, True, False),
+    ],
+    ids=["matching-digest-running", "matching-digest-stopped", "different-digest"],
+)
+def test_is_converged(running_digest, stack_up, expected_converged):
+    state = reconcile.State(desired_digest=DESIRED, running_digest=running_digest, stack_up=stack_up)
 
-    assert state.is_converged is True
-
-
-def test_a_matching_digest_with_a_stopped_stack_is_not_converged():
-    """A host that pulled an image and then died is not converged, and reporting it as
-    success is how a timer comes to hide an outage."""
-    state = reconcile.State(desired_digest=DESIRED, running_digest=DESIRED, stack_up=False)
-
-    assert state.is_converged is False
-
-
-def test_a_different_digest_is_not_converged():
-    state = reconcile.State(desired_digest=DESIRED, running_digest=OTHER, stack_up=True)
-
-    assert state.is_converged is False
-    assert state.is_first_deploy is False
+    assert state.is_converged is expected_converged
+    assert state.is_first_deploy is False  # a running_digest is present in every case here
 
 
 def test_no_local_image_is_a_first_deploy():

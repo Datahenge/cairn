@@ -393,15 +393,6 @@ def test_the_certificate_key_is_owner_only(sandbox, monkeypatch):
     assert modes[provision.CERT_DIR / "registry.key"] == 0o600
 
 
-def test_the_registry_has_no_credentials_to_leak():
-    """A localhost-bound registry needs no auth, so there is no secret in this file at all."""
-    rendered = provision.registry_compose()
-
-    assert "PASSWORD" not in rendered.upper()
-    assert "htpasswd" not in rendered
-    assert "AUTH" not in rendered.upper()
-
-
 # --- the shared admin group (BR-CFG-015, BR-DEPLOY-022, ADR-043) -------------
 
 
@@ -477,10 +468,6 @@ def test_admin_group_dry_run_writes_nothing(sandbox, monkeypatch):
     assert not provision.CERT_DIR.exists()
 
 
-def test_admin_group_defaults_to_cairn_admins():
-    assert provision.SetupOptions().admin_group == provision.DEFAULT_ADMIN_GROUP
-
-
 # --- the registry ------------------------------------------------------------
 
 
@@ -501,22 +488,25 @@ def test_no_private_ip_still_yields_a_usable_certificate():
     assert "IP:" in sans
 
 
-def test_the_registry_binds_to_localhost_only():
-    """Never exposed: there is no auth, so reachability is the whole of the access control."""
+def test_the_registry_compose_contents():
+    """One `registry_compose()` render, checked against every property it must have.
+
+    - localhost-only bind: never exposed, so reachability is the whole of the access control.
+    - the cairn-managed label: so `cairn-adopt examine` can recognize this project as cairn's
+      own infrastructure by label — never by assuming anything from the project name.
+    - delete-enabled storage: what makes keep-N retention possible later; some hosted
+      registries cannot do it at all.
+    - no credentials: a localhost-bound registry needs no auth, so there is no secret in this
+      file at all.
+    """
     rendered = provision.registry_compose()
 
     assert f'"127.0.0.1:{provision.REGISTRY_PORT}:{provision.REGISTRY_PORT}"' in rendered
-
-
-def test_the_registry_carries_the_cairn_managed_label():
-    """So `cairn-adopt examine` can recognize this project as cairn's own infrastructure by
-    label — never by assuming anything from the `cairn-registry` project name."""
-    assert f'"{adopt_module.CAIRN_MANAGED_LABEL}=true"' in provision.registry_compose()
-
-
-def test_the_registry_can_delete_versions():
-    """What makes keep-N retention possible later; some hosted registries cannot do it at all."""
-    assert "REGISTRY_STORAGE_DELETE_ENABLED" in provision.registry_compose()
+    assert f'"{adopt_module.CAIRN_MANAGED_LABEL}=true"' in rendered
+    assert "REGISTRY_STORAGE_DELETE_ENABLED" in rendered
+    assert "PASSWORD" not in rendered.upper()
+    assert "htpasswd" not in rendered
+    assert "AUTH" not in rendered.upper()
 
 
 def test_the_registry_is_verified_over_tls_before_being_claimed(sandbox):
@@ -755,22 +745,17 @@ def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path):
     assert not (provision.SYSTEMD_DIR / "cairn-build.timer").exists()
 
 
-def test_build_timer_is_enabled_but_never_started(sandbox):
+@pytest.mark.parametrize(
+    "stage",
+    [provision.stage_timers_build, provision.stage_timers_adopt],
+    ids=["build", "adopt"],
+)
+def test_a_timer_is_enabled_but_never_started(sandbox, stage):
     """A timer firing before anyone has confirmed the manifest turns one wrong configuration
     into a wrong deploy every quarter of an hour."""
     runner = Recorder()
 
-    provision.stage_timers_build(runner, _options(workdir=sandbox))
-
-    assert runner.ran("systemctl enable")
-    assert not runner.ran("systemctl start")
-    assert any("NOT started" in note for note in runner.report.warnings)
-
-
-def test_reconcile_timer_is_enabled_but_never_started(sandbox):
-    runner = Recorder()
-
-    provision.stage_timers_adopt(runner, _options(workdir=sandbox))
+    stage(runner, _options(workdir=sandbox))
 
     assert runner.ran("systemctl enable")
     assert not runner.ran("systemctl start")

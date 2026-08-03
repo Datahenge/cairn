@@ -149,27 +149,21 @@ def test_environments_map_names_to_registry_tags(tmp_path):
     assert manifest.environments == {"production": "production", "staging": "stg"}
 
 
-def test_two_environments_may_not_share_one_tag(tmp_path):
-    """The tag *is* the desired-state pointer, so sharing one would make a retag of either
-    deploy to both at once."""
-    text = VALID + '\n[cairn.environments]\nstaging = "live"\nproduction = "live"\n'
+@pytest.mark.parametrize(
+    ("environments_table", "expected"),
+    [
+        # sharing a tag would make a retag of either deploy to both at once — the tag *is*
+        # the desired-state pointer.
+        ('staging = "live"\nproduction = "live"\n', "both point at"),
+        ("production = true\n", "must name a registry tag"),
+        # a tag the registry would refuse must fail here, not after a build and a push.
+        ('production = "not a tag"\n', "not a valid image tag"),
+    ],
+)
+def test_environment_tags_are_validated(tmp_path, environments_table, expected):
+    text = VALID + "\n[cairn.environments]\n" + environments_table
 
-    with pytest.raises(ManifestInvalidError, match="both point at"):
-        config.load_manifest(_manifest(tmp_path, text))
-
-
-def test_an_environment_needs_a_tag_string(tmp_path):
-    text = VALID + "\n[cairn.environments]\nproduction = true\n"
-
-    with pytest.raises(ManifestInvalidError, match="must name a registry tag"):
-        config.load_manifest(_manifest(tmp_path, text))
-
-
-def test_an_invalid_tag_is_rejected_at_parse_time(tmp_path):
-    """A tag the registry would refuse must fail here, not after a build and a push."""
-    text = VALID + '\n[cairn.environments]\nproduction = "not a tag"\n'
-
-    with pytest.raises(ManifestInvalidError, match="not a valid image tag"):
+    with pytest.raises(ManifestInvalidError, match=expected):
         config.load_manifest(_manifest(tmp_path, text))
 
 
@@ -328,26 +322,20 @@ def test_series_is_read_when_declared(tmp_path):
     assert config.load_manifest(_manifest(tmp_path, text)).series == "v16"
 
 
-def test_a_series_containing_a_hyphen_is_refused(tmp_path):
-    """The tag reads as '<series>-<hash>', so a hyphen inside the series makes it ambiguous to
-    the human it exists for."""
-    text = _with_series(VALID, '"v16-erp"')
+@pytest.mark.parametrize(
+    ("series_literal", "expected"),
+    [
+        # the tag reads as '<series>-<hash>', so a hyphen inside the series makes it
+        # ambiguous to the human it exists for.
+        ('"v16-erp"', "no hyphens"),
+        ("16", "series must be a non-empty string"),
+        ('"v 16"', "cannot be used in an image tag"),
+    ],
+)
+def test_an_invalid_series_is_refused(tmp_path, series_literal, expected):
+    text = _with_series(VALID, series_literal)
 
-    with pytest.raises(ManifestInvalidError, match="no hyphens"):
-        config.load_manifest(_manifest(tmp_path, text))
-
-
-def test_a_series_that_is_not_a_string_is_refused(tmp_path):
-    text = _with_series(VALID, "16")
-
-    with pytest.raises(ManifestInvalidError, match="series must be a non-empty string"):
-        config.load_manifest(_manifest(tmp_path, text))
-
-
-def test_a_series_with_a_space_is_refused(tmp_path):
-    text = _with_series(VALID, '"v 16"')
-
-    with pytest.raises(ManifestInvalidError, match="cannot be used in an image tag"):
+    with pytest.raises(ManifestInvalidError, match=expected):
         config.load_manifest(_manifest(tmp_path, text))
 
 
@@ -449,39 +437,32 @@ def test_a_manifest_without_a_registry_leaves_the_image_local(monkeypatch, tmp_p
     assert loaded.resolve_image_base("erp") == "cairn/erp"
 
 
-def test_the_registry_host_is_required_when_the_table_is_present(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("manifest_text", "expected"),
+    [
+        (VALID + '\n[cairn.registry]\nnamespace = "x"\n', "requires 'host'"),
+        # `engine` describes this machine, not the deployment, and must not travel with it.
+        (
+            VALID + '\n[cairn.registry]\nhost = "ghcr.io"\nengine = "podman"\n',
+            "unknown key",
+        ),
+        # `registry = "ghcr.io"` under [cairn] is the natural mistake, and it must name the
+        # table it should have been rather than being silently ignored.
+        (
+            VALID.replace(
+                'image_name = "erpnext-btu-v16"',
+                'image_name = "erpnext-btu-v16"\nregistry = "ghcr.io"',
+            ),
+            r"\[cairn.registry\] must be a table",
+        ),
+    ],
+)
+def test_the_registry_table_is_validated(monkeypatch, tmp_path, manifest_text, expected):
     _clear_build_config_env(monkeypatch)
     monkeypatch.setattr(config, "BUILDER_CONFIG_PATH", tmp_path / "absent.toml")
-    manifest = _deployment(tmp_path, manifest_text=VALID + '\n[cairn.registry]\nnamespace = "x"\n')
+    manifest = _deployment(tmp_path, manifest_text=manifest_text)
 
-    with pytest.raises(ManifestInvalidError, match="requires 'host'"):
-        config.load_build_config(manifest)
-
-
-def test_a_machine_setting_is_refused_in_the_manifest(monkeypatch, tmp_path):
-    """`engine` describes this machine, not the deployment, and must not travel with it."""
-    _clear_build_config_env(monkeypatch)
-    monkeypatch.setattr(config, "BUILDER_CONFIG_PATH", tmp_path / "absent.toml")
-    manifest = _deployment(
-        tmp_path, manifest_text=VALID + '\n[cairn.registry]\nhost = "ghcr.io"\nengine = "podman"\n'
-    )
-
-    with pytest.raises(ManifestInvalidError, match="unknown key"):
-        config.load_build_config(manifest)
-
-
-def test_a_registry_written_as_a_scalar_is_refused(monkeypatch, tmp_path):
-    """`registry = "ghcr.io"` under [cairn] is the natural mistake, and it must name the table
-    it should have been rather than being silently ignored."""
-    _clear_build_config_env(monkeypatch)
-    monkeypatch.setattr(config, "BUILDER_CONFIG_PATH", tmp_path / "absent.toml")
-    scalar = VALID.replace(
-        'image_name = "erpnext-btu-v16"',
-        'image_name = "erpnext-btu-v16"\nregistry = "ghcr.io"',
-    )
-    manifest = _deployment(tmp_path, manifest_text=scalar)
-
-    with pytest.raises(ManifestInvalidError, match=r"\[cairn.registry\] must be a table"):
+    with pytest.raises(ManifestInvalidError, match=expected):
         config.load_build_config(manifest)
 
 

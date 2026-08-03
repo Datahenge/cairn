@@ -92,26 +92,31 @@ def test_unknown_preference_rejected(monkeypatch):
 # --- version floors (ADR-027) -----------------------------------------------
 
 
-def test_docker_below_floor_rejected(monkeypatch):
-    """ADR-027: Docker below v23 predates BuildKit-by-default."""
-    monkeypatch.setattr(
-        engine, "_run", _responses({("docker", "version"): _completed(0, stdout="20.10.24\n")})
-    )
+@pytest.mark.parametrize(
+    ("name", "response", "expected"),
+    [
+        # docker below v23 predates BuildKit-by-default.
+        (
+            engine.DOCKER,
+            {("docker", "version"): _completed(0, stdout="20.10.24\n")},
+            r"requires docker v23\+",
+        ),
+        # podman below v4 predates documented `--mount=type=secret` support.
+        (
+            engine.PODMAN,
+            {("podman", "--version"): _completed(0, stdout="podman version 3.4.4\n")},
+            r"requires podman v4\+",
+        ),
+    ],
+    ids=["docker", "podman"],
+)
+def test_below_floor_rejected(monkeypatch, name, response, expected):
+    """ADR-027: each engine has a documented version floor below which the build cannot rely
+    on features it needs."""
+    monkeypatch.setattr(engine, "_run", _responses(response))
 
-    with pytest.raises(BuildEngineError, match=r"requires docker v23\+"):
-        engine.check(engine.DOCKER)
-
-
-def test_podman_below_floor_rejected(monkeypatch):
-    """ADR-027: podman below v4 predates documented `--mount=type=secret` support."""
-    monkeypatch.setattr(
-        engine,
-        "_run",
-        _responses({("podman", "--version"): _completed(0, stdout="podman version 3.4.4\n")}),
-    )
-
-    with pytest.raises(BuildEngineError, match=r"requires podman v4\+"):
-        engine.check(engine.PODMAN)
+    with pytest.raises(BuildEngineError, match=expected):
+        engine.check(name)
 
 
 # --- engine-specific probe semantics ----------------------------------------
@@ -159,7 +164,10 @@ def test_buildx_missing_names_the_package(monkeypatch):
         engine.buildx_version()
 
 
-def test_version_parsing():
-    assert engine._major("27.3.1") == 27
-    assert engine._major("v23.0.1") == 23
-    assert engine._major("garbage") is None
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("27.3.1", 27), ("v23.0.1", 23), ("garbage", None)],
+    ids=["plain", "v-prefixed", "unparseable"],
+)
+def test_version_parsing(raw, expected):
+    assert engine._major(raw) == expected

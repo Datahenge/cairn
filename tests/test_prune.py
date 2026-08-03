@@ -28,28 +28,26 @@ def _group(*members, input_hash="aaa111"):
 # --- restriction 3: keep the newest N per input hash ------------------------
 
 
-def test_default_keeps_only_the_newest_of_each_input_hash():
+@pytest.mark.parametrize(
+    ("keep", "expected_removals", "expected_kept"),
+    [
+        (1, ["bbb000000000", "ccc000000000"], ["aaa000000000"]),
+        # keep=2 leaves rollback headroom: one older build stays available to roll back to.
+        (2, ["ccc000000000"], ["aaa000000000", "bbb000000000"]),
+    ],
+    ids=["keep-1", "keep-2"],
+)
+def test_keep_n_leaves_the_n_newest(keep, expected_removals, expected_kept):
     group = _group(
         _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
         _image("bbb", minutes_old=2),
         _image("ccc", minutes_old=5),
     )
-    plan = prune.select([group], keep=1)
+    plan = prune.select([group], keep=keep)
 
-    assert [image.short_id for image in plan.removals] == ["bbb000000000", "ccc000000000"]
-    assert [image.short_id for image in plan.kept] == ["aaa000000000"]
-    assert plan.reclaimable == 2 * 2_750_000_000
-
-
-def test_keep_two_leaves_rollback_headroom():
-    group = _group(
-        _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
-        _image("bbb", minutes_old=2),
-        _image("ccc", minutes_old=5),
-    )
-    plan = prune.select([group], keep=2)
-
-    assert [image.short_id for image in plan.removals] == ["ccc000000000"]
+    assert [image.short_id for image in plan.removals] == expected_removals
+    assert [image.short_id for image in plan.kept] == expected_kept
+    assert plan.reclaimable == len(expected_removals) * 2_750_000_000
 
 
 def test_keep_is_per_input_hash_not_global():
@@ -166,8 +164,9 @@ def test_empty_plan_still_explains_itself():
 # --- removal (BR-CLI-018) ---------------------------------------------------
 
 
-def test_removal_never_forces(monkeypatch):
-    """A removal that needs forcing is one to report, not perform."""
+@pytest.fixture
+def capturing_run(monkeypatch):
+    """A `subprocess.run` stub that always succeeds and records every command issued."""
     seen: list[list[str]] = []
 
     def _run(command, **kwargs):
@@ -175,10 +174,15 @@ def test_removal_never_forces(monkeypatch):
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr(prune.subprocess, "run", _run)
+    return seen
+
+
+def test_removal_never_forces(capturing_run):
+    """A removal that needs forcing is one to report, not perform."""
     prune.remove("podman", (_image("aaa"), _image("bbb")))
 
-    assert all("--force" not in command and "-f" not in command for command in seen)
-    assert [command[:3] for command in seen] == [["podman", "image", "rm"]] * 2
+    assert all("--force" not in command and "-f" not in command for command in capturing_run)
+    assert [command[:3] for command in capturing_run] == [["podman", "image", "rm"]] * 2
 
 
 def test_one_failure_does_not_abort_the_rest(monkeypatch):
@@ -194,17 +198,10 @@ def test_one_failure_does_not_abort_the_rest(monkeypatch):
     assert failures == ["aaa000000000: image is in use"]
 
 
-def test_volumes_and_containers_are_never_named(monkeypatch):
-    seen: list[list[str]] = []
-
-    def _run(command, **kwargs):
-        seen.append(command)
-        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-    monkeypatch.setattr(prune.subprocess, "run", _run)
+def test_volumes_and_containers_are_never_named(capturing_run):
     prune.remove("podman", (_image("aaa"),))
 
-    flattened = " ".join(" ".join(command) for command in seen)
+    flattened = " ".join(" ".join(command) for command in capturing_run)
     assert "volume" not in flattened
     assert "container" not in flattened
     assert "system" not in flattened
