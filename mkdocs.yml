@@ -1,0 +1,64 @@
+site_name: cairn
+site_url: https://datahenge.github.io/cairn/
+site_description: >-
+  Documentation for cairn — a wrapper around frappe_docker for reproducible
+  ERPNext image builds and pull-based deploys on a single VPS.
+repo_url: https://github.com/Datahenge/cairn
+repo_name: Datahenge/cairn
+edit_uri: edit/main/userdocs/
+
+docs_dir: userdocs
+
+theme:
+  name: material
+  font:
+    text: Inter
+    code: Roboto Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - attr_list
+  - toc:
+      permalink: true
+      title: On this page
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Datahenge/cairn
+
+nav:
+  - Home: index.md
+  - Get Started: get-started/index.md
+  - Guides: guides/index.md
+  - Reference: reference/index.md

@@ -45,6 +45,9 @@ dev = [
   "build>=1.2",
   "twine>=6.0",
 ]
+docs = [
+  "mkdocs-material>=9.5",
+]
 
 # `cairn` is the command; `datahenge-cairn` is an alias fallback (ADR-018). `cairn-provision`
 # is deliberately a separate entry point rather than a `cairn` subcommand — it is the one

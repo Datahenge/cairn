@@ -35,3 +35,6 @@ htmlcov/
 
 # shell script for pushing to PyPI.org
 push_to_pypi.sh
+
+# mkdocs build output (userdocs/ is the source, this is the built site)
+/site/

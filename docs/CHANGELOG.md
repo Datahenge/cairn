@@ -9,6 +9,37 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (later — new `DOCS` requirement area: published documentation site)
+
+Brian asked to add a requirement for high-quality online documentation, GitHub Pages-based
+like Datahenge's BTU project. Clarified four open questions with him before drafting
+(Scribe Phase 2 dialogue): source-tree location, tooling, publish domain, and initial
+content scope. Decided: a new top-level `userdocs/` directory (kept structurally separate
+from the internal `docs/` requirements root, since `/CLAUDE.md` forbids `BR`/`ADR` IDs from
+reaching a user); mkdocs + mkdocs-material, matching BTU's proven pattern; the default
+GitHub Pages URL, no custom domain; and a lean initial scope — stand up the site + CI
+publish pipeline with placeholder content, deferring migration of the existing root-level
+docs (`README.md`, `CONFIGURATION.md`, `ABOUT_GHCR.md`, `ABOUT_REGISTRIES.md`) into the
+site's nav to later, separate work.
+
+Recorded as `ADR-045` (`docs/01-decisions-closed.md`) and a new area,
+`docs/requirements/07-docs.md` (`BR-DOCS-001` through `BR-DOCS-007`), added to the
+table of contents in `00-overview.md`.
+
+---
+
+## 2026-08-03 (overview — surfaced the two roles/modes up front)
+
+Brian asked what cairn's two roles/modes are; the answer existed only inside `ADR-018`
+(build/control vs. reconcile, one package) and `ADR-028` (`cairn doctor` detects its role
+from context), buried in the decision register rather than stated where a reader would
+first look. Added a "Two roles, one tool" section to `00-overview.md`, right after system
+purpose, summarizing the role split and its enforcement (credentials, not code) and
+pointing at the `ADR`s and BR areas that cover each role. No new requirement — a
+clarity-only edit, so no new `BR` IDs.
+
+---
+
 ## 2026-07-27 (later still — recorded a local git mirror as a deferred `BR-BUILD-016` successor)
 
 After `BR-BUILD-016` shipped, Brian asked whether a future local git mirror — refreshed via
