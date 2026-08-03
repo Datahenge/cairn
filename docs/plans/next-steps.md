@@ -1,4 +1,15 @@
+---
+status: archived
+owner: project
+purpose: Narrative record of the session that produced ADR-031/032; the live backlog now lives in open/OPEN_WORK.md.
+---
+
 # Next Steps
+
+> **Superseded as a live backlog by `open/OPEN_WORK.md`** (seeded from this file 2026-08-03).
+> Kept here as the narrative record of how that session's work was approached — read
+> `open/OPEN_WORK.md` for current outstanding work, not this file. Command names below predate
+> the `cairn-build`/`cairn-adopt` split (`ADR-046`) and are historical, not current usage.
 
 _Written 2026-07-25, at the end of the session that produced `ADR-031` and `ADR-032`.
 Revised later the same day: `cairn prune` verified on the machine, and the CLI layer tested.
@@ -79,7 +90,8 @@ The number is unknown, and everything about per-app caching depends on it.
 
 Method: commit something trivial to BTU, run `cairn build`, and record the per-phase timing
 (`BR-CLI-017` now prints it, and the transcript keeps it). Compare against the first build.
-Record the result in `docs/technical/04-lessons-learned.md` marked *measured*.
+Record the result in `docs/technical/04b-lessons-caching-and-provenance.md` marked
+*measured*.
 
 ---
 
@@ -209,7 +221,8 @@ descriptor into a wrong deploy every five minutes.
 ## Things a fresh session should know before touching anything
 
 These were learned expensively in this session; the full versions are in
-`docs/technical/04-lessons-learned.md` §12 and `docs/discussions/discussion-log.md` (2026-07-25 entries).
+`docs/technical/04b-lessons-caching-and-provenance.md` §5 and
+`docs/discussions/discussion-log.md` (2026-07-25 entries).
 
 - **Declared vs resolved inputs is the distinction that makes the rest coherent.** Image
   content is a function of *resolved* inputs. Same declared/different resolved = a branch

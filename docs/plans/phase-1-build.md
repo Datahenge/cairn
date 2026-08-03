@@ -1,13 +1,21 @@
+---
+status: archived
+owner: project
+purpose: Early Phase-1 build-pillar plan, superseded by docs/requirements/ and later ADRs.
+---
+
 # cairn — Phase 1: the Build pillar (`cairn build`)
 
 > **⚠️ Superseded in part (2026-07-24).** This early plan predates the data-plane boundary
 > (`ADR-022`), the naming (`datahenge-cairn` / command `cairn`), the deploy verb model
 > (`build` / `push` / `new-tag` / `retag` / `retire`), provenance-as-OCI-labels
-> (`BR-BUILD-011`), and the registry decisions. **The approved requirements in
-> `docs/requirements/` are authoritative wherever this differs** — notably: markers are
-> image **labels**, not `.cairn/markers/` files; there is **no** `cairn markers` command;
-> and `DATA` is a **boundary**, not backup/restore. To be refreshed into a focused
-> implementation plan at Phase-4 start.
+> (`BR-BUILD-011`), the `cairn-build`/`cairn-adopt` split (`ADR-046`), and the registry
+> decisions. **The approved requirements in `docs/requirements/` are authoritative wherever
+> this differs** — notably: markers are image **labels**, not `.cairn/markers/` files; there
+> is **no** `cairn markers` command; and `DATA` is a **boundary**, not backup/restore. Was to
+> be refreshed into a focused implementation plan at Phase-4 start; Phase 4 is now under way
+> (`CURRENT_CONTEXT.md`) and this has not happened — tracked as `W-011` in
+> `open/OPEN_WORK.md`. Kept here as historical record in the meantime.
 
 ## Context
 

@@ -19,9 +19,10 @@ domain, not cairn's.
 capability exists in cairn. This holds for **all** environments; Production is not
 special-cased because the capability simply does not exist.
 
-**The sanctioned exceptions** are invoking Frappe's own `bench migrate` (automatic,
-`ADR-014`) and, **opt-in only**, `bench install-app` (`ADR-023`) — cairn is a *caller*,
-not a mutator: "cairn doesn't alter SQL; Frappe does."
+**The sanctioned exception** is invoking Frappe's own `bench migrate` (automatic,
+`ADR-014`) — cairn is a *caller*, not a mutator: "cairn doesn't alter SQL; Frappe does."
+(An earlier draft of this exception also carved out opt-in `bench install-app`; `ADR-037`
+struck that clause entirely.)
 
 **Feature 3 corollary — volumes/configs untouched:** cairn is *aware* that persistent
 Docker volumes, `site_config.json`, and `encryption_key` exist, solely so it **never

@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-CLI requirements — the command surface and UX conventions across both CLI entry points.
+---
+
 # BR-CLI — Command Surface & UX Requirements
 
 _Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
@@ -256,7 +262,7 @@ failure, not as success. *(ADR-022, ADR-023, ADR-025)*
 so systemd and CI detect outcomes. *(BR-DEPLOY-019)*
 
 **`BR-CLI-013`** *(output)* — Human-readable by default; **`--json`** on read/introspection
-commands (`images`, status) for CI/scripting. *(—)*
+commands (`images`, `vendor status`, `doctor`) for CI/scripting. *(—)*
 
 **`BR-CLI-014`** *(config discovery)* — cairn resolves the manifest (`cairn.toml`) only from
 `--manifest` or `$CAIRN_MANIFEST` — never by searching a directory (`ADR-042`) — resolves

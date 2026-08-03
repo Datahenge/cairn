@@ -1,6 +1,12 @@
+---
+status: authoritative
+owner: project
+purpose: Project purpose, pillars, and what cairn is/isn't — read before requirements.
+---
+
 # cairn — Project Scope
 
-_Last updated: 2026-07-21_
+_Last updated: 2026-08-03_
 
 ## Purpose
 
@@ -29,9 +35,9 @@ We never modify `frappe_docker`. We vendor it read-only and build *on top* of it
 SQL, persistent volumes, site configs, `encryption_key` — is **off-limits**: cairn cannot
 connect to SQL, run `bench execute`/`frappe` code, or move databases between environments;
 altering a target DB directly is impossible by construction. The only DB interaction is
-invoking Frappe's own non-destructive `bench migrate` (plus opt-in `bench install-app`)
-after an image swap. Rollback is **image-only**. Backup/restore/DB-movement are out of scope
-— the operator's / cofferdam's domain.
+invoking Frappe's own non-destructive `bench migrate` after an image swap — cairn never
+installs a Frappe App (`ADR-037`). Rollback is **image-only**. Backup/restore/DB-movement are
+out of scope — the operator's / cofferdam's domain.
 
 The through-line: **minimal typing, minimal thinking** — a small, opinionated CLI
 over the tedious, error-prone parts.
@@ -39,8 +45,10 @@ over the tedious, error-prone parts.
 ## What it is / is not
 
 **Is:**
-- A Python CLI (`cairn`) that orchestrates `docker`, `buildx`, `docker compose`,
-  and `bench` against a vendored, pinned copy of `frappe_docker`.
+- A Python package, **`datahenge-cairn`**, providing two role-specific CLIs —
+  `cairn-build` (build/control) and `cairn-adopt` (target) — that orchestrate `docker`,
+  `buildx`, `docker compose`, and `bench` against a vendored, pinned copy of
+  `frappe_docker` (`ADR-046`).
 - Opinionated toward one common case: a single Docker host, done well.
 - A place where the *connective tissue* upstream omits (ref↔image records,
   desired-state, drift detection) becomes first-class.

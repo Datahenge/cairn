@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: Requirements index, identifiers, and reading conventions.
+---
+
 # cairn — Requirements Overview
 
 _Status: living document · Last updated: 2026-08-03_

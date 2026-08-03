@@ -232,8 +232,8 @@ these three numbers:
 
 1. **Image size** × **how many versions you keep** = storage. Rollback headroom is not free;
    keeping five versions of a 2.75 GB image is about 14 GB.
-2. **Image size** × **deploys per month** = outbound transfer. Every `cairn reconcile` that
-   actually converges pulls an image.
+2. **Image size** × **deploys per month** = outbound transfer. Every `cairn-adopt reconcile`
+   that actually converges pulls an image.
 3. Transfer *into* GitHub Actions is free. Transfer to your VPS is not.
 
 Two things that make this better or worse than it looks:
@@ -263,15 +263,15 @@ Per build, cairn writes **two** tags pointing at the same image:
 Then, per environment, you point an **environment tag** at a chosen image:
 
 ```
-cairn new-tag production --latest
+cairn-build new-tag production --latest
 ```
 
 `production` is now a third name for the same underlying image, and it is the name your VPS
 watches. Moving that tag is what deploying, promoting, and rolling back all are — no rebuild,
 no upload, just a new name written server-side.
 
-So a single image commonly carries three or more tags at once, and `cairn images` folds them
-together and reports them as one image, because that is what they are.
+So a single image commonly carries three or more tags at once, and `cairn-build images` folds
+them together and reports them as one image, because that is what they are.
 
 One thing to be clear about, because the word invites the wrong inference: cairn's
 deterministic tag is **deterministic, not immutable.** Same inputs → same name. The name is
@@ -293,14 +293,14 @@ name destroys the image your production environment is running.
 Also: **a public version with more than a few thousand downloads cannot be deleted at all**,
 by anyone, including you.
 
-This is why `cairn retire <env>` deletes nothing. It tells you what to remove from your
+This is why `cairn-build retire <env>` deletes nothing. It tells you what to remove from your
 manifest, and warns you that the registry tag will still exist and still resolve. And it is
-why `cairn prune` operates only on your **build machine's** local images and never on the
-registry. Registry-side cleanup is deliberately left as a manual, deliberate act.
+why `cairn-build prune` operates only on your **build machine's** local images and never on
+the registry. Registry-side cleanup is deliberately left as a manual, deliberate act.
 
 If you do need to reclaim registry space, do it by hand in the package's **Manage versions**
-page, deliberately, having first checked with `cairn images` that no environment tag points at
-the version you are about to destroy.
+page, deliberately, having first checked with `cairn-build images` that no environment tag
+points at the version you are about to destroy.
 
 ## 9. First-time setup, start to finish
 
@@ -308,7 +308,7 @@ the version you are about to destroy.
 
 1. Create a classic token with `write:packages`.
 2. `podman login ghcr.io` — your GitHub username, then the token as the password.
-3. Verify with a read: `cairn images`. It will report an empty repository rather than a
+3. Verify with a read: `cairn-build images`. It will report an empty repository rather than a
    permission error.
 
 The credential is stored by podman, not by cairn — normally in
@@ -320,8 +320,8 @@ when the runtime directory is unavailable, or you can point it there explicitly.
 **Then build and publish:**
 
 ```
-cairn build --push
-cairn images                        # confirm it arrived
+cairn-build build --push
+cairn-build images                  # confirm it arrived
 ```
 
 **On the VPS, once:**

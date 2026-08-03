@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-CFG requirements — target and build-machine configuration.
+---
+
 # BR-CFG — Configuration Requirements
 
 _Status: **approved** 2026-07-23 (living) · revised 2026-07-26 · Last updated: 2026-08-03_
@@ -122,11 +128,10 @@ NOT assume the operator's own. Absent any configured registry the image MUST sta
 (`BR-CFG-011`); cairn MUST NOT infer a default namespace from anything — not the machine, not
 the git remote, not the operator's other deployments.
 
-**Why this is a requirement and not a preference.** A consultant who is the only owner of a
-client's built image holds that client's operations hostage: if the relationship ends badly the
-client cannot deploy or roll back software **they own**. The registry that holds a client's
-image MUST therefore be capable of being an account the client controls, so that revoking the
-operator's access leaves the client whole and costs the operator nothing but access.
+**Why this is a requirement and not a preference.** The registry that holds a client's image
+MUST be capable of being an account the client controls, so that revoking the operator's
+access leaves the client whole. Full rationale: `ADR-038`,
+`docs/technical/ABOUT_REGISTRIES.md`.
 
 Three consequences that follow, and that cairn MUST NOT make awkward:
 - **One operator identity, many owners.** The operator MUST NOT need a separate login, account,

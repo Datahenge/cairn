@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-BUILD requirements — building a custom ERPNext image from a manifest.
+---
+
 # BR-BUILD — Image Build Requirements
 
 _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_

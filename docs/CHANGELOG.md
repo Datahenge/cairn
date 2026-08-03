@@ -9,6 +9,49 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (later still — documentation review session)
+
+Full documentation review pass (frontmatter, clarity, dedup, link integrity, sprawl control)
+across `docs/`, `decisions/`, `open/`, `userdocs/`, and root files. Findings and fixes:
+
+- **Corrected `ADR-037` follow-through.** `ADR-014`, `ADR-022`, and `ADR-024` still described
+  opt-in `bench install-app` as a sanctioned exception after `ADR-037` struck it entirely;
+  added correction notes to each. `decisions/011` still called the primary tag "immutable"
+  after `ADR-032` retracted that word; corrected to "deterministic".
+- **Fixed stale CLI naming** from before the `cairn-build`/`cairn-adopt` split (`ADR-046`) in
+  `docs/technical/ABOUT_GHCR.md`, `docs/00-project-scope.md`, `docs/requirements/03-deploy.md`
+  (`cairn retire` → `cairn-build retire`), and `CURRENT_CONTEXT.md` (`cairn vendor sync` →
+  `cairn-build vendor sync`). `README.md` and `docs/technical/CONFIGURATION.md` remain
+  deliberately stale per the `ADR-046` commit message; tracked as `W-012` in
+  `open/OPEN_WORK.md`.
+- **Fixed a dangling reference** in `BR-CLI-013` (06-cli.md) to a `status` command that was
+  never defined; named the actual commands.
+- **Trimmed duplicated rationale.** `BR-CFG-013`'s "why" paragraph restated
+  `docs/technical/ABOUT_REGISTRIES.md`'s rule 1 almost verbatim; trimmed to a one-line
+  pointer at `ADR-038` and that document.
+- **Split `docs/technical/04-lessons-learned.md`** (was ~3,200 words, out-of-order numbering)
+  into an index plus three topic files — `04a-lessons-build-engines.md`,
+  `04b-lessons-caching-and-provenance.md`, `04c-lessons-process-notes.md` — renumbered
+  sequentially within each. Updated the two external citations that pointed at old section
+  numbers (`docs/adr/027`, `docs/plans/next-steps.md`) and removed the now-unneeded
+  `.docs_check_allowlist` entry.
+- **Added missing frontmatter** to `docs/requirements/00-overview.md` through `07-docs.md`,
+  `docs/00-project-scope.md`, and `docs/plans/*.md` (all now carry `status`/`owner`/`purpose`).
+  Decided, with Brian, to formally exempt `README.md`, root `CHANGELOG.md`, and
+  `userdocs/**/*.md` from the frontmatter convention — none are rendered by a tool that
+  strips YAML frontmatter, so adding it would show as literal text; recorded in
+  `docs/technical/01-documentation-conventions.md`.
+- **Marked `docs/plans/next-steps.md` and `docs/plans/phase-1-build.md` `status: archived`.**
+  `next-steps.md`'s live-backlog role was already absorbed into `open/OPEN_WORK.md`
+  (seeded from it the same day); `phase-1-build.md`'s own banner called for a refresh "at
+  Phase-4 start" that never happened — now tracked as `W-011`.
+- **Opened `DOCS-01`** in `open/OPEN_DECISIONS.md`: whether to split
+  `docs/technical/ABOUT_GHCR.md` now or wait for its already-planned migration into the
+  `userdocs/` mkdocs nav.
+- Verified: `docs/adr/README.md` and `decisions/README.md` index completeness, all three
+  archived-ADR stubs (023/028/041), all frontmatter `status` values, and no `BR-`/`ADR-`
+  leakage into `README.md`/`userdocs/`. All clean — no changes needed.
+
 ## 2026-08-03 (yet later still — `06-cli.md` reorganized into role sections, not split into two areas)
 
 Brian asked whether `BR-CLI`/`06-cli.md` should split into two areas to mirror the

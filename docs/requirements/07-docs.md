@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-DOCS requirements — the published documentation site.
+---
+
 # BR-DOCS — Published Documentation Requirements
 
 _Status: **approved** 2026-08-03 (living) · Last updated: 2026-08-03_

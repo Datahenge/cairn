@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-VEND requirements — vendoring the upstream frappe_docker tooling.
+---
+
 # BR-VEND — Vendoring Requirements
 
 _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_

@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-DEPLOY requirements — deploying images to environments and keeping targets converged.
+---
+
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
 _Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
@@ -163,8 +169,8 @@ deploy behavior. *(ADR-026)*
   (`DELETE /…/packages/container/{package}/versions/{version_id}`); there is **no per-tag
   delete**, deleting a version removes all its tags + the image, and a **public** version
   with **>5,000 downloads cannot be deleted**. Consequence: an env tag cannot be removed
-  without destroying the shared image — hence `cairn retire` decommissions at cairn's layer
-  only (`BR-CLI-009`).
+  without destroying the shared image — hence `cairn-build retire` decommissions at cairn's
+  layer only (`BR-CLI-009`).
 
 ## Provisioning (`setup`)
 

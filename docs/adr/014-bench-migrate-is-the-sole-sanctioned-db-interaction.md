@@ -8,9 +8,12 @@ purpose: ADR-014 — `bench migrate` is the sole sanctioned DB interaction
 
 **Decided:** 2026-07-24
 After enabling a new image + containers on a target environment, cairn **MUST** run
-`bench migrate` in a subprocess. This is the sole **automatic** DB interaction; the only
-other sanctioned interaction is **opt-in** `bench install-app` (`ADR-023`). Both are
-*indirect* — Frappe performs the work.
+`bench migrate` in a subprocess. This is *indirect* — Frappe performs the work.
+
+**Superseded in part by `ADR-037`:** an earlier version of this decision named opt-in
+`bench install-app` (`ADR-023`) as a second sanctioned interaction. `ADR-037` struck that
+clause entirely — cairn never installs an app. `bench migrate` is now the **sole** sanctioned
+DB interaction, automatic or otherwise.
 
 **Why it is required and safe:**
 1. **Required** — Frappe demands it after any app change; skipping it leaves code assuming

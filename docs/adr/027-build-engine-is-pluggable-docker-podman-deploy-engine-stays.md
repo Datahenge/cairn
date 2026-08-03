@@ -28,7 +28,7 @@ client's TEST VPS ships Docker, and `DEPLOY` is untouched by this decision.
 **Evidence (measured 2026-07-24, podman 5.4.2 / buildah 1.39.3):** the secret mount at
 `Containerfile:128` works with `uid=`/`gid=` honoured (mode `0400`, owned `1000:1000`);
 the secret leaks into neither the filesystem nor image history; `CACHE_BUST` keys the
-layer cache in both directions. Full result in `04-lessons-learned.md` §4.
+layer cache in both directions. Full result in `04a-lessons-build-engines.md` §2.
 
 **Engine floors:** Docker Engine **v23+** (BuildKit is the default builder from 23.0).
 Podman **v4.0+** — the documented floor for `--mount=type=secret`; only 5.4.2 is measured,

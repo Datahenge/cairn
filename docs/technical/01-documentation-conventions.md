@@ -38,8 +38,12 @@ Allowed `status` values:
   guidance.
 - `deliverable`: audience-facing material (client, end user, public — i.e. `userdocs/`).
 
-Exceptions: `AGENTS.md` / `CLAUDE.md` (operational instruction files read before ordinary docs),
-and verbatim backups preserved for historical accuracy.
+Exceptions: `AGENTS.md` / `CLAUDE.md` (operational instruction files read before ordinary docs);
+verbatim backups preserved for historical accuracy; and root `README.md`, root `CHANGELOG.md`,
+and `userdocs/**/*.md` — all three are rendered by an external tool (GitHub, mkdocs-material)
+that does not strip YAML frontmatter, so adding it would show as literal visible text rather
+than being hidden metadata. Revisit `userdocs/` if `mkdocs.yml` ever gains a metadata-stripping
+extension.
 
 ## Sprawl Control
 

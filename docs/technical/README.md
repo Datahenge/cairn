@@ -21,7 +21,7 @@ Three kinds of document answer three different questions:
 | 00 | [00-coding-standards.md](00-coding-standards.md) | Naming, lint/format tooling, design patterns, libraries |
 | 01 | [01-documentation-conventions.md](01-documentation-conventions.md) | Markdown headers, documentation levels, sprawl control |
 | 02 | [02-dorwin-analysis-and-hardin-version.md](02-dorwin-analysis-and-hardin-version.md) | Prose-compression technique (optional, on request) |
-| 04 | [04-lessons-learned.md](04-lessons-learned.md) | Durable technical findings about the tools cairn builds on |
+| 04 | [04-lessons-learned.md](04-lessons-learned.md) | Index — durable technical findings about the tools cairn builds on, split by topic (04a/04b/04c) |
 | 05 | [05-implementation-index.md](05-implementation-index.md) | Current implementation inventory: what's built, where, how tested |
 | 25 | [25-documentation-authority.md](25-documentation-authority.md) | Which document owns which topic, and reading order |
 

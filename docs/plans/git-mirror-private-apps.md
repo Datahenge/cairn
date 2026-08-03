@@ -1,3 +1,9 @@
+---
+status: exploratory
+owner: project
+purpose: Plan for a local git mirror solving private-app reachability, blocked on ADR-044.
+---
+
 # Local git mirror for private apps (`BR-BUILD-017`)
 
 > **Status: planned, not yet implemented.** Written 2026-07-27, downstream of `BR-BUILD-016`

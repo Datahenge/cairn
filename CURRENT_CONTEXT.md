@@ -33,7 +33,8 @@ canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) — this file, `op
 
 - `BR`/`ADR` identifiers never reach a user — see `AGENTS.md` and `tests/test_conventions.py`.
 - The data-plane boundary (`ADR-022`) is a hard invariant, not a preference — cairn cannot touch SQL.
-- `src/cairn/vendored/frappe_docker/` is never edited by hand; only `cairn vendor sync` may change it.
+- `src/cairn/vendored/frappe_docker/` is never edited by hand; only `cairn-build vendor sync`
+  may change it.
 
 ## Context Rule
 

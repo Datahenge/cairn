@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: requirements
+purpose: BR-DATA requirements — the data-plane boundary cairn must never cross.
+---
+
 # BR-DATA — Data-Plane Boundary Requirements
 
 _Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
