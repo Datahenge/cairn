@@ -15,6 +15,8 @@ data.
 > _Cairn: a trail marker of stacked stones. Each deploy drops a durable marker
 > (ref → resolved commits → image tag → digest) you can navigate back to._
 
+📖 **[Documentation](https://datahenge.github.io/cairn/)**
+
 ## Status
 
 Working, unreleased. The build and deploy commands are implemented and tested;
