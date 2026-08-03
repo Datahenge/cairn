@@ -28,6 +28,11 @@ session against a client test VPS rather than written speculatively (`W-012`).
   any target's running Compose project. Adopting an already-running deployment is its own,
   separate guide, written from the target's side, once `cairn-adopt`'s own Get Started
   content exists.
+- **Split Get Started at the Install boundary.** Content from `doctor` onward moved to a new
+  `userdocs/builder/index.md`, added to `mkdocs.yml`'s nav. Get Started now ends role-neutral
+  (installing cairn, explaining the two binaries) so a target-only reader isn't routed through
+  builder-specific content; a "Target" guide is named as a future nav entry but not yet
+  stubbed, matching the rule that a nav entry only gets written once its content is verified.
 
 ## 2026-08-03 (later still — documentation review session)
 

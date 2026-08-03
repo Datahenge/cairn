@@ -10,10 +10,10 @@ boundary keeps cairn out of your databases and volumes entirely — it ships cod
 data.
 
 !!! note "This site is a work in progress"
-    [Get Started](get-started/index.md) is verified against a real deployment as it's
-    written, and covers installation and prerequisites so far. The Guides and Reference
-    sections are still placeholders — in the meantime, the most complete documentation for
-    those topics lives in the repository itself:
+    [Get Started](get-started/index.md) and [Builder](builder/index.md) are verified against
+    a real deployment as they're written. Guides, Reference, and the target-role guide are
+    still placeholders — in the meantime, the most complete documentation for those topics
+    lives in the repository itself:
 
     - [Configuration](https://github.com/Datahenge/cairn/blob/main/docs/technical/CONFIGURATION.md)
     - [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
@@ -21,7 +21,7 @@ data.
 
 ## Where to go next
 
-- **[Get Started](get-started/index.md)** — installing cairn and standing up your first
-  deployment.
+- **[Get Started](get-started/index.md)** — installing cairn, for either role.
+- **[Builder](builder/index.md)** — building and pushing images.
 - **[Guides](guides/index.md)** — configuration and day-to-day operation.
 - **[Reference](reference/index.md)** — command surface and file formats.

@@ -60,5 +60,6 @@ extra:
 nav:
   - Home: index.md
   - Get Started: get-started/index.md
+  - Builder: builder/index.md
   - Guides: guides/index.md
   - Reference: reference/index.md
