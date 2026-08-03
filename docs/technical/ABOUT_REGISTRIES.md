@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: technical
+purpose: How to choose a container registry for client ERPNext work, and why it isn't a neutral choice.
+---
+
 # Choosing a container registry
 
 cairn builds an image and puts it somewhere; your servers pull it from there. That "somewhere"
@@ -170,7 +176,7 @@ registry.
 
 - **[ABOUT_GHCR.md](ABOUT_GHCR.md)** — GitHub's registry in detail, for your own projects or a
   client already on GitHub.
-- [`docs/requirements/05-config.md`](docs/requirements/05-config.md) — the rules above stated as
+- [`docs/requirements/05-config.md`](../requirements/05-config.md) — the rules above stated as
   requirements, including why the registry coordinates are committed with the deployment.
-- [`docs/requirements/03-deploy.md`](docs/requirements/03-deploy.md) — how cairn uses a registry
+- [`docs/requirements/03-deploy.md`](../requirements/03-deploy.md) — how cairn uses a registry
   tag as the desired-state pointer your servers converge to.

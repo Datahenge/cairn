@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: technical
+purpose: What GHCR is, who owns what, and its sharp edges, for someone who has never pushed an image to it.
+---
+
 # About GHCR — GitHub Container Registry
 
 Written for someone who has used GitHub for years but has never pushed a container image to
@@ -376,8 +382,8 @@ production registry:
 
 - GitHub's own docs: *Working with the Container registry*, and *About billing for GitHub
   Packages* — the authoritative source for tokens and pricing, both of which change.
-- [`docs/requirements/03-deploy.md`](docs/requirements/03-deploy.md) — how cairn uses the
+- [`docs/requirements/03-deploy.md`](../requirements/03-deploy.md) — how cairn uses the
   registry as the desired-state pointer, and the deletion constraints above stated as
   requirements.
-- [`docs/requirements/05-config.md`](docs/requirements/05-config.md) — where registry settings
+- [`docs/requirements/05-config.md`](../requirements/05-config.md) — where registry settings
   live, and why credentials are the container engine's job and never cairn's.

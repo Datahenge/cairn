@@ -103,7 +103,7 @@ anything it would replace is kept alongside, renamed.
 
 It also shares `/etc/cairn` with a group by default (`cairn-admins`, or `--admin-group
 <name>`) so a client box with several operators can edit `/etc/cairn/builder.toml` without
-everyone needing `sudo` — see [CONFIGURATION.md](CONFIGURATION.md#sharing-etccairn-across-several-operators).
+everyone needing `sudo` — see [docs/technical/CONFIGURATION.md](docs/technical/CONFIGURATION.md#sharing-etccairn-across-several-operators).
 `--no-admin-group` skips this and leaves `/etc/cairn` exactly as found.
 
 On a builder (or `--role both`), one of these stages stands up a small **supporting**
@@ -162,7 +162,7 @@ machine, "the nearest `cairn.toml`" is a silent way to act on the wrong deployme
 convenience. There's no scaffolding command either — you hand-write the manifest, starting
 from the example above.
 
-See **[CONFIGURATION.md](CONFIGURATION.md)** for the full manifest schema, the
+See **[docs/technical/CONFIGURATION.md](docs/technical/CONFIGURATION.md)** for the full manifest schema, the
 machine-local `/etc/cairn/builder.toml` layer and its `CAIRN_*` environment-variable
 overrides (what each key means, how they're created, and how precedence works), sharing
 `/etc/cairn` across several operators, and how a target's `/etc/cairn/environment.toml`
@@ -172,8 +172,8 @@ descriptor comes from `cairn adopt` rather than being hand-authored.
 
 Which registry you use, and who owns the credential, is worth thinking about deliberately
 — especially when you're building images for a client. See
-**[ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md)** for the tradeoffs, and
-**[ABOUT_GHCR.md](ABOUT_GHCR.md)** for GitHub's registry specifically. cairn itself is
+**[docs/technical/ABOUT_REGISTRIES.md](docs/technical/ABOUT_REGISTRIES.md)** for the tradeoffs, and
+**[docs/technical/ABOUT_GHCR.md](docs/technical/ABOUT_GHCR.md)** for GitHub's registry specifically. cairn itself is
 registry-agnostic and stores no credentials — authenticate with `docker login` or `podman
 login` before pushing.
 
@@ -222,11 +222,11 @@ cairn builds an image and puts it in a container registry; your deployment targe
 there. cairn is registry-agnostic and assumes nothing — but **which** registry is not a neutral
 choice when you build software for clients:
 
-📦 **[ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md)** — start here. The image belongs in the account
+📦 **[docs/technical/ABOUT_REGISTRIES.md](docs/technical/ABOUT_REGISTRIES.md)** — start here. The image belongs in the account
 that owns the source; your credential should reach the engagement's images and nothing else; and
 what each option costs at ERPNext image sizes. Includes what to ask a client for.
 
-🐙 **[ABOUT_GHCR.md](ABOUT_GHCR.md)** — GitHub's registry in detail: tokens, scopes, how narrow
+🐙 **[docs/technical/ABOUT_GHCR.md](docs/technical/ABOUT_GHCR.md)** — GitHub's registry in detail: tokens, scopes, how narrow
 access can be, visibility, and the deletion rule that is genuinely surprising. One option among
 several, not the default.
 
@@ -239,9 +239,10 @@ several, not the default.
 | Doc | Contents |
 | --- | --- |
 | [docs/00-project-scope.md](docs/00-project-scope.md) | Purpose, pillars, what it is/isn't, principles |
-| [docs/01-decisions-closed.md](docs/01-decisions-closed.md) | Settled decisions with rationale |
-| [docs/02-decisions-open.md](docs/02-decisions-open.md) | Unresolved questions + current leans |
-| [docs/03-discussion-log.md](docs/03-discussion-log.md) | Chronological design reasoning |
+| [docs/adr/README.md](docs/adr/README.md) | Consequential decisions with rationale |
+| [decisions/README.md](decisions/README.md) | Lightweight dated decisions |
+| [open/OPEN_DECISIONS.md](open/OPEN_DECISIONS.md) | Unresolved questions + current leans |
+| [docs/discussions/discussion-log.md](docs/discussions/discussion-log.md) | Chronological design reasoning |
 
 ## Vendored upstream
 

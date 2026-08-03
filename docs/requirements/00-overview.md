@@ -12,8 +12,9 @@ updated in the same change so they remain the single source of truth.
 - Each requirement is tagged **`BR-<AREA>-NNN`** and stated as an obligation using
   **MUST / MUST NOT / SHOULD / MAY** (RFC-2119 sense).
 - `BR` = *requirement* ("the system MUST…"). Separate from `ADR-NNN` = *decision*
-  (Architecture Decision Record, "we chose X because…") in `../01-decisions-closed.md`
-  / `../02-decisions-open.md`. Requirements cite the decisions that shaped them.
+  (Architecture Decision Record, "we chose X because…") in `../adr/`, lighter ones in
+  `../../decisions/`, and still-open ones in `../../open/OPEN_DECISIONS.md`. Requirements
+  cite the decisions that shaped them.
 - IDs are stable and never reused. A withdrawn requirement is marked withdrawn, not
   deleted, and keeps its number.
 
@@ -66,8 +67,11 @@ added below as they are drafted.
 ## Related documents
 
 - `/CLAUDE.md` — Scribe Coding ground-rules contract (binds the workflow).
-- `../01-decisions-closed.md`, `../02-decisions-open.md` — decision register (`ADR-NNN`).
-- `../03-discussion-log.md` — narrative design record.
-- `../04-lessons-learned.md` — durable findings about the tools cairn builds on.
+- `../../CURRENT_CONTEXT.md` — session router; read first in a fresh session.
+- `../technical/25-documentation-authority.md` — which document owns which topic, and reading order.
+- `../adr/`, `../../decisions/` — decision register (`ADR-NNN`), split by consequential vs. lightweight.
+- `../../open/` — live queues: open questions, pending decisions, outstanding work.
+- `../discussions/discussion-log.md` — narrative design record.
+- `../technical/04-lessons-learned.md` — durable findings about the tools cairn builds on.
 - `../CHANGELOG.md` — living-documentation revision history.
 - `../plans/` — implementation plans, downstream of these requirements.

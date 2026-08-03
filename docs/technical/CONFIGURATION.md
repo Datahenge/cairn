@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: technical
+purpose: Full reference for cairn's manifest and build-config files.
+---
+
 # Configuring cairn
 
 cairn reads two kinds of file, kept deliberately apart: the **manifest** (what image to

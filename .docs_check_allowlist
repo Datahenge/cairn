@@ -1,0 +1,15 @@
+# Per-file word-count overrides for tools/docs_check.py (DOC002).
+# Format: <repo-relative path> = <max words>
+# These are pre-existing documents whose size predates the Scribe Coding migration
+# (2026-08-03) — listed here rather than split, to avoid losing content during a
+# structural reorganization. See docs/technical/01-documentation-conventions.md for
+# the sprawl-control policy new documents should follow.
+
+docs/CHANGELOG.md = 14000
+docs/discussions/discussion-log.md = 5500
+docs/plans/next-steps.md = 2200
+docs/requirements/03-deploy.md = 2300
+docs/requirements/06-cli.md = 2700
+docs/technical/04-lessons-learned.md = 3500
+docs/technical/ABOUT_GHCR.md = 3500
+docs/technical/high-level-motivations-and-workflows.md = 2000

@@ -67,7 +67,7 @@ way cairn assumes, which is what the machine run answered.
 
 ## 2. Measure the case that decides the fork question
 
-`ADR-021`'s **fork pressure register** (in `02-decisions-open.md`) names its own trigger, and
+`ADR-021`'s **fork pressure register** (in `docs/adr/021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md`) names its own trigger, and
 the measurement has not been taken:
 
 > Time a rebuild after **a single custom-app commit**, against a first build.
@@ -79,7 +79,7 @@ The number is unknown, and everything about per-app caching depends on it.
 
 Method: commit something trivial to BTU, run `cairn build`, and record the per-phase timing
 (`BR-CLI-017` now prints it, and the transcript keeps it). Compare against the first build.
-Record the result in `04-lessons-learned.md` marked *measured*.
+Record the result in `docs/technical/04-lessons-learned.md` marked *measured*.
 
 ---
 
@@ -105,7 +105,7 @@ and is not currently a requirement.
 The whole deploy path is written. What remains is running it, in this order, and the order is
 chosen so that each step is reversible until the last one.
 
-**Decide the registry first** (`ABOUT_REGISTRIES.md`). For Brian's own projects `ghcr.io/datahenge`
+**Decide the registry first** (`docs/technical/ABOUT_REGISTRIES.md`). For Brian's own projects `ghcr.io/datahenge`
 is fine and already declared in the scratch manifest. For a client, the registry must be an account
 they own, with a push credential scoped to that one repository (`BR-CFG-013`).
 
@@ -209,7 +209,7 @@ descriptor into a wrong deploy every five minutes.
 ## Things a fresh session should know before touching anything
 
 These were learned expensively in this session; the full versions are in
-`04-lessons-learned.md` §12 and `03-discussion-log.md` (2026-07-25 entries).
+`docs/technical/04-lessons-learned.md` §12 and `docs/discussions/discussion-log.md` (2026-07-25 entries).
 
 - **Declared vs resolved inputs is the distinction that makes the rest coherent.** Image
   content is a function of *resolved* inputs. Same declared/different resolved = a branch

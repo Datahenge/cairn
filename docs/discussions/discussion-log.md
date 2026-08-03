@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: technical
+purpose: Chronological narrative record of the design conversation behind cairn's decisions.
+---
+
 # Discussion Log
 
 Chronological summaries of the design conversation — the reasoning behind the

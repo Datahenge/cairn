@@ -1,0 +1,28 @@
+---
+status: authoritative
+owner: technical
+purpose: Index for lightweight dated decisions in cairn.
+---
+
+# Decisions
+
+Short decision records for durable choices that affect design, data handling, naming, or scope,
+but do not need full ADR-style alternatives analysis. Consequential decisions instead live in
+[../docs/adr/](../docs/adr/).
+
+Pending approvals belong in [../open/OPEN_DECISIONS.md](../open/OPEN_DECISIONS.md). Once
+approved and implemented, durable decisions are promoted into a numbered record here, carrying
+the original ID into the new file's `origin` field so a citation made while it was open still
+resolves.
+
+These three ID numbers (`ADR-008`, `ADR-011`, `ADR-041`) continue the same `ADR-NNN` sequence
+as `docs/adr/` — they were simply judged lightweight rather than consequential, not a separate
+numbering track.
+
+## Records
+
+| Decision | Status | Summary |
+|---|---|---|
+| [008-cairn-is-itself-a-git-repository.md](008-cairn-is-itself-a-git-repository.md) | `authoritative` | `cairn` is itself a git repository |
+| [011-image-tagging-scheme-settled-by-br-build-008.md](011-image-tagging-scheme-settled-by-br-build-008.md) | `authoritative` | Image tagging scheme (settled by `BR-BUILD-008`) |
+| [041-the-machine-build-config-file-is-named-builder-toml-not-config.md](041-the-machine-build-config-file-is-named-builder-toml-not-config.md) | `archived` | `builder.toml` rename — superseded same day by `ADR-042` |

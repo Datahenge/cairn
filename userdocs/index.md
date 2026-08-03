@@ -15,9 +15,9 @@ data.
 
     - [README](https://github.com/Datahenge/cairn/blob/main/README.md) — overview,
       installation, and the two roles cairn runs in
-    - [Configuration](https://github.com/Datahenge/cairn/blob/main/CONFIGURATION.md)
-    - [About container registries](https://github.com/Datahenge/cairn/blob/main/ABOUT_REGISTRIES.md)
-    - [About GHCR](https://github.com/Datahenge/cairn/blob/main/ABOUT_GHCR.md)
+    - [Configuration](https://github.com/Datahenge/cairn/blob/main/docs/technical/CONFIGURATION.md)
+    - [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
+    - [About GHCR](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_GHCR.md)
 
 ## Where to go next
 

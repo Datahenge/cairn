@@ -12,7 +12,7 @@
 ## Context
 
 `cairn` wraps the vendored, pinned `frappe_docker` (v3.2.1, managed by
-ventwig — see `docs/01-decisions-closed.md` ADR-007) to make a custom ERPNext
+ventwig — see `docs/adr/007-vendoring-via-ventwig-committed-drift-checked.md`) to make a custom ERPNext
 deployment reproducible and low-thought. The three pillars are build, deploy, and
 data lifecycle. Deploy and backup both stand on a **reproducible, immutably-tagged
 image**, so Phase 1 delivers exactly that — end to end, on the workstation, with no

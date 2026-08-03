@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: technical
+purpose: Why cairn is shaped the way it is, what it costs to run, and how to actually operate it.
+---
+
 # High-Level Motivations and Workflows
 
 Why cairn is shaped the way it is, what it costs to run, and how to actually operate it.

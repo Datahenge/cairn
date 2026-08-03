@@ -38,8 +38,9 @@ secrets to provision.
 
 **`BR-DOCS-006`** *(initial scope — lean, not a migration)* — The first version of
 `userdocs/` MUST stand up the working site + publish pipeline with minimal placeholder
-content (e.g. a landing page and a stub nav). Restructuring the existing root-level
-user docs (`README.md`, `CONFIGURATION.md`, `ABOUT_GHCR.md`, `ABOUT_REGISTRIES.md`) into
+content (e.g. a landing page and a stub nav). Restructuring the existing user-facing
+docs (`README.md` at the repo root; `docs/technical/CONFIGURATION.md`,
+`docs/technical/ABOUT_GHCR.md`, `docs/technical/ABOUT_REGISTRIES.md`) into
 the site's nav is explicitly **out of scope** for this requirement and deferred to
 later, separate work; those files remain the current source of truth for their topics
 until that migration happens.
@@ -54,6 +55,6 @@ but pages are user-facing explanation, not a second copy of internal docs.
 ## Cross-references
 - `/CLAUDE.md` — the identifier-visibility rule this area exists to keep structurally
   enforced (`BR-DOCS-001`, `BR-DOCS-002`).
-- **Follow-up (later work):** migrating `README.md`/`CONFIGURATION.md`/`ABOUT_GHCR.md`/
-  `ABOUT_REGISTRIES.md` into `userdocs/`'s nav, once the site itself exists
-  (`BR-DOCS-006`).
+- **Follow-up (later work):** migrating `README.md`/`docs/technical/CONFIGURATION.md`/
+  `docs/technical/ABOUT_GHCR.md`/`docs/technical/ABOUT_REGISTRIES.md` into `userdocs/`'s
+  nav, once the site itself exists (`BR-DOCS-006`).

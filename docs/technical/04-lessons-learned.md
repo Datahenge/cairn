@@ -1,3 +1,9 @@
+---
+status: authoritative
+owner: technical
+purpose: Durable technical findings — mechanisms understood, claims measured — about the tools cairn builds on.
+---
+
 # Lessons Learned
 
 Durable technical findings — mechanisms understood, claims measured, mistakes worth not
