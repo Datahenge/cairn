@@ -229,8 +229,12 @@ def build_command(
                 no_cache=no_cache,
                 plain_progress=sink is not None,
             )
-        for ref in plan.resolution.all_refs:
-            step(f"  {ref.name:<12} {ref.ref:<14} {ref.kind.value:<7} {ref.short_commit}")
+        if not dry_run:
+            # --dry-run skips this: plan.render() (BR-BUILD-012)'s "resolved inputs:"
+            # section below shows the same lines already, and repeating them first is
+            # just noise.
+            for ref in plan.resolution.all_refs:
+                step(f"  {ref.name:<12} {ref.ref:<14} {ref.kind.value:<7} {ref.short_commit}")
         _warn_moving_refs(plan)
 
         if dry_run:
