@@ -73,7 +73,7 @@ def sandbox(tmp_path, monkeypatch):
         ("REGISTRY_DIR", "opt/cairn-registry"),
     ):
         monkeypatch.setattr(provision, name, tmp_path / relative)
-    monkeypatch.setattr(provision, "DESCRIPTOR_PATH", tmp_path / "etc/cairn/environment.toml")
+    monkeypatch.setattr(provision, "DESCRIPTOR_PATH", tmp_path / "etc/cairn/adopt.toml")
 
     bindir = tmp_path / "bin"
     bindir.mkdir(parents=True)
@@ -303,7 +303,7 @@ def test_a_dry_run_reads_the_host_anyway():
 
 
 def test_an_existing_different_file_is_refused_without_force(tmp_path):
-    target = tmp_path / "environment.toml"
+    target = tmp_path / "adopt.toml"
     target.write_text("environment = \"old\"\n", encoding="utf-8")
     runner = provision.Runner(dry_run=False, force=False)
 
@@ -314,7 +314,7 @@ def test_an_existing_different_file_is_refused_without_force(tmp_path):
 
 
 def test_force_replaces_but_keeps_the_previous_file(tmp_path):
-    target = tmp_path / "environment.toml"
+    target = tmp_path / "adopt.toml"
     target.write_text('environment = "old"\n', encoding="utf-8")
     runner = provision.Runner(dry_run=False, force=True)
 
@@ -346,7 +346,7 @@ def test_identical_content_with_a_drifted_mode_is_still_corrected(tmp_path):
     """Convergence (rule 1) covers the mode, not just the content — the directory's setgid bit
     only propagates group *ownership* to a new file, never its permission bits, so a file
     created under an unrelated umask can drift from what sharing `/etc/cairn` requires."""
-    target = tmp_path / "environment.toml"
+    target = tmp_path / "adopt.toml"
     target.write_text('environment = "test"\n', encoding="utf-8")
     os.chmod(target, 0o644)
     runner = provision.Runner(dry_run=False, force=False)
@@ -358,7 +358,7 @@ def test_identical_content_with_a_drifted_mode_is_still_corrected(tmp_path):
 
 
 def test_a_dry_run_reports_but_does_not_correct_a_drifted_mode(tmp_path):
-    target = tmp_path / "environment.toml"
+    target = tmp_path / "adopt.toml"
     target.write_text('environment = "test"\n', encoding="utf-8")
     os.chmod(target, 0o644)
     runner = provision.Runner(dry_run=True, force=False)

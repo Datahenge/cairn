@@ -21,7 +21,7 @@ site = "erp.example.com"
 
 
 def _write(tmp_path, text):
-    path = tmp_path / "environment.toml"
+    path = tmp_path / "adopt.toml"
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -32,7 +32,7 @@ def _write(tmp_path, text):
 def test_the_path_is_fixed_not_searched():
     """`reconcile` runs unattended: a search path could silently find the wrong environment."""
     assert descriptor.DESCRIPTOR_PATH.is_absolute()
-    assert str(descriptor.DESCRIPTOR_PATH) == "/etc/cairn/environment.toml"
+    assert str(descriptor.DESCRIPTOR_PATH) == "/etc/cairn/adopt.toml"
 
 
 def test_presence_is_the_role_signal(tmp_path):

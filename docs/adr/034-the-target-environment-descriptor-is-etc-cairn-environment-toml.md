@@ -1,19 +1,27 @@
 ---
 status: authoritative
 owner: technical
-purpose: ADR-034 — The target environment descriptor is `/etc/cairn/environment.toml`, one per host
+purpose: ADR-034 — The target environment descriptor is `/etc/cairn/adopt.toml`, one per host
 ---
 
-# ADR-034 — The target environment descriptor is `/etc/cairn/environment.toml`, one per host
+# ADR-034 — The target environment descriptor is `/etc/cairn/adopt.toml`, one per host
 
-**Decided:** 2026-07-25
+**Decided:** 2026-07-25 · **Amended:** 2026-08-03 (filename only — see below)
+
 `BR-DEPLOY-010` specifies the descriptor's **contents** — image and watched tag, which
 frappe_docker overrides to compose, domain and ports, site name, a *reference* to secrets —
 and `ADR-017` makes it the thing that names the secret mechanism. Neither says what the file
 is called or where it sits, and `cairn reconcile` cannot find it without that.
 
-**Decision:** TOML at a fixed path, `/etc/cairn/environment.toml`, holding **one**
+**Decision:** TOML at a fixed path, `/etc/cairn/adopt.toml`, holding **one**
 environment per host.
+
+**Amended 2026-08-03 — renamed from `environment.toml` to `adopt.toml`.** Explicit
+ownership, matching `builder.toml`: each machine-local file is now named for the one CLI
+that reads it (`cairn-adopt` ↔ `adopt.toml`, `cairn-build` ↔ `builder.toml`), so which role
+owns which file is legible from the filename alone rather than requiring the reader to
+already know the descriptor is "the environment one." Every property below this line —
+fixed path, TOML, one per host — is unchanged; only the token changed.
 
 **Why a fixed path.** `reconcile` runs unattended under a timer, where a flag is a thing
 nobody is present to pass and a search path is a thing that can silently find the wrong file.

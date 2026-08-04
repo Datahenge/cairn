@@ -41,8 +41,9 @@ Two mechanisms this project already had turned out to be wrong for that shape of
    the AWS CLI (`$AWS_PROFILE`) already ask of their users for the identical reason.
 2. **`builder.toml` moves to `/etc/cairn/builder.toml`.** No `$XDG_CONFIG_HOME`, no home
    directory, no per-user tier at all. One file, shared identically by every login on the box —
-   the same fix, for the same reason, `/etc/cairn/environment.toml` (the target descriptor)
-   already had by construction. Everything machine-scoped-but-not-tied-to-one-checkout now lives
+   the same fix, for the same reason, `/etc/cairn/adopt.toml` (the target descriptor,
+   renamed from `environment.toml` by `ADR-034`'s 2026-08-03 amendment) already had by
+   construction. Everything machine-scoped-but-not-tied-to-one-checkout now lives
    under `/etc/cairn/`, without exception. Who may *write* it is deliberately left to ordinary
    Unix permissions — cairn assumes nothing about ownership; an admin is free to `chown` it to a
    shared group (`ADR-043`) or leave it root-only.

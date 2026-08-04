@@ -233,7 +233,8 @@ runs before one exists.
 `setup` subcommand (`cairn-build setup`, `cairn-adopt setup`), replacing the retired
 `cairn-provision` (`ADR-046`). There is no `--role` flag: invoking `cairn-build setup` provisions
 only what a build/control machine needs, and `cairn-adopt setup` only what a target needs — the
-binary already states the role, so a role flag would be redundant.
+binary already states the role, so a role flag would be redundant. `setup` does **not** include
+build/reconcile automation — see `BR-CLI-023`.
 
 `setup` MUST check that it is running with the privilege its actions require (root, or the
 configured equivalent) and MUST exit, reporting the shortfall, rather than attempt a partial run
@@ -243,6 +244,24 @@ gates all prerequisite checks before any change; verifies its own postconditions
 only path, since every action it takes MUST remain documented for an operator to perform by hand.
 `ADR-043`'s `/etc/cairn` group-sharing stage runs as part of it unchanged. *(BR-DEPLOY-021,
 BR-DEPLOY-022, ADR-040, ADR-043, ADR-046)*
+
+**`BR-CLI-022`** *(canonical manifest home + scaffolding, `ADR-047`)* — `cairn-build setup`
+requires `--client <name>` (no default; omitting it fails) and provisions
+`/srv/cairn/<name>/` — creating `/srv/cairn/` first if absent — group-shared like `/etc/cairn`
+(`BR-CLI-021`, `ADR-043`). Cairn MUST NOT read, list, or assume anything about sibling paths
+under `/srv` — only `/srv/cairn/` is its namespace.
+
+If `/srv/cairn/<name>/cairn.toml` is absent, `setup` scaffolds it from the canonical
+illustrative manifest (`README.md`/`CONFIGURATION.md`, `BR-BUILD-003`'s ordered-list comment
+included); an existing one MUST NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report
+manifests found under `/srv/cairn/*/cairn.toml`, informationally only, never for selection —
+`BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-021, ADR-043, ADR-047)*
+
+**`BR-CLI-023`** *(setup-timer, `ADR-047`)* — Both CLIs carry a `setup-timer` subcommand,
+separate from `setup`, installing only the build/reconcile systemd timer — enabled, not
+started, unchanged in substance from `ADR-046`'s `setup --only timers`. Split out for
+discoverability in `--help`, where a first-time reader would otherwise miss the flag before
+their first manual build or reconcile. *(ADR-046, ADR-047)*
 
 ## D. Shared conventions (both CLIs)
 

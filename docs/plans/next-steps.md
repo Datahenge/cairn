@@ -147,7 +147,7 @@ cairn new-tag production --latest --dry-run
 cairn new-tag production --latest  # prompts, because it is production
 ```
 
-**On the VPS**, write `/etc/cairn/environment.toml` (`ADR-034`), then:
+**On the VPS**, write `/etc/cairn/adopt.toml` (`ADR-034`), then:
 
 ```
 cairn reconcile --dry-run          # says what it would do, takes no lock, changes nothing

@@ -85,7 +85,7 @@ def test_unexpected_exception_is_named_and_reraised(monkeypatch):
 @pytest.fixture
 def target(tmp_path, monkeypatch):
     """A target host: a descriptor on disk, and a stubbed convergence."""
-    path = tmp_path / "environment.toml"
+    path = tmp_path / "adopt.toml"
     path.write_text(
         "\n".join(
             [

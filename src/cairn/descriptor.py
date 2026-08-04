@@ -2,7 +2,7 @@
 
 One file, at one fixed path, describing the single environment this host runs:
 
-    /etc/cairn/environment.toml
+    /etc/cairn/adopt.toml
 
 It is the target half of `BR-DEPLOY-009`'s two-halves model, joined to the control half by
 nothing but the tag name. Where the manifest says *what image to build*, this says *what this
@@ -33,7 +33,7 @@ from pathlib import Path
 from .errors import DescriptorError
 
 #: The one path (`ADR-034`). Not a search path, and not a default among several.
-DESCRIPTOR_PATH = Path("/etc/cairn/environment.toml")
+DESCRIPTOR_PATH = Path("/etc/cairn/adopt.toml")
 
 #: Secret mechanisms cairn can wire. It handles no values either way (`BR-DEPLOY-013`).
 SECRET_MECHANISMS = ("docker-secrets", "env-file", "none")

@@ -66,7 +66,7 @@ unarchived.
 | [ADR-031](031-three-execution-contexts-a-build-transcript-only-when-nobody.md) | `authoritative` | Three execution contexts; a build transcript only when nobody else owns the record |
 | [ADR-032](032-one-image-per-input-hash-prune-only-what-cairn-labelled.md) | `authoritative` | One image per input hash; prune only what cairn labelled |
 | [ADR-033](033-the-declared-environment-list-is-a-cairn-environments-table-in.md) | `authoritative` | The declared environment list is a `[cairn.environments]` table in the manifest |
-| [ADR-034](034-the-target-environment-descriptor-is-etc-cairn-environment-toml.md) | `authoritative` | The target environment descriptor is `/etc/cairn/environment.toml`, one per host |
+| [ADR-034](034-the-target-environment-descriptor-is-etc-cairn-environment-toml.md) | `authoritative` | The target environment descriptor is `/etc/cairn/adopt.toml`, one per host |
 | [ADR-035](035-cairn-emits-systemd-units-it-never-installs-them.md) | `authoritative` | cairn emits systemd units; it never installs them |
 | [ADR-036](036-cairn-speaks-the-registry-api-directly-rather-than-shelling-out.md) | `authoritative` | cairn speaks the registry API directly, rather than shelling out |
 | [ADR-037](037-cairn-never-installs-an-app-the-install-app-clause-is-struck.md) | `authoritative` | cairn never installs an app; the `install-app` clause is struck |
@@ -78,6 +78,7 @@ unarchived.
 | [ADR-044](044-local-git-mirror-for-private-app-reachability-not-a-revival-of.md) | `exploratory` | Local git mirror for private-app reachability (not a revival of Option C) |
 | [ADR-045](045-published-documentation-mkdocs-material-userdocs-default-github.md) | `authoritative` | Published documentation: mkdocs-material, `userdocs/`, default GitHub Pages URL |
 | [ADR-046](046-two-cli-entry-points-cairn-build-and-cairn-adopt-replace-the.md) | `authoritative` | Two CLI entry points, `cairn-build` and `cairn-adopt`, replace the unified `cairn` binary and `cairn-provision` |
+| [ADR-047](047-canonical-manifest-home-srv-cairn-scaffolding-and-setup-timer.md) | `authoritative` | Canonical manifest home `/srv/cairn/<client>/`, `setup` scaffolding, and the `setup`/`setup-timer` split |
 
 `ADR-008`, `ADR-011`, and `ADR-041` are recorded in [../../decisions/](../../decisions/)
 instead, as lightweight decisions.

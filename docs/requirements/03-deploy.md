@@ -106,7 +106,7 @@ final compose stack from it (base + selected overrides, plus `CUSTOM_IMAGE`/`CUS
 `PULL_POLICY`). The descriptor lives on the target and MUST NOT contain secrets. *(ADR-017)*
 
 **`BR-DEPLOY-010a`** *(location and form of the descriptor)* — The descriptor is TOML at the
-fixed path **`/etc/cairn/environment.toml`**, holding **one** environment per host
+fixed path **`/etc/cairn/adopt.toml`**, holding **one** environment per host
 (`ADR-034`). Its presence is what identifies a machine as a target, and is the context
 `ADR-028` detects the role from. Because `reconcile` runs unattended, the path MUST NOT be
 searched for and MUST NOT be supplied by flag in the common case; an override MAY exist for

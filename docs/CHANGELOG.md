@@ -9,6 +9,47 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (later still yet — `environment.toml` renamed to `adopt.toml`)
+
+Renamed the target descriptor's filename for explicit ownership, matching `builder.toml`'s
+own naming: each machine-local file is now named for the one CLI that reads it
+(`cairn-adopt` ↔ `adopt.toml`, `cairn-build` ↔ `builder.toml`) rather than requiring the
+reader to already know "the environment one" means the target's file.
+
+- **Amended `ADR-034` in place** (decided 2026-07-25, filename amended 2026-08-03) — every
+  other property (fixed path, TOML, one per host) is unchanged.
+- **Updated `BR-DEPLOY-010a`**, `docs/adr/README.md`'s index row, `ADR-042`'s cross-reference,
+  and `docs/plans/next-steps.md`.
+- **Code:** `descriptor.DESCRIPTOR_PATH`, `provision.DESCRIPTOR_PATH`, `adopt.py`'s generated
+  install-path comment (also corrected, while there, its stale `cairn adopt` → `cairn-adopt
+  examine` reference from before the `ADR-046` split), and `cli_adopt.py`'s `reconcile` help
+  text. Tests in `test_descriptor.py`, `test_adopt.py`, `test_cli_adopt.py`, `test_provision.py`
+  updated to match; full suite re-run green.
+- **`README.md`/`CONFIGURATION.md` left stale on this too**, folded into `W-012`'s existing
+  scope rather than patched piecemeal.
+
+## 2026-08-03 (later yet — canonical manifest home, `ADR-047`)
+
+Raised while writing the Builder guide against a real client VPS: the manifest location we'd
+suggested (`~/cairn-test`) wasn't multi-user-visible and didn't match the project's own
+existing `/srv/acme/cairn.toml` example, which nothing actually created or enforced. Worked
+through the design with Brian and landed **`ADR-047`**:
+
+- **Canonical location `/srv/cairn/<client>/cairn.toml`** — not bare `/srv/<client>/`, since a
+  host's `/srv` may hold unrelated data cairn has no business assuming about; `/srv/cairn/` is
+  cairn's own namespace.
+- **`cairn-build setup --client <name>`** (required, no default) provisions that directory,
+  group-shared the same way `ADR-043` already shares `/etc/cairn`, and scaffolds a starter
+  `cairn.toml` from the existing published example — **only if one isn't already there**;
+  never overwrites. Strikes `README.md`'s "no scaffolding command" line (left for the `W-012`
+  rewrite, not fixed piecemeal).
+- **`setup` / `setup-timer` split**, both CLIs — build/reconcile automation becomes its own
+  top-level command instead of a `setup --only timers` flag most first-time readers wouldn't
+  find before running their first build or reconcile by hand.
+- Added `BR-CLI-022`, `BR-CLI-023`; amended `BR-CLI-021`.
+- Logged `W-013` in `open/OPEN_WORK.md` to implement this in `cli_build.py`/`cli_adopt.py`/
+  `provision.py` — requirements land before code, per the working agreement.
+
 ## 2026-08-03 (even later — Get Started, verified against a live test VPS)
 
 Began writing `userdocs/get-started/index.md` for real, sourced from a live install/config

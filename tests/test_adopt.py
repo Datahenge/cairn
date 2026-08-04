@@ -433,7 +433,7 @@ def test_the_rendered_descriptor_round_trips(monkeypatch, tmp_path):
     rendered = adopt.render(found, "test")
     adopt.validate(rendered)
 
-    written = tmp_path / "environment.toml"
+    written = tmp_path / "adopt.toml"
     written.write_text(rendered, encoding="utf-8")
     loaded = descriptor.load(written)
 
@@ -454,7 +454,7 @@ def test_a_stack_with_no_overrides_round_trips_too(monkeypatch, tmp_path):
     rendered = adopt.render(found, "test")
     adopt.validate(rendered)
 
-    written = tmp_path / "environment.toml"
+    written = tmp_path / "adopt.toml"
     written.write_text(rendered, encoding="utf-8")
     assert descriptor.load(written).compose.overrides == ()
 

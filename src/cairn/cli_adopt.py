@@ -45,7 +45,7 @@ def _root(
     help=(
         "Converge this host to the image its environment's tag points at. Idempotent and "
         "safe to run repeatedly: with nothing changed it does nothing. Reads "
-        "/etc/cairn/environment.toml, and never rolls back on failure — it stops and reports."
+        "/etc/cairn/adopt.toml, and never rolls back on failure — it stops and reports."
     ),
 )
 def reconcile_command(
