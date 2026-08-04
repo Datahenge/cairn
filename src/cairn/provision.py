@@ -28,6 +28,17 @@ stages — the binary invoked already says which. `cairn-adopt setup`'s descript
 calls straight into :mod:`cairn.adopt` and its timer stage into :mod:`cairn.systemd`, both
 in-process — there is no sibling binary left to shell out to.
 
+**Build/reconcile automation is a separate command** (`cairn-build setup-timer`,
+`cairn-adopt setup-timer`, `BR-CLI-023`, `ADR-047`), not a stage of `setup` — the timer it
+installs stays enabled-but-not-started either way, specifically so a first build or
+reconcile gets run and watched by hand first; splitting it out just makes that a command a
+first-time reader finds in `--help` on its own.
+
+**`cairn-build setup` also provisions the manifest's home** (`BR-CLI-022`, `ADR-047`):
+`--client <name>` (required) creates `/srv/cairn/<name>/` — cairn's own namespace within
+`/srv`, never assuming anything about sibling paths there — and scaffolds a starter
+`cairn.toml` only if that directory has none yet. An existing one is never touched.
+
 It also shares `/etc/cairn` with a group (`--admin-group`, default `cairn-admins`,
 `ADR-043`) so `builder.toml` and the environment descriptor can be edited by every
 operator on a multi-login box without sudo — `--no-admin-group` skips this and leaves the
@@ -84,6 +95,49 @@ SYSTEM_CA_DIR = Path("/usr/local/share/ca-certificates")
 DOCKER_CERT_DIR = Path("/etc/docker/certs.d")
 SYSTEMD_DIR = Path("/etc/systemd/system")
 
+#: cairn's own namespace within `/srv` (`BR-CLI-022`, `ADR-047`). A host's `/srv` may
+#: already hold unrelated application data cairn has no business assuming anything about
+#: — everything under `MANIFEST_ROOT` is cairn's; nothing beside it is cairn's concern.
+MANIFEST_ROOT = Path("/srv/cairn")
+
+#: The starter manifest `setup` scaffolds into a client directory that has none yet — the
+#: same illustrative example published in `README.md`/`CONFIGURATION.md`, `BR-BUILD-003`'s
+#: ordered-list comment included. One template, reused, not reinvented (`ADR-047`).
+MANIFEST_TEMPLATE = """\
+[cairn]
+image_name = "erpnext-btu-v16"
+series = "v16"                      # the readable half of the image tag
+
+[cairn.registry]
+host      = "ghcr.io"
+namespace = "your-org"
+
+[cairn.frappe]
+url = "https://github.com/frappe/frappe"
+ref = "version-16"
+
+# Order matters: apps install in this order, and cairn never reorders or resolves
+# dependencies for you. List every app after the apps it depends on.
+[[cairn.apps]]
+name = "erpnext"
+url = "https://github.com/frappe/erpnext"
+ref = "version-16"
+
+[[cairn.apps]]
+name = "your_custom_app"
+url = "https://github.com/your-org/your_custom_app"
+ref = "version-16"
+
+[cairn.build]
+python_version = "3.14.2"
+node_version = "24.13.0"
+install_chromium = true
+
+[cairn.environments]
+production = "production"
+staging    = "staging"
+"""
+
 #: How long the self-signed certificate lasts. 825 days is the longest most clients accept.
 CERT_DAYS = 825
 
@@ -107,13 +161,19 @@ SHARED_FILE_MODE = 0o664
 
 #: A **builder** builds images and serves them. It has a manifest, a vendored tree, and a
 #: registry. It has no ERPNext site — so nothing to reconnoitre, nothing to back up, and no
-#: environment descriptor, which describes a *running* deployment.
-BUILD_STAGES = ("preflight", "admin-group", "registry", "timers")
+#: environment descriptor, which describes a *running* deployment. Build automation is a
+#: separate command, `setup-timer` (`BR-CLI-023`), not a stage here.
+BUILD_STAGES = ("preflight", "admin-group", "registry", "manifest")
 
 #: A **target** runs ERPNext and converges to whatever its pointer says. It has a site — so it
 #: is the only role with an existing stack to survey, a database to back up, and a descriptor.
-#: It pulls from the builder's registry and hosts none of its own.
-ADOPT_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor", "timers")
+#: It pulls from the builder's registry and hosts none of its own. Reconcile automation is a
+#: separate command, `setup-timer` (`BR-CLI-023`), not a stage here.
+ADOPT_STAGES = ("preflight", "admin-group", "recon", "backup", "descriptor")
+
+#: Both roles' build/reconcile-automation commands run exactly this one stage
+#: (`cairn-build setup-timer`, `cairn-adopt setup-timer`; `BR-CLI-023`, `ADR-047`).
+TIMER_STAGES = ("timers",)
 
 
 # --- reporting ---------------------------------------------------------------
@@ -163,6 +223,7 @@ class SetupOptions:
     skip_backup: bool = False
     skip_disk_free: bool = False
     admin_group: str | None = DEFAULT_ADMIN_GROUP
+    client: str | None = None
 
     def __post_init__(self) -> None:
         if self.manifest is None:
@@ -329,6 +390,19 @@ def _check_root() -> Check:
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         return Check("root", True, "running as root")
     return Check("root", False, "must be run with sudo — it writes to /etc and systemd")
+
+
+def _require_root(runner: Runner) -> None:
+    """Gate a single-stage command that has no preceding `preflight` stage of its own.
+
+    `setup-timer` writes under `/etc/systemd/system` but, unlike `setup`, never runs
+    `stage_preflight_build`/`stage_preflight_adopt` first — so the root check that stage
+    would otherwise have done has to happen here instead.
+    """
+    check = _check_root()
+    runner.say(check.render())
+    if not check.ok:
+        raise Aborted(check.detail)
 
 
 def _check_command(runner: Runner, label: str, command: list[str]) -> Check:
@@ -574,13 +648,64 @@ volumes:
 """
 
 
+def stage_manifest(runner: Runner, options: SetupOptions) -> None:
+    """Provision `/srv/cairn/<client>/`, scaffolding a starter `cairn.toml` if none exists
+    yet (`BR-CLI-022`, `ADR-047`).
+
+    `MANIFEST_ROOT` is cairn's own namespace within `/srv` — a host's `/srv` may already
+    hold unrelated application data cairn has no business assuming anything about, so
+    nothing outside this one directory is ever read, listed, or touched.
+
+    An existing `cairn.toml` is **never** modified, `--force` included: unlike every other
+    file `setup` can write, this one is the operator's own deployment source, not cairn's
+    to manage — `setup` only ever creates it as a courtesy starting point when the
+    directory has none at all.
+    """
+    if not options.client:
+        raise Aborted("--client <name> is required to provision a manifest directory")
+
+    client_dir = MANIFEST_ROOT / options.client
+    group_name = options.admin_group
+
+    if runner.dry_run:
+        runner.say(
+            f"    ensure {client_dir} exists"
+            + (f", shared with group '{group_name}'" if group_name else "")
+        )
+    else:
+        MANIFEST_ROOT.mkdir(parents=True, exist_ok=True)
+        client_dir.mkdir(parents=True, exist_ok=True)
+        if group_name:
+            gid = _group_gid(group_name)
+            if gid is not None:
+                for directory in (MANIFEST_ROOT, client_dir):
+                    os.chown(directory, -1, gid)
+                    os.chmod(directory, SHARED_CONFIG_MODE)
+    runner.report.done.append(f"{client_dir} provisioned")
+
+    manifest_path = client_dir / "cairn.toml"
+    if manifest_path.exists():
+        runner.say(f"    {manifest_path} already exists — leaving it")
+        runner.report.skipped.append(f"{manifest_path} (already present, not modified)")
+        return
+
+    runner.say(f"    write {manifest_path} (starter manifest)")
+    if runner.dry_run:
+        return
+    manifest_path.write_text(MANIFEST_TEMPLATE, encoding="utf-8")
+    os.chmod(manifest_path, SHARED_FILE_MODE)
+    runner.report.done.append(f"scaffolded a starter manifest at {manifest_path}")
+
+
 def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
     """Install the build timer, enabling but not starting it.
 
     Not started deliberately: the first build should be watched. A timer that fires before
     anyone has confirmed the manifest turns one wrong configuration into a wrong deploy every
-    quarter of an hour.
+    quarter of an hour. `setup-timer` has no preceding `preflight` stage, so this checks
+    root itself (`BR-CLI-023`).
     """
+    _require_root(runner)
     cairn_build = _executable("cairn-build")
     script = options.workdir / "build-and-advance.sh"
     runner.write(
@@ -826,7 +951,10 @@ def stage_timers_adopt(runner: Runner, options: SetupOptions) -> None:
 
     Not started deliberately: the first reconcile should be watched. Rendered in-process via
     :func:`cairn.systemd.units` — no subprocess, no output to parse (`ADR-046`).
+    `setup-timer` has no preceding `preflight` stage, so this checks root itself
+    (`BR-CLI-023`).
     """
+    _require_root(runner)
     cairn_adopt = _executable("cairn-adopt")
     rendered = systemd.units(executable=str(cairn_adopt), interval=options.interval)
 
@@ -871,7 +999,7 @@ BUILD_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
     "preflight": stage_preflight_build,
     "admin-group": stage_admin_group,
     "registry": stage_registry,
-    "timers": stage_timers_build,
+    "manifest": stage_manifest,
 }
 
 ADOPT_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
@@ -880,6 +1008,14 @@ ADOPT_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
     "recon": stage_recon,
     "backup": stage_backup,
     "descriptor": stage_descriptor,
+}
+
+#: `setup-timer`'s own stage table — one stage, no `--only` needed (`BR-CLI-023`).
+BUILD_TIMER_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
+    "timers": stage_timers_build,
+}
+
+ADOPT_TIMER_STAGE_FUNCS: dict[str, Callable[[Runner, SetupOptions], None]] = {
     "timers": stage_timers_adopt,
 }
 

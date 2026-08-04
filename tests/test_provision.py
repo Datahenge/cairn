@@ -71,6 +71,7 @@ def sandbox(tmp_path, monkeypatch):
         ("DOCKER_CERT_DIR", "etc/docker/certs.d"),
         ("SYSTEMD_DIR", "etc/systemd/system"),
         ("REGISTRY_DIR", "opt/cairn-registry"),
+        ("MANIFEST_ROOT", "srv/cairn"),
     ):
         monkeypatch.setattr(provision, name, tmp_path / relative)
     monkeypatch.setattr(provision, "DESCRIPTOR_PATH", tmp_path / "etc/cairn/adopt.toml")
@@ -111,9 +112,8 @@ def test_adopt_setup_backs_up_before_the_descriptor():
 def test_admin_group_stage_runs_before_every_stage_that_writes_under_it():
     """The setgid bit must predate every file those stages write (`ADR-043`)."""
     assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("registry")
-    assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("timers")
+    assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("manifest")
     assert provision.ADOPT_STAGES.index("admin-group") < provision.ADOPT_STAGES.index("descriptor")
-    assert provision.ADOPT_STAGES.index("admin-group") < provision.ADOPT_STAGES.index("timers")
 
 
 def test_an_unknown_stage_lists_the_real_ones():
@@ -723,11 +723,93 @@ def test_a_descriptor_is_confirmed_to_parse_after_writing(sandbox, monkeypatch):
     assert parsed["site"] == "erp.test"
 
 
+# --- the manifest's home (`BR-CLI-022`, `ADR-047`) ---------------------------
+
+
+def test_manifest_stage_requires_a_client_name(sandbox):
+    runner = Recorder()
+
+    with pytest.raises(provision.Aborted, match="--client"):
+        provision.stage_manifest(runner, _options(client=None))
+
+
+def test_manifest_stage_creates_the_client_directory(sandbox, monkeypatch):
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    runner = Recorder()
+
+    provision.stage_manifest(runner, _options(client="acme"))
+
+    client_dir = provision.MANIFEST_ROOT / "acme"
+    assert client_dir.is_dir()
+    assert (client_dir / "cairn.toml").is_file()
+
+
+def test_manifest_stage_scaffolds_the_canonical_example(sandbox, monkeypatch):
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    runner = Recorder()
+
+    provision.stage_manifest(runner, _options(client="acme"))
+
+    written = (provision.MANIFEST_ROOT / "acme" / "cairn.toml").read_text(encoding="utf-8")
+    assert written == provision.MANIFEST_TEMPLATE
+    assert "Order matters" in written  # BR-BUILD-003's required ordered-list comment
+
+
+def test_manifest_stage_never_touches_an_existing_manifest(sandbox, monkeypatch):
+    """Unlike every other file `setup` writes, `--force` does not apply here — this file is
+    the operator's own deployment source, not cairn's to manage."""
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    client_dir = provision.MANIFEST_ROOT / "acme"
+    client_dir.mkdir(parents=True)
+    (client_dir / "cairn.toml").write_text("# hand-authored\n", encoding="utf-8")
+    runner = Recorder(force=True)
+
+    provision.stage_manifest(runner, _options(client="acme", force=True))
+
+    assert (client_dir / "cairn.toml").read_text(encoding="utf-8") == "# hand-authored\n"
+    assert any("not modified" in line for line in runner.report.skipped)
+
+
+def test_manifest_stage_shares_the_group(sandbox, monkeypatch):
+    monkeypatch.setattr(provision, "_group_gid", lambda name: 4242)
+    chown_calls = []
+    monkeypatch.setattr(provision.os, "chown", lambda path, uid, gid: chown_calls.append(path))
+    runner = Recorder()
+
+    provision.stage_manifest(runner, _options(client="acme"))
+
+    assert provision.MANIFEST_ROOT in chown_calls
+    assert provision.MANIFEST_ROOT / "acme" in chown_calls
+
+
+def test_manifest_stage_never_reads_siblings_under_srv(sandbox, monkeypatch):
+    """`/srv/cairn/` is cairn's own namespace; a host's `/srv` may hold unrelated data."""
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    sibling = provision.MANIFEST_ROOT.parent / "some-other-app"
+    sibling.mkdir(parents=True)
+    (sibling / "config.toml").write_text("not cairn's", encoding="utf-8")
+    runner = Recorder()
+
+    provision.stage_manifest(runner, _options(client="acme"))
+
+    assert (sibling / "config.toml").read_text(encoding="utf-8") == "not cairn's"
+
+
+def test_manifest_stage_dry_run_writes_nothing(sandbox, monkeypatch):
+    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    runner = Recorder(dry_run=True)
+
+    provision.stage_manifest(runner, _options(client="acme"))
+
+    assert not provision.MANIFEST_ROOT.exists()
+
+
 # --- timers -------------------------------------------------------------
 
 
-def test_stage_timers_build_writes_only_the_build_timer(sandbox):
+def test_stage_timers_build_writes_only_the_build_timer(sandbox, monkeypatch):
     runner = Recorder()
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
 
     provision.stage_timers_build(runner, _options(workdir=sandbox))
 
@@ -735,8 +817,9 @@ def test_stage_timers_build_writes_only_the_build_timer(sandbox):
     assert not (provision.SYSTEMD_DIR / "cairn-reconcile.timer").exists()
 
 
-def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path):
+def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path, monkeypatch):
     runner = Recorder()
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
 
     provision.stage_timers_adopt(runner, _options(workdir=sandbox))
 
@@ -745,15 +828,28 @@ def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path):
     assert not (provision.SYSTEMD_DIR / "cairn-build.timer").exists()
 
 
+def test_timer_stage_is_root_gated(sandbox, monkeypatch):
+    """`setup-timer` has no preceding `preflight` stage, so the timer stages check root
+    themselves (`BR-CLI-023`)."""
+    runner = Recorder()
+    monkeypatch.setattr(
+        provision, "_check_root", lambda: provision.Check("root", False, "must be run with sudo")
+    )
+
+    with pytest.raises(provision.Aborted, match="sudo"):
+        provision.stage_timers_build(runner, _options(workdir=sandbox))
+
+
 @pytest.mark.parametrize(
     "stage",
     [provision.stage_timers_build, provision.stage_timers_adopt],
     ids=["build", "adopt"],
 )
-def test_a_timer_is_enabled_but_never_started(sandbox, stage):
+def test_a_timer_is_enabled_but_never_started(sandbox, stage, monkeypatch):
     """A timer firing before anyone has confirmed the manifest turns one wrong configuration
     into a wrong deploy every quarter of an hour."""
     runner = Recorder()
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
 
     stage(runner, _options(workdir=sandbox))
 

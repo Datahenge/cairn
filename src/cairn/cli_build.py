@@ -32,7 +32,15 @@ from . import (
 from .cli_support import done, note, report_timing, run, step, version_callback
 from .errors import CairnError
 from .project import find_project_root
-from .provision import BUILD_STAGE_FUNCS, BUILD_STAGES, Runner, SetupOptions, execute
+from .provision import (
+    BUILD_STAGE_FUNCS,
+    BUILD_STAGES,
+    BUILD_TIMER_STAGE_FUNCS,
+    TIMER_STAGES,
+    Runner,
+    SetupOptions,
+    execute,
+)
 
 app = typer.Typer(
     name="cairn-build",
@@ -741,11 +749,16 @@ def doctor_command(
     "setup",
     help=(
         "Provision this machine to build: checks prerequisites, shares /etc/cairn with a "
-        "group, runs a local TLS-secured registry, and installs (but does not start) the "
-        "build timer. Must be run with sudo. Never touches a running deployment."
+        "group, runs a local TLS-secured registry, and provisions /srv/cairn/<client>/ "
+        "(scaffolding a starter cairn.toml if it has none). Must be run with sudo. Never "
+        "touches a running deployment. Build automation is separate — see `setup-timer`."
     ),
 )
 def setup_command(
+    client: Annotated[
+        str,
+        typer.Option("--client", help="Client name; provisions /srv/cairn/<name>/."),
+    ],
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print every action, and change nothing.")
     ] = False,
@@ -758,22 +771,12 @@ def setup_command(
     ] = None,
     workdir: Annotated[
         Path,
-        typer.Option("--workdir", help="The deployment directory cairn.toml lives in."),
+        typer.Option("--workdir", help="Directory to record in reported paths."),
     ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
-    manifest_path: Annotated[
-        Path | None,
-        typer.Option("--manifest", help="Deployment manifest for the build timer."),
-    ] = None,
-    environment: Annotated[
-        str, typer.Option("--environment", help="Environment the build timer advances.")
-    ] = "production",
     private_ip: Annotated[
         str | None,
         typer.Option("--private-ip", help="Also put this IP in the registry certificate."),
     ] = None,
-    build_interval: Annotated[
-        str, typer.Option("--build-interval", help="Build poll interval.")
-    ] = "15min",
     skip_disk_free: Annotated[
         bool,
         typer.Option(
@@ -790,10 +793,61 @@ def setup_command(
         ),
     ] = False,
 ) -> None:
-    """Provision a build machine (BR-CLI-021, BR-DEPLOY-021).
+    """Provision a build machine (BR-CLI-021, BR-CLI-022, BR-DEPLOY-021).
 
     Root-gated: exits reporting the shortfall rather than attempting a partial run without
-    the privilege its actions require.
+    the privilege its actions require. Build automation lives in `setup-timer`, not here.
+    """
+    options = SetupOptions(
+        dry_run=dry_run,
+        force=force,
+        workdir=workdir,
+        private_ip=private_ip,
+        skip_disk_free=skip_disk_free,
+        admin_group=None if no_admin_group else admin_group,
+        client=client,
+    )
+    runner = Runner(dry_run=dry_run, force=force)
+    raise typer.Exit(
+        execute(runner, options, BUILD_STAGE_FUNCS, BUILD_STAGES, only, program="cairn-build")
+    )
+
+
+@app.command(
+    "setup-timer",
+    help=(
+        "Install (but do not start) the systemd timer that reruns `cairn-build build "
+        "--push` on a schedule. Run this only after a manual build has succeeded — "
+        "starting it is a separate, explicit `systemctl start cairn-build.timer`. Must "
+        "be run with sudo."
+    ),
+)
+def setup_timer_command(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print every action, and change nothing.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Replace existing files (the old ones are kept).")
+    ] = False,
+    workdir: Annotated[
+        Path,
+        typer.Option("--workdir", help="The deployment directory cairn.toml lives in."),
+    ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Deployment manifest for the build timer."),
+    ] = None,
+    environment: Annotated[
+        str, typer.Option("--environment", help="Environment the build timer advances.")
+    ] = "production",
+    build_interval: Annotated[
+        str, typer.Option("--build-interval", help="Build poll interval.")
+    ] = "15min",
+) -> None:
+    """Install the build-automation timer only (BR-CLI-023, ADR-047).
+
+    Root-gated the same way `setup` is — writing to `/etc/systemd/system` needs it, and
+    this command has no preceding `preflight` stage of its own to have already checked.
     """
     options = SetupOptions(
         dry_run=dry_run,
@@ -801,14 +855,13 @@ def setup_command(
         workdir=workdir,
         manifest=manifest_path,
         environment=environment,
-        private_ip=private_ip,
         build_interval=build_interval,
-        skip_disk_free=skip_disk_free,
-        admin_group=None if no_admin_group else admin_group,
     )
     runner = Runner(dry_run=dry_run, force=force)
     raise typer.Exit(
-        execute(runner, options, BUILD_STAGE_FUNCS, BUILD_STAGES, only, program="cairn-build")
+        execute(
+            runner, options, BUILD_TIMER_STAGE_FUNCS, TIMER_STAGES, None, program="cairn-build"
+        )
     )
 
 

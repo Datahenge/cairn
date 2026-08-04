@@ -15,7 +15,15 @@ import typer
 from . import __version__, adopt, config, descriptor, doctor, reconcile, systemd, timing
 from .cli_support import done, note, report_timing, run, step, version_callback
 from .errors import CairnError
-from .provision import ADOPT_STAGE_FUNCS, ADOPT_STAGES, Runner, SetupOptions, execute
+from .provision import (
+    ADOPT_STAGE_FUNCS,
+    ADOPT_STAGES,
+    ADOPT_TIMER_STAGE_FUNCS,
+    TIMER_STAGES,
+    Runner,
+    SetupOptions,
+    execute,
+)
 
 app = typer.Typer(
     name="cairn-adopt",
@@ -196,8 +204,8 @@ def doctor_command() -> None:
     "setup",
     help=(
         "Provision this machine to converge: checks prerequisites, backs up the site, "
-        "derives and installs the environment descriptor, and installs (but does not "
-        "start) the reconcile timer. Must be run with sudo."
+        "and derives and installs the environment descriptor. Must be run with sudo. "
+        "Reconcile automation is separate — see `setup-timer`."
     ),
 )
 def setup_command(
@@ -222,7 +230,6 @@ def setup_command(
         str | None,
         typer.Option("--project", help="Compose project to adopt and back up."),
     ] = None,
-    interval: Annotated[str, typer.Option("--interval", help="Reconcile poll interval.")] = "5min",
     skip_backup: Annotated[
         bool,
         typer.Option("--skip-backup", help="Do not back up before changing anything."),
@@ -255,7 +262,6 @@ def setup_command(
         workdir=workdir,
         environment=environment,
         project=project,
-        interval=interval,
         skip_backup=skip_backup,
         skip_disk_free=skip_disk_free,
         admin_group=None if no_admin_group else admin_group,
@@ -263,6 +269,42 @@ def setup_command(
     runner = Runner(dry_run=dry_run, force=force)
     raise typer.Exit(
         execute(runner, options, ADOPT_STAGE_FUNCS, ADOPT_STAGES, only, program="cairn-adopt")
+    )
+
+
+@app.command(
+    "setup-timer",
+    help=(
+        "Install (but do not start) the systemd timer that reruns `cairn-adopt reconcile` "
+        "on a schedule. Run this only after a manual reconcile has succeeded — starting it "
+        "is a separate, explicit `systemctl start cairn-reconcile.timer`. Must be run with "
+        "sudo."
+    ),
+)
+def setup_timer_command(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print every action, and change nothing.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Replace existing files (the old ones are kept).")
+    ] = False,
+    workdir: Annotated[
+        Path,
+        typer.Option("--workdir", help="Directory to record in reported paths."),
+    ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
+    interval: Annotated[str, typer.Option("--interval", help="Reconcile poll interval.")] = "5min",
+) -> None:
+    """Install the reconcile-automation timer only (BR-CLI-023, ADR-047).
+
+    Root-gated the same way `setup` is — writing to `/etc/systemd/system` needs it, and
+    this command has no preceding `preflight` stage of its own to have already checked.
+    """
+    options = SetupOptions(dry_run=dry_run, force=force, workdir=workdir, interval=interval)
+    runner = Runner(dry_run=dry_run, force=force)
+    raise typer.Exit(
+        execute(
+            runner, options, ADOPT_TIMER_STAGE_FUNCS, TIMER_STAGES, None, program="cairn-adopt"
+        )
     )
 
 

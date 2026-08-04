@@ -920,7 +920,7 @@ def test_setup_is_root_gated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
 
-    result = runner.invoke(cli_build.app, ["setup", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["setup", "--client", "acme", "--dry-run"])
 
     assert result.exit_code == 2
     assert "root" in result.stderr
@@ -939,10 +939,52 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
         provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
     )
 
-    result = runner.invoke(cli_build.app, ["setup", "--only", "preflight", "--dry-run"])
+    result = runner.invoke(
+        cli_build.app, ["setup", "--client", "acme", "--only", "preflight", "--dry-run"]
+    )
 
     assert result.exit_code == 0
     assert "[preflight]" in result.stderr
+    assert "[admin-group]" not in result.stderr
+
+
+def test_setup_requires_a_client_name(tmp_path, monkeypatch):
+    """No default client (`BR-CLI-022`) — omitting it is a usage error, not a guess."""
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(cli_build.app, ["setup", "--dry-run"])
+
+    assert result.exit_code != 0
+    assert "--client" in result.stderr
+
+
+# --- setup-timer (BR-CLI-023, ADR-047) --------------------------------------
+
+
+def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision
+
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+
+    result = runner.invoke(cli_build.app, ["setup-timer", "--dry-run"])
+
+    assert result.exit_code == 2
+    assert "root" in result.stderr
+
+
+def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision
+
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(provision, "_executable", lambda name: tmp_path / name)
+
+    result = runner.invoke(cli_build.app, ["setup-timer", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[timers]" in result.stderr
+    assert "[preflight]" not in result.stderr
     assert "[admin-group]" not in result.stderr
 
 

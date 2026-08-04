@@ -316,6 +316,36 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     assert "[admin-group]" not in result.stderr
 
 
+# --- setup-timer (BR-CLI-023, ADR-047) --------------------------------------
+
+
+def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision
+
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+
+    result = runner.invoke(cli_adopt.app, ["setup-timer", "--dry-run"])
+
+    assert result.exit_code == 2
+    assert "root" in result.stderr
+
+
+def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision
+
+    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(provision, "_executable", lambda name: tmp_path / name)
+
+    result = runner.invoke(cli_adopt.app, ["setup-timer", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[timers]" in result.stderr
+    assert "[preflight]" not in result.stderr
+    assert "[descriptor]" not in result.stderr
+
+
 # --- surfaces every command shares (BR-CLI-015) ----------------------------
 
 

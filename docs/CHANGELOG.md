@@ -9,6 +9,19 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (yet later still — `BR-CLI-022`/`BR-CLI-023` implemented, `v0.2.0`)
+
+Implemented `W-013`: `cairn-build setup --client <name>` provisioning `/srv/cairn/<name>/`
+scaffold-only-if-absent, and the `setup`/`setup-timer` split on both CLIs (`ADR-047`).
+`provision.py` gains `MANIFEST_ROOT`/`MANIFEST_TEMPLATE`/`stage_manifest`/`_require_root`
+(timer stages now gate their own privilege, no longer running behind `preflight`);
+`doctor.py` gains `check_known_manifests` (informational only); both CLIs gain
+`setup-timer`, carrying the flags `setup` no longer touches. New test coverage for all of
+it; full suite green, `ruff` clean. `05-implementation-index.md`/`open/OPEN_WORK.md`
+updated — `W-013` now tracks live-VPS verification, not implementation. Version bumped to
+`0.2.0`: `--client` becoming required and the timer leaving `setup` are both breaking
+changes to its existing surface.
+
 ## 2026-08-03 (later still yet — `environment.toml` renamed to `adopt.toml`)
 
 Renamed the target descriptor's filename for explicit ownership, matching `builder.toml`'s

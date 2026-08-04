@@ -57,6 +57,16 @@ def shared_config_ok(monkeypatch):
     )
 
 
+@pytest.fixture
+def known_manifests_ok(monkeypatch):
+    """Composition tests must not depend on whether /srv/cairn exists on the test host."""
+    monkeypatch.setattr(
+        doctor,
+        "check_known_manifests",
+        lambda: doctor.CheckResult.of("known manifests", True, "none found under /srv/cairn"),
+    )
+
+
 def _stub_config(monkeypatch, build_config, apps=()):
     monkeypatch.setattr(doctor.config, "find_manifest", lambda explicit=None: Path("cairn.toml"))
     monkeypatch.setattr(
@@ -165,6 +175,37 @@ def test_shared_config_dir_reports_not_group_writable(monkeypatch, tmp_path):
     assert "not group-writable" in result.detail
 
 
+# --- known manifests (BR-CLI-022, ADR-047) ----------------------------------
+
+
+def test_known_manifests_ok_when_srv_cairn_absent(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "MANIFEST_ROOT", tmp_path / "does-not-exist")
+
+    result = doctor.check_known_manifests()
+
+    assert result.status is doctor.Status.OK
+    assert "none found" in result.detail
+
+
+def test_known_manifests_lists_client_directories(monkeypatch, tmp_path):
+    """Informational only — this listing is never used to select a manifest for a command
+    to act on (`BR-CLI-014` is unchanged)."""
+    root = tmp_path / "cairn"
+    (root / "acme").mkdir(parents=True)
+    (root / "acme" / "cairn.toml").touch()
+    (root / "contoso").mkdir(parents=True)
+    (root / "contoso" / "cairn.toml").touch()
+    (root / "no-manifest-yet").mkdir(parents=True)
+    monkeypatch.setattr(doctor, "MANIFEST_ROOT", root)
+
+    result = doctor.check_known_manifests()
+
+    assert result.status is doctor.Status.OK
+    assert "acme" in result.detail
+    assert "contoso" in result.detail
+    assert "no-manifest-yet" not in result.detail
+
+
 # --- git (BR-CLI-007, BR-BUILD-005) -----------------------------------------
 
 
@@ -218,7 +259,7 @@ def test_engine_failure_is_reported_not_raised(monkeypatch):
 
 
 def test_buildx_checked_only_for_docker(
-    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok
+    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok, known_manifests_ok
 ):
     """ADR-027: a docker machine is checked for the buildx plugin."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: DOCKER)
@@ -237,11 +278,12 @@ def test_buildx_checked_only_for_docker(
         "vendor .git",
         "build inputs",
         "shared config",
+        "known manifests",
     ]
 
 
 def test_buildx_not_checked_for_podman(
-    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok
+    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok, known_manifests_ok
 ):
     """ADR-027: a podman machine is never told to install a Docker plugin it won't use."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
@@ -257,6 +299,7 @@ def test_buildx_not_checked_for_podman(
         "vendor .git",
         "build inputs",
         "shared config",
+        "known manifests",
     ]
 
 
@@ -297,7 +340,9 @@ def test_explicit_engine_overrides_configured_one(
     assert seen == ["docker"]
 
 
-def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok, shared_config_ok):
+def test_all_checks_run_even_after_a_failure(
+    monkeypatch, config_ok, shared_config_ok, known_manifests_ok
+):
     """BR-CLI-007: one invocation reports the full picture; no short-circuit."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
     monkeypatch.setattr(doctor.vendor, "assert_clean", _boom)
@@ -314,6 +359,7 @@ def test_all_checks_run_even_after_a_failure(monkeypatch, config_ok, shared_conf
         doctor.Status.FAIL,
         doctor.Status.FAIL,
         doctor.Status.OK,  # shared config
+        doctor.Status.OK,  # known manifests
     ]
 
 

@@ -8,9 +8,10 @@ one fails, so a single invocation reports the full picture; each failure names i
 
 **`cairn-build doctor` checks:** config valid (`BR-CFG-012`); a usable build engine —
 docker or podman (`ADR-027`) — plus buildx when the engine is docker; ``git``, which every
-manifest ref is resolved with (`BR-BUILD-005`); and the vendored tree clean (BR-VEND-005),
+manifest ref is resolved with (`BR-BUILD-005`); the vendored tree clean (BR-VEND-005),
 free of upstream git metadata (BR-VEND-007), and complete in its build inputs
-(BR-VEND-006).
+(BR-VEND-006); and, informationally only, which client manifests already exist under
+`/srv/cairn/` (`BR-CLI-022`).
 
 **`cairn-adopt doctor` checks:** the descriptor itself parses; Docker is installed and its
 daemon reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is
@@ -46,6 +47,7 @@ from .errors import (
     ManifestNotFoundError,
     RegistryError,
 )
+from .provision import MANIFEST_ROOT
 
 _LABEL_WIDTH = 16
 
@@ -122,6 +124,7 @@ def run_build_checks(
         _guard("vendor .git", vendor.assert_no_nested_git, "no nested .git"),
         _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
         check_shared_config_dir(),
+        check_known_manifests(),
     ]
 
 
@@ -205,6 +208,24 @@ def check_shared_config_dir() -> CheckResult:
         f"{'is' if member else 'is not'} a member"
     )
     return CheckResult(label, Status.OK, detail)
+
+
+def check_known_manifests() -> CheckResult:
+    """List manifests found under `/srv/cairn/*/cairn.toml`, informationally only
+    (`BR-CLI-022`).
+
+    A report, not a discovery mechanism: nothing here selects a manifest for any command
+    to act on — every manifest-consuming command still requires an explicit `--manifest`/
+    `$CAIRN_MANIFEST` (`BR-CLI-014`, unchanged).
+    """
+    label = "known manifests"
+    if not MANIFEST_ROOT.is_dir():
+        return CheckResult(label, Status.OK, f"none found under {MANIFEST_ROOT}")
+
+    found = sorted(p.parent.name for p in MANIFEST_ROOT.glob("*/cairn.toml"))
+    if not found:
+        return CheckResult(label, Status.OK, f"none found under {MANIFEST_ROOT}")
+    return CheckResult(label, Status.OK, f"{', '.join(found)} (under {MANIFEST_ROOT})")
 
 
 def check_descriptor() -> tuple[CheckResult, Descriptor | None]:
