@@ -60,9 +60,7 @@ class Transport:
 
 
 def _http_error(code, *, headers=None, body=b"{}"):
-    return urllib.error.HTTPError(
-        "https://ghcr.io/v2/x", code, "Unauthorized", headers or {}, None
-    )
+    return urllib.error.HTTPError("https://ghcr.io/v2/x", code, "Unauthorized", headers or {}, None)
 
 
 def _install(monkeypatch, routes):
@@ -310,9 +308,7 @@ def test_a_stored_credential_is_used_for_the_token_exchange(monkeypatch):
             seen["token_headers"] = dict(headers)
             return json.dumps({"token": "abc"}).encode(), {}
         if "Authorization" not in headers:
-            raise _http_error(
-                401, headers={"WWW-Authenticate": CHALLENGE}
-            )
+            raise _http_error(401, headers={"WWW-Authenticate": CHALLENGE})
         return json.dumps({"tags": []}).encode(), {}
 
     monkeypatch.setattr(registry, "_send", _transport)
@@ -477,3 +473,74 @@ def test_a_refused_token_with_a_credential_does_not_suggest_logging_in(monkeypat
 
     assert "you are not logged in" not in str(caught.value)
     assert "cannot read it" in str(caught.value)
+
+
+# --- delete_digest (BR-REG-006) ---------------------------------------------
+
+
+def test_delete_digest_sends_a_delete_by_digest_not_by_tag(monkeypatch):
+    """The registry API has no "delete one tag" operation — deleting is always by digest."""
+    digest = "sha256:" + "d" * 64
+    transport = _install(monkeypatch, {f"/manifests/{digest}": (b"", {})})
+
+    registry.delete_digest(REF, digest)
+
+    assert transport.calls[0]["method"] == "DELETE"
+    assert transport.calls[0]["url"].endswith(f"/manifests/{digest}")
+
+
+def test_delete_digest_requests_push_scope(monkeypatch):
+    scopes: list[str] = []
+
+    def _transport(url, method, body, headers):
+        if "/token" in url:
+            scopes.append(url)
+            return json.dumps({"token": "t"}).encode(), {}
+        if "Authorization" not in headers:
+            raise _http_error(401, headers={"WWW-Authenticate": CHALLENGE})
+        return b"", {}
+
+    monkeypatch.setattr(registry, "_send", _transport)
+
+    registry.delete_digest(REF, "sha256:" + "e" * 64)
+
+    assert any("pull%2Cpush" in scope or "pull,push" in scope for scope in scopes)
+
+
+def test_delete_digest_raises_on_refusal(monkeypatch):
+    def _transport(url, method, body, headers):
+        raise _http_error(403)
+
+    monkeypatch.setattr(registry, "_send", _transport)
+
+    with pytest.raises(RegistryError, match="Not permitted to delete from"):
+        registry.delete_digest(REF, "sha256:" + "f" * 64)
+
+
+# --- catalog (BR-REG-005) ---------------------------------------------------
+
+
+def test_catalog_lists_repository_names(monkeypatch):
+    def _transport(url, method, body, headers):
+        assert url == "https://localhost:5000/v2/_catalog"
+        return json.dumps({"repositories": ["erpnext-btu-v16", "other-image"]}).encode(), {}
+
+    monkeypatch.setattr(registry, "_send", _transport)
+
+    assert registry.catalog("localhost:5000") == ["erpnext-btu-v16", "other-image"]
+
+
+def test_catalog_with_no_repositories_key_is_empty(monkeypatch):
+    monkeypatch.setattr(registry, "_send", lambda *a: (json.dumps({}).encode(), {}))
+
+    assert registry.catalog("localhost:5000") == []
+
+
+def test_catalog_is_anonymous_only_and_reports_a_refusal_plainly(monkeypatch):
+    def _transport(url, method, body, headers):
+        raise _http_error(401, headers={"WWW-Authenticate": CHALLENGE})
+
+    monkeypatch.setattr(registry, "_send", _transport)
+
+    with pytest.raises(RegistryError, match="would not list its catalog"):
+        registry.catalog("ghcr.io")

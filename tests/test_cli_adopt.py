@@ -120,9 +120,7 @@ def test_reconcile_needs_no_project(target, monkeypatch):
 
 def test_reconcile_reports_a_no_change_run_without_claiming_a_deploy(target, monkeypatch):
     """The common case under a timer. It must not read as a deployment having happened."""
-    state = reconcile.State(
-        desired_digest="sha256:aaa", running_digest="sha256:aaa", stack_up=True
-    )
+    state = reconcile.State(desired_digest="sha256:aaa", running_digest="sha256:aaa", stack_up=True)
     monkeypatch.setattr(
         reconcile,
         "run",
@@ -230,9 +228,7 @@ def test_examine_writes_nothing(tmp_path, monkeypatch):
 def test_examine_refuses_a_multi_site_host(tmp_path, monkeypatch):
     """Converging it would drop the other sites from the proxy config, so this is a stop."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        adopt, "survey", lambda project=None: _survey(sites=("a.test", "b.test"))
-    )
+    monkeypatch.setattr(adopt, "survey", lambda project=None: _survey(sites=("a.test", "b.test")))
 
     result = runner.invoke(cli_adopt.app, ["examine"])
 
@@ -286,9 +282,11 @@ def test_examine_forwards_the_project_name(tmp_path, monkeypatch):
 def test_setup_is_root_gated(tmp_path, monkeypatch):
     """Exits reporting the shortfall rather than attempting a partial run (`BR-DEPLOY-021`)."""
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    monkeypatch.setattr(
+        setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
+    )
 
     result = runner.invoke(cli_adopt.app, ["setup", "--dry-run"])
 
@@ -298,15 +296,17 @@ def test_setup_is_root_gated(tmp_path, monkeypatch):
 
 def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
     monkeypatch.setattr(
-        provision, "_check_command", lambda r, label, c: provision.Check(label, True, "ok")
+        setup_runner, "check_command", lambda r, label, c: setup_runner.Check(label, True, "ok")
     )
-    monkeypatch.setattr(provision, "_check_memory", lambda: provision.Check("memory", True, "ok"))
     monkeypatch.setattr(
-        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
+        setup_runner, "_check_memory", lambda: setup_runner.Check("memory", True, "ok")
+    )
+    monkeypatch.setattr(
+        setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
     )
 
     result = runner.invoke(cli_adopt.app, ["setup", "--only", "preflight", "--dry-run"])
@@ -321,9 +321,11 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
 
 def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    monkeypatch.setattr(
+        setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
+    )
 
     result = runner.invoke(cli_adopt.app, ["setup-timer", "--dry-run"])
 
@@ -333,10 +335,10 @@ def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
 
 def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import provision, setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
-    monkeypatch.setattr(provision, "_executable", lambda name: tmp_path / name)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision, "find_executable", lambda name: tmp_path / name)
 
     result = runner.invoke(cli_adopt.app, ["setup-timer", "--dry-run"])
 

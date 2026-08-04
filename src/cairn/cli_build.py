@@ -749,9 +749,10 @@ def doctor_command(
     "setup",
     help=(
         "Provision this machine to build: checks prerequisites, shares /etc/cairn with a "
-        "group, runs a local TLS-secured registry, and provisions /srv/cairn/<client>/ "
-        "(scaffolding a starter cairn.toml if it has none). Must be run with sudo. Never "
-        "touches a running deployment. Build automation is separate — see `setup-timer`."
+        "group, and provisions /srv/cairn/<client>/ (scaffolding a starter cairn.toml if it "
+        "has none). Must be run with sudo. Never touches a running deployment. Build "
+        "automation is separate — see `setup-timer`. A local registry is `cairn-registry "
+        "setup`'s job, not this command's."
     ),
 )
 def setup_command(
@@ -773,10 +774,6 @@ def setup_command(
         Path,
         typer.Option("--workdir", help="Directory to record in reported paths."),
     ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
-    private_ip: Annotated[
-        str | None,
-        typer.Option("--private-ip", help="Also put this IP in the registry certificate."),
-    ] = None,
     skip_disk_free: Annotated[
         bool,
         typer.Option(
@@ -802,7 +799,6 @@ def setup_command(
         dry_run=dry_run,
         force=force,
         workdir=workdir,
-        private_ip=private_ip,
         skip_disk_free=skip_disk_free,
         admin_group=None if no_admin_group else admin_group,
         client=client,
@@ -859,9 +855,7 @@ def setup_timer_command(
     )
     runner = Runner(dry_run=dry_run, force=force)
     raise typer.Exit(
-        execute(
-            runner, options, BUILD_TIMER_STAGE_FUNCS, TIMER_STAGES, None, program="cairn-build"
-        )
+        execute(runner, options, BUILD_TIMER_STAGE_FUNCS, TIMER_STAGES, None, program="cairn-build")
     )
 
 

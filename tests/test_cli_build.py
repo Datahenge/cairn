@@ -61,13 +61,9 @@ def _manifest():
 
 def _resolution(kind=RefKind.TAG):
     return Resolution(
-        frappe=ResolvedRef(
-            "frappe", "https://github.com/frappe/frappe", "v16.0.1", "a" * 40, kind
-        ),
+        frappe=ResolvedRef("frappe", "https://github.com/frappe/frappe", "v16.0.1", "a" * 40, kind),
         apps=(
-            ResolvedRef(
-                "erpnext", "https://github.com/frappe/erpnext", "v16.0.1", "b" * 40, kind
-            ),
+            ResolvedRef("erpnext", "https://github.com/frappe/erpnext", "v16.0.1", "b" * 40, kind),
         ),
     )
 
@@ -168,9 +164,7 @@ def stubs(project, monkeypatch) -> BuildStubs:
         "assert_registry_configured",
         lambda build_config: state.seen.__setitem__("registry_checked", True),
     )
-    monkeypatch.setattr(
-        push, "push", lambda image, engine_name: state.seen["pushed"].append(image)
-    )
+    monkeypatch.setattr(push, "push", lambda image, engine_name: state.seen["pushed"].append(image))
     return state
 
 
@@ -217,9 +211,7 @@ def registry_repo(project, monkeypatch):
     manifest_path = project / "cairn.toml"
     manifest_path.touch()
     monkeypatch.setattr(config, "find_manifest_or_none", lambda explicit=None: manifest_path)
-    monkeypatch.setattr(
-        config, "find_manifest", lambda explicit=None: explicit or manifest_path
-    )
+    monkeypatch.setattr(config, "find_manifest", lambda explicit=None: explicit or manifest_path)
     monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environments())
     monkeypatch.setattr(
         config,
@@ -487,9 +479,7 @@ def test_transcript_records_the_run_and_says_where_twice(stubs, tmp_path):
     assert result.exit_code == 0
     assert stubs.seen["run"]["sink"] is not None  # engine output is teed into the file
     assert result.stderr.count(f"Transcript {destination}") == 2
-    assert "Built ghcr.io/datahenge/erpnext-btu-v16:v16" in destination.read_text(
-        encoding="utf-8"
-    )
+    assert "Built ghcr.io/datahenge/erpnext-btu-v16:v16" in destination.read_text(encoding="utf-8")
 
 
 def test_timing_is_reported_even_when_the_build_fails(stubs):
@@ -916,9 +906,11 @@ def test_vendor_command_forwards_the_source_and_exit_code(
 def test_setup_is_root_gated(tmp_path, monkeypatch):
     """Exits reporting the shortfall rather than attempting a partial run (`BR-DEPLOY-021`)."""
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    monkeypatch.setattr(
+        setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
+    )
 
     result = runner.invoke(cli_build.app, ["setup", "--client", "acme", "--dry-run"])
 
@@ -928,15 +920,20 @@ def test_setup_is_root_gated(tmp_path, monkeypatch):
 
 def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import provision, setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+
+    def check_ok(runner, label, command):
+        return setup_runner.Check(label, True, "ok")
+
+    monkeypatch.setattr(setup_runner, "check_command", check_ok)
+    monkeypatch.setattr(provision, "check_command", check_ok)
     monkeypatch.setattr(
-        provision, "_check_command", lambda r, label, c: provision.Check(label, True, "ok")
+        setup_runner, "_check_memory", lambda: setup_runner.Check("memory", True, "ok")
     )
-    monkeypatch.setattr(provision, "_check_memory", lambda: provision.Check("memory", True, "ok"))
     monkeypatch.setattr(
-        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
+        setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
     )
 
     result = runner.invoke(
@@ -963,9 +960,11 @@ def test_setup_requires_a_client_name(tmp_path, monkeypatch):
 
 def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    monkeypatch.setattr(
+        setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
+    )
 
     result = runner.invoke(cli_build.app, ["setup-timer", "--dry-run"])
 
@@ -975,10 +974,10 @@ def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
 
 def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision
+    from cairn import provision, setup_runner
 
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
-    monkeypatch.setattr(provision, "_executable", lambda name: tmp_path / name)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision, "find_executable", lambda name: tmp_path / name)
 
     result = runner.invoke(cli_build.app, ["setup-timer", "--dry-run"])
 

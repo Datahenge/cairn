@@ -1,31 +1,30 @@
 ---
 status: authoritative
 owner: requirements
-purpose: BR-CLI requirements — the command surface and UX conventions across both CLI entry points.
+purpose: BR-CLI requirements — the command surface and UX conventions across all CLI entry points.
 ---
 
 # BR-CLI — Command Surface & UX Requirements
 
 _Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
 
-The command surface across cairn's **two CLI entry points**, organized the same way `BR-CFG`
-already handles its own two-role split (`05-config.md`'s `A. Target` / `B. Build`): one file,
-sectioned by role, rather than split into separate area files — because most of what governs
-the CLI is shared UX convention (logging, `--json` output, config discovery, help text) that
-applies identically to both binaries, not something that forks cleanly along the role line.
-Mostly *cites* verbs defined in other areas; adds the create/move/retire guards, global flags,
-and output/exit conventions. Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-003`,
-`ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`, `ADR-046`.
+The command surface across cairn's **three CLI entry points**, one file sectioned by role
+(`05-config.md`'s `A`/`B` split, precedent) rather than separate area files — most of what
+governs the CLI is shared UX convention (logging, `--json`, config discovery, help text)
+applying identically across binaries. Mostly *cites* verbs defined in other areas; adds the
+create/move/retire guards, global flags, and output/exit conventions. Conventions:
+`/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`,
+`ADR-046`, `ADR-048`.
 
 ---
 
 ## Substrate
 
-**`BR-CLI-001`** — cairn is **one package** (`datahenge-cairn`, `ADR-046`) exposing **two**
-console-script CLIs (Click/Typer, `ADR-003`), each its own Typer app and each with its own
-`--help`, subcommands, and role: **`cairn-build`** (build/control) and **`cairn-adopt`**
-(target). There is no unified `cairn` command and no alias — which binary an operator invokes
-is itself the role signal. *(ADR-003, ADR-046)*
+**`BR-CLI-001`** — cairn is **one package** (`datahenge-cairn`, `ADR-046`, `ADR-048`) exposing
+**three** console-script CLIs (Click/Typer, `ADR-003`), each its own Typer app: **`cairn-build`**
+(build/control), **`cairn-adopt`** (target), **`cairn-registry`** (registry host). No unified
+`cairn` command, no alias — the binary invoked is itself the role signal. *(ADR-003, ADR-046,
+ADR-048)*
 
 ## A. `cairn-build` commands (build/control)
 
@@ -192,8 +191,8 @@ later.
 
 When auto-detecting the project (no `--project` given) and more than one compose project is
 running, `examine` MUST exclude any project containing a container cairn itself stood up as
-supporting infrastructure (e.g. a local registry stood up by `cairn-adopt setup`), so that
-infrastructure never forces a `--project` disambiguation the operator's own site did not cause.
+supporting infrastructure (e.g. a local registry stood up by `cairn-registry setup`, `ADR-048`),
+so that infrastructure never forces a `--project` disambiguation the site did not cause.
 Exclusion MUST be by an explicit label cairn writes into its own compose files, never by a
 project's **name** — a name is only ever the default compose derives from a directory, something
 an operator's own project could coincidentally share. An explicit `--project` naming a
@@ -211,13 +210,27 @@ others. That condition is a **stop**, not a warning to be worked around.
 The emitted descriptor MUST be **loadable**: whatever `examine` prints, `BR-DEPLOY-010a`'s reader
 must accept. *(BR-DEPLOY-010a, BR-DEPLOY-014, BR-BUILD-003, BR-CLI-019, ADR-034, ADR-046)*
 
-## C. Commands on both CLIs
+## C. `cairn-registry` commands (registry host)
+
+Surface only — substance is `BR-REG` policy, cited not restated.
+
+**`BR-CLI-024`** — `status|start|stop|restart` (`BR-REG-004`); `images [--json]` (`BR-REG-005`).
+
+**`BR-CLI-025`** *(prune)* — `[--dry-run] [--yes]`; `BR-REG-006`/`007`'s retention algorithm;
+no-op unless `[registry.retention] enabled = true` (`BR-CLI-011`).
+
+**`BR-CLI-026`** *(gc)* — `[--dry-run] [--yes]`; reclaims blobs `prune` freed (`BR-REG-009`);
+MUST report its read-only window first, require `--yes`/`--dry-run` (`BR-CLI-010`).
+
+**`BR-CLI-027`** *(setup-timer)* — emits, never installs (`ADR-035`), a `prune`+`gc` timer on
+`[registry.gc] schedule` (`BR-REG-010`, `BR-CLI-019`/`023`).
+
+## D. Commands on all three CLIs
 
 **`BR-CLI-007`** *(doctor)* — Each CLI runs exactly **one** fixed check set — no role
 detection, no context-sniffing (`ADR-028` superseded, `ADR-046`): the binary invoked already
-answers which checks apply. Both accept `--manifest` like every other manifest-consuming
-command (`BR-CLI-014`); a missing manifest warns rather than fails, since doctor legitimately
-runs before one exists.
+answers which checks apply. Each accepts `--manifest` where relevant (`BR-CLI-014`); a missing
+manifest warns rather than fails, since doctor legitimately runs before one exists.
 
 - **`cairn-build doctor`** — the selected build engine present and capable of secret-mount
   builds (Docker Engine v23+, or podman v4+ — `ADR-027`); **`git`**, which cairn resolves every
@@ -226,15 +239,18 @@ runs before one exists.
   (`BR-CFG-015`, `ADR-043`).
 - **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
   `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
+- **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under
+  `data_dir` (`BR-REG-011`).
 
-*(BR-VEND-005/006, BR-BUILD-005, BR-CFG-015, BR-CLI-014, ADR-027, ADR-043, ADR-046)*
+*(BR-VEND-005/006, BR-BUILD-005, BR-CFG-015, BR-CLI-014, BR-REG-011, ADR-027, ADR-043, ADR-046,
+ADR-048)*
 
 **`BR-CLI-021`** *(setup — the privileged installer, nested per role)* — Each CLI carries its own
-`setup` subcommand (`cairn-build setup`, `cairn-adopt setup`), replacing the retired
-`cairn-provision` (`ADR-046`). There is no `--role` flag: invoking `cairn-build setup` provisions
-only what a build/control machine needs, and `cairn-adopt setup` only what a target needs — the
-binary already states the role, so a role flag would be redundant. `setup` does **not** include
-build/reconcile automation — see `BR-CLI-023`.
+`setup` (`cairn-build setup`, `cairn-adopt setup`, `cairn-registry setup`), replacing the
+retired `cairn-provision` (`ADR-046`) — `cairn-registry setup` is `BR-REG-003`, migrated from
+`cairn-build setup`'s former `"registry"` stage (`ADR-048`). No `--role` flag: each `setup`
+provisions only its own role. Excludes build/reconcile/registry-maintenance automation — see
+`BR-CLI-023`/`027`.
 
 `setup` MUST check that it is running with the privilege its actions require (root, or the
 configured equivalent) and MUST exit, reporting the shortfall, rather than attempt a partial run
@@ -263,7 +279,7 @@ started, unchanged in substance from `ADR-046`'s `setup --only timers`. Split ou
 discoverability in `--help`, where a first-time reader would otherwise miss the flag before
 their first manual build or reconcile. *(ADR-046, ADR-047)*
 
-## D. Shared conventions (both CLIs)
+## E. Shared conventions (all three CLIs)
 
 **`BR-CLI-011`** *(least surprise)* — Nothing consequential is silent: no auto-rollback
 (`ADR-025`), no auto-install (`ADR-023`), no data/volume/DB writes of cairn's own

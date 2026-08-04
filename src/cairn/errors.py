@@ -76,6 +76,11 @@ class RegistryError(CairnError):
     (BR-DEPLOY-004, BR-DEPLOY-005)."""
 
 
+class RegistryConfigError(CairnError):
+    """`/etc/cairn/registry.toml` exists but is unparseable or carries an invalid
+    value (BR-REG-002)."""
+
+
 class UnknownEnvironmentError(CairnError):
     """The named environment is absent from the declared list, and cairn does not
     create one implicitly (BR-CLI-009, no auto-vivification)."""

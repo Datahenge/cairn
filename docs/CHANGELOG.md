@@ -9,6 +9,23 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (later still — `cairn-registry`: retention/GC for the local registry)
+
+Raised ahead of `W-001`: the local registry's port/storage were hardcoded, and cairn had never
+deleted a registry tag — content-hash tags accumulate forever, unbounded disk growth.
+
+**New `ADR-048`**: registry becomes its own CLI, `cairn-registry`, amending `ADR-046` as
+`ADR-046` amended `ADR-018`. `stage_registry` moves out of `cairn-build setup` (pre-1.0, no
+shim needed). **New `08-registry.md`** (`BR-REG`, added to `AGENTS.md`): config file
+(bind-mount `data_dir`, not an anonymous volume), provisioning, and a retention algorithm
+needing no `[cairn.environments]` read — eligible only if every tag on a digest matches
+cairn's content-hash shape (`BR-BUILD-008`); a moving or environment tag protects it.
+`keep_last`/`max_age_days` decide deletion; `gc` reclaims blobs, read-only.
+
+`06-cli.md` gained `BR-CLI-024`–`027`.
+
+---
+
 ## 2026-08-03 (later yet again — GHCR-default cleanup and `image_base` removed)
 
 Two consistency fixes, raised by Brian while reviewing the `builder.toml` documentation.

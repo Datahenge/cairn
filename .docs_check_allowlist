@@ -9,6 +9,9 @@ docs/CHANGELOG.md = 14500
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
 docs/requirements/03-deploy.md = 2300
-docs/requirements/06-cli.md = 2700
+docs/requirements/06-cli.md = 2750
+# ^ bumped 2026-08-03 for BR-CLI-024..027 (cairn-registry, ADR-048); genuine new command-
+# surface content, not sprawl — section C already delegates substance to BR-REG rather
+# than restating it.
 docs/technical/ABOUT_GHCR.md = 3500
 docs/technical/high-level-motivations-and-workflows.md = 2000

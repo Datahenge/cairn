@@ -79,6 +79,7 @@ unarchived.
 | [ADR-045](045-published-documentation-mkdocs-material-userdocs-default-github.md) | `authoritative` | Published documentation: mkdocs-material, `userdocs/`, default GitHub Pages URL |
 | [ADR-046](046-two-cli-entry-points-cairn-build-and-cairn-adopt-replace-the.md) | `authoritative` | Two CLI entry points, `cairn-build` and `cairn-adopt`, replace the unified `cairn` binary and `cairn-provision` |
 | [ADR-047](047-canonical-manifest-home-srv-cairn-scaffolding-and-setup-timer.md) | `authoritative` | Canonical manifest home `/srv/cairn/<client>/`, `setup` scaffolding, and the `setup`/`setup-timer` split |
+| [ADR-048](048-cairn-registry-a-third-cli-for-local-registry-lifecycle.md) | `authoritative` | `cairn-registry`, a third CLI entry point for local-registry provisioning, retention, and garbage collection |
 
 `ADR-008`, `ADR-011`, and `ADR-041` are recorded in [../../decisions/](../../decisions/)
 instead, as lightweight decisions.

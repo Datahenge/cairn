@@ -4,20 +4,24 @@ This code runs **as root on client infrastructure**, which is the whole reason i
 not shell. The contract in `BR-DEPLOY-021` is what these tests hold it to: idempotent, a truthful
 dry run, never silently overwriting, no secrets, gating before acting, verifying its own claims.
 
+The generic engine (Runner, preflight checks, admin-group sharing) moved to `setup_runner.py`
+and is tested in `test_setup_runner.py` (`ADR-048`); the local registry moved to
+`registry_provision.py`, tested in `test_registry_provision.py`. This file covers what is left:
+`provision.py`'s own build/adopt-specific stages.
+
 Nothing here runs docker, openssl, or systemctl. `Runner.run` and `Runner.probe` are the two
 seams every command goes through, so substituting them covers the whole surface.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
 import pytest
 
 from cairn import adopt as adopt_module
-from cairn import provision
+from cairn import provision, setup_runner
 
 
 def _options(**overrides) -> provision.SetupOptions:
@@ -61,19 +65,13 @@ class Recorder(provision.Runner):
 def sandbox(tmp_path, monkeypatch):
     """Redirect every path setup writes to, so no test can touch the real host.
 
-    Also gives ``_executable()`` real siblings to find, at known paths, so tests that
+    Also gives ``find_executable()`` real siblings to find, at known paths, so tests that
     exercise the timers stage resolve deterministically instead of depending on whatever
     happens to be on ``PATH`` in the environment running the suite.
     """
-    for name, relative in (
-        ("CERT_DIR", "etc/cairn"),
-        ("SYSTEM_CA_DIR", "usr/local/share/ca-certificates"),
-        ("DOCKER_CERT_DIR", "etc/docker/certs.d"),
-        ("SYSTEMD_DIR", "etc/systemd/system"),
-        ("REGISTRY_DIR", "opt/cairn-registry"),
-        ("MANIFEST_ROOT", "srv/cairn"),
-    ):
-        monkeypatch.setattr(provision, name, tmp_path / relative)
+    monkeypatch.setattr(setup_runner, "CERT_DIR", tmp_path / "etc/cairn")
+    monkeypatch.setattr(provision, "SYSTEMD_DIR", tmp_path / "etc/systemd/system")
+    monkeypatch.setattr(provision, "MANIFEST_ROOT", tmp_path / "srv/cairn")
     monkeypatch.setattr(provision, "DESCRIPTOR_PATH", tmp_path / "etc/cairn/adopt.toml")
 
     bindir = tmp_path / "bin"
@@ -87,7 +85,7 @@ def sandbox(tmp_path, monkeypatch):
     return workdir
 
 
-# --- two fixed stage lists, no role flag (`ADR-046`) -------------------------
+# --- fixed stage lists, no role flag (`ADR-046`, `ADR-048`) -------------------
 
 
 def test_build_setup_has_no_target_stages():
@@ -98,8 +96,14 @@ def test_build_setup_has_no_target_stages():
     assert "descriptor" not in provision.BUILD_STAGES
 
 
+def test_build_setup_no_longer_hosts_a_registry():
+    """The local registry is `cairn-registry setup`'s job now (`ADR-048`)."""
+    assert "registry" not in provision.BUILD_STAGES
+    assert "registry" not in provision.BUILD_STAGE_FUNCS
+
+
 def test_adopt_setup_hosts_no_registry():
-    """It pulls from the builder's."""
+    """It pulls from wherever the manifest's registry is."""
     assert "registry" not in provision.ADOPT_STAGES
 
 
@@ -111,42 +115,27 @@ def test_adopt_setup_backs_up_before_the_descriptor():
 
 def test_admin_group_stage_runs_before_every_stage_that_writes_under_it():
     """The setgid bit must predate every file those stages write (`ADR-043`)."""
-    assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("registry")
     assert provision.BUILD_STAGES.index("admin-group") < provision.BUILD_STAGES.index("manifest")
     assert provision.ADOPT_STAGES.index("admin-group") < provision.ADOPT_STAGES.index("descriptor")
 
 
 def test_an_unknown_stage_lists_the_real_ones():
     with pytest.raises(provision.Aborted, match="unknown stage"):
-        provision.stages_for(provision.BUILD_STAGES, provision.BUILD_STAGE_FUNCS, "registery")
+        provision.stages_for(provision.BUILD_STAGES, provision.BUILD_STAGE_FUNCS, "manifost")
 
 
 def test_a_stage_outside_this_setup_is_reported_like_a_typo():
-    """`registry` is a `cairn-build setup` stage; `cairn-adopt setup` doesn't know it exists,
+    """`manifest` is a `cairn-build setup` stage; `cairn-adopt setup` doesn't know it exists,
     so asking for it by `--only` is reported the same way a genuine typo would be."""
-    with pytest.raises(provision.Aborted, match="unknown stage 'registry'"):
-        provision.stages_for(provision.ADOPT_STAGES, provision.ADOPT_STAGE_FUNCS, "registry")
+    with pytest.raises(provision.Aborted, match="unknown stage 'manifest'"):
+        provision.stages_for(provision.ADOPT_STAGES, provision.ADOPT_STAGE_FUNCS, "manifest")
 
 
-# --- rule 5: gate before acting ---------------------------------------------
-
-
-def test_preflight_reports_every_check_before_stopping(monkeypatch):
-    """An installer that dies on the first problem makes the operator discover prerequisites
-    one reboot at a time."""
-    runner = Recorder()
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
-
-    with pytest.raises(provision.Aborted, match="prerequisite"):
-        provision.stage_preflight_adopt(runner, _options())
-
-    assert "docker" in runner.output
-    assert "free disk" in runner.output
-    assert "available memory" in runner.output
+# --- rule 5: gate before acting (build/adopt-specific extras) ----------------
 
 
 def test_preflight_asks_a_builder_for_build_tools_and_an_adopt_setup_for_none(monkeypatch):
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
 
     builder = Recorder()
     with pytest.raises(provision.Aborted):
@@ -159,404 +148,27 @@ def test_preflight_asks_a_builder_for_build_tools_and_an_adopt_setup_for_none(mo
     assert "buildx" not in target.output
 
 
-def test_the_disk_gate_uses_the_documented_floor(monkeypatch):
+def test_build_preflight_no_longer_demands_openssl(monkeypatch):
+    """openssl was only ever needed to generate the registry's TLS cert — that moved to
+    `cairn-registry setup` (`ADR-048`), so a build machine no longer needs it."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+
+    def _ok_check(runner, label, command):
+        return setup_runner.Check(label, True, "ok")
+
+    monkeypatch.setattr(provision, "check_command", _ok_check)
+    monkeypatch.setattr(setup_runner, "check_command", _ok_check)
     monkeypatch.setattr(
-        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()
-    )
-    assert provision._check_disk().ok is False
-
-    monkeypatch.setattr(
-        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
-    )
-    assert provision._check_disk().ok is True
-
-
-def test_disk_check_targets_dockers_actual_data_dir(monkeypatch):
-    """A separate mount for Docker data is common on a target; `/` having room says nothing
-    about it."""
-    runner = Recorder(answers={"docker info": "/mnt/docker-data\n"})
-    assert provision._docker_data_dir(runner) == Path("/mnt/docker-data")
-
-    checked = []
-    monkeypatch.setattr(
-        provision.shutil,
-        "disk_usage",
-        lambda path: checked.append(path) or type("U", (), {"free": 40_000_000_000})(),
-    )
-    provision._check_disk(provision._docker_data_dir(runner))
-    assert checked == [Path("/mnt/docker-data")]
-
-
-def test_disk_check_falls_back_to_root_when_docker_cannot_answer():
-    """Not installed, or this preflight is what would install it — either way, `/` is the
-    same floor the check always used."""
-    runner = Recorder()  # no answers: `docker info` yields nothing, like a missing engine
-    assert provision._docker_data_dir(runner) == Path("/")
-
-
-def test_skip_disk_free_overrides_only_the_disk_check(monkeypatch):
-    """`--skip-disk-free` is a named exception to rule 5, not a hole in it: every other
-    prerequisite must still gate the run."""
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
-    monkeypatch.setattr(
-        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()
-    )
-    runner = Recorder()
-
-    with pytest.raises(provision.Aborted, match="root"):
-        provision.stage_preflight_adopt(runner, _options(skip_disk_free=True))
-
-    assert "FAIL" in runner.output  # the disk failure is still reported, not hidden
-    assert "overridden by --skip-disk-free" in runner.output
-
-
-def test_skip_disk_free_lets_a_short_disk_run_proceed(monkeypatch):
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
-    monkeypatch.setattr(
-        provision, "_check_command",
-        lambda runner, label, command: provision.Check(label, True, "ok"),
+        setup_runner, "_check_memory", lambda: setup_runner.Check("available memory", True, "ok")
     )
     monkeypatch.setattr(
-        provision, "_check_memory", lambda: provision.Check("available memory", True, "ok")
+        setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
     )
-    monkeypatch.setattr(
-        provision.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()
-    )
-    runner = Recorder()
+    builder = Recorder()
 
-    provision.stage_preflight_adopt(runner, _options(skip_disk_free=True))
+    provision.stage_preflight_build(builder, _options())
 
-    assert any("overridden" in warning for warning in runner.report.warnings)
-
-
-def test_memory_is_read_as_available_not_free(tmp_path):
-    """MemFree excludes reclaimable cache and would make a healthy host look starved."""
-    meminfo = tmp_path / "meminfo"
-    meminfo.write_text(
-        "MemTotal:       8039024 kB\nMemFree:          201234 kB\nMemAvailable:    6291456 kB\n",
-        encoding="utf-8",
-    )
-
-    assert provision.read_available_memory_gb(meminfo) == pytest.approx(6.44, abs=0.05)
-
-
-def test_unreadable_meminfo_is_a_failed_check_not_a_crash(tmp_path):
-    assert provision.read_available_memory_gb(tmp_path / "absent") is None
-
-
-# --- locating the sibling executable -----------------------------------------
-
-
-def test_executable_prefers_a_sibling_binary(tmp_path, monkeypatch):
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    (bindir / "cairn-adopt").touch()
-    monkeypatch.setattr(sys, "argv", [str(bindir / "cairn-adopt")])
-
-    assert provision._executable("cairn-adopt") == bindir / "cairn-adopt"
-
-
-def test_executable_falls_back_to_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "argv", [str(tmp_path / "nowhere" / "cairn-build")])
-    monkeypatch.setattr(provision.shutil, "which", lambda name: "/usr/local/bin/cairn-build")
-
-    assert provision._executable("cairn-build") == Path("/usr/local/bin/cairn-build")
-
-
-def test_executable_raises_when_absent(tmp_path, monkeypatch):
-    monkeypatch.setattr(sys, "argv", [str(tmp_path / "nowhere" / "cairn-build")])
-    monkeypatch.setattr(provision.shutil, "which", lambda name: None)
-
-    with pytest.raises(provision.Aborted, match="cannot find the `cairn-build` executable"):
-        provision._executable("cairn-build")
-
-
-# --- rule 2: the dry run is truthful ----------------------------------------
-
-
-def test_a_dry_run_writes_nothing(tmp_path):
-    runner = provision.Runner(dry_run=True, force=False)
-    target = tmp_path / "written.toml"
-
-    runner.write(target, "x = 1\n", what="a file")
-
-    assert not target.exists()
-
-
-def test_a_dry_run_still_prints_the_path_and_mode(tmp_path):
-    runner = Recorder(dry_run=True)
-    provision.Runner.write(runner, tmp_path / "f.conf", "x\n", mode=0o600, what="a file")
-
-    assert "600" in runner.output
-    assert "f.conf" in runner.output
-
-
-def test_a_dry_run_reads_the_host_anyway():
-    """A dry run that cannot see the host cannot tell you what it would do — reading is not a
-    mutation."""
-    runner = provision.Runner(dry_run=True, force=False)
-
-    assert runner.probe(["true"]) is not None
-
-
-# --- rule 3: never silently overwrite ---------------------------------------
-
-
-def test_an_existing_different_file_is_refused_without_force(tmp_path):
-    target = tmp_path / "adopt.toml"
-    target.write_text("environment = \"old\"\n", encoding="utf-8")
-    runner = provision.Runner(dry_run=False, force=False)
-
-    with pytest.raises(provision.Aborted, match="--force"):
-        runner.write(target, 'environment = "new"\n', what="descriptor")
-
-    assert target.read_text(encoding="utf-8") == 'environment = "old"\n'
-
-
-def test_force_replaces_but_keeps_the_previous_file(tmp_path):
-    target = tmp_path / "adopt.toml"
-    target.write_text('environment = "old"\n', encoding="utf-8")
-    runner = provision.Runner(dry_run=False, force=True)
-
-    runner.write(target, 'environment = "new"\n', what="descriptor")
-
-    assert target.read_text(encoding="utf-8") == 'environment = "new"\n'
-    backup = target.with_suffix(".toml.cairn-backup")
-    assert backup.read_text(encoding="utf-8") == 'environment = "old"\n'
-    assert any("previous kept at" in note for note in runner.report.warnings)
-
-
-# --- rule 1: idempotent ------------------------------------------------------
-
-
-def test_an_identical_file_is_left_alone_and_reported_as_skipped(tmp_path):
-    """Re-running must converge, not churn. This is what makes VPS #2 and #3 cheap."""
-    target = tmp_path / "compose.yaml"
-    target.write_text("services: {}\n", encoding="utf-8")
-    os.chmod(target, 0o644)  # pin the starting mode; the ambient umask is not the point here
-    runner = provision.Runner(dry_run=False, force=False)
-
-    runner.write(target, "services: {}\n", what="registry compose")
-
-    assert runner.report.done == []
-    assert any("already correct" in note for note in runner.report.skipped)
-
-
-def test_identical_content_with_a_drifted_mode_is_still_corrected(tmp_path):
-    """Convergence (rule 1) covers the mode, not just the content — the directory's setgid bit
-    only propagates group *ownership* to a new file, never its permission bits, so a file
-    created under an unrelated umask can drift from what sharing `/etc/cairn` requires."""
-    target = tmp_path / "adopt.toml"
-    target.write_text('environment = "test"\n', encoding="utf-8")
-    os.chmod(target, 0o644)
-    runner = provision.Runner(dry_run=False, force=False)
-
-    runner.write(target, 'environment = "test"\n', mode=0o664, what="descriptor")
-
-    assert (target.stat().st_mode & 0o777) == 0o664
-    assert any("corrected" in line for line in runner.report.done)
-
-
-def test_a_dry_run_reports_but_does_not_correct_a_drifted_mode(tmp_path):
-    target = tmp_path / "adopt.toml"
-    target.write_text('environment = "test"\n', encoding="utf-8")
-    os.chmod(target, 0o644)
-    runner = provision.Runner(dry_run=True, force=False)
-
-    runner.write(target, 'environment = "test"\n', mode=0o664, what="descriptor")
-
-    assert (target.stat().st_mode & 0o777) == 0o644
-    assert any("would correct" in line for line in runner.report.done)
-
-
-def test_writing_twice_converges(tmp_path):
-    target = tmp_path / "unit.service"
-    runner = provision.Runner(dry_run=False, force=False)
-
-    runner.write(target, "[Service]\n", what="unit")
-    runner.write(target, "[Service]\n", what="unit")
-
-    assert not target.with_suffix(".service.cairn-backup").exists()
-
-
-# --- rule 4: no secrets ------------------------------------------------------
-
-
-def test_the_certificate_key_is_owner_only(sandbox, monkeypatch):
-    """Key material the installer creates must not be world-readable."""
-    modes = {}
-    monkeypatch.setattr(provision.os, "chmod", lambda path, mode: modes.setdefault(path, mode))
-    runner = Recorder(answers={"curl": "ok"})
-
-    provision.stage_registry(runner, _options(workdir=sandbox, force=True))
-
-    assert modes[provision.CERT_DIR / "registry.key"] == 0o600
-
-
-# --- the shared admin group (BR-CFG-015, BR-DEPLOY-022, ADR-043) -------------
-
-
-def test_admin_group_is_created_when_absent(sandbox, monkeypatch):
-    gids = iter([None, 4242])  # absent, then present after "creation"
-    monkeypatch.setattr(provision, "_group_gid", lambda name: next(gids))
-    monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
-    runner = Recorder()
-
-    provision.stage_admin_group(runner, _options())
-
-    assert runner.ran("groupadd cairn-admins")
-    assert any("created group" in line for line in runner.report.done)
-    assert provision.CERT_DIR.is_dir()
-    assert (provision.CERT_DIR.stat().st_mode & 0o7777) == provision.SHARED_CONFIG_MODE
-
-
-def test_admin_group_left_alone_when_it_already_exists(sandbox, monkeypatch):
-    """Idempotent (`BR-DEPLOY-021` rule 1): an existing group is reported, not recreated."""
-    monkeypatch.setattr(provision, "_group_gid", lambda name: 4242)
-    monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
-    runner = Recorder()
-
-    provision.stage_admin_group(runner, _options())
-
-    assert not runner.ran("groupadd")
-    assert any("already exists" in line for line in runner.report.skipped)
-
-
-def test_admin_group_name_is_configurable(sandbox, monkeypatch):
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
-    monkeypatch.setattr(provision.os, "chown", lambda *a, **k: None)
-    runner = Recorder()
-
-    provision.stage_admin_group(runner, _options(admin_group="ops-team"))
-
-    assert runner.ran("groupadd ops-team")
-
-
-def test_admin_group_already_correct_is_not_rechowned(sandbox, monkeypatch):
-    """Idempotent: matching group and mode are reported and left untouched."""
-    provision.CERT_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(provision.CERT_DIR, provision.SHARED_CONFIG_MODE)
-    own_gid = provision.CERT_DIR.stat().st_gid
-    monkeypatch.setattr(provision, "_group_gid", lambda name: own_gid)
-    chown_calls = []
-    monkeypatch.setattr(provision.os, "chown", lambda *a: chown_calls.append(a))
-    runner = Recorder()
-
-    provision.stage_admin_group(runner, _options())
-
-    assert not chown_calls
-    assert any("already correct" in line for line in runner.report.skipped)
-
-
-def test_no_admin_group_skips_the_stage_entirely(sandbox):
-    """`--no-admin-group` is wired, at the CLI layer, to `admin_group=None`."""
-    runner = Recorder()
-
-    provision.stage_admin_group(runner, _options(admin_group=None))
-
-    assert not runner.commands
-    assert any("skipped" in line for line in runner.report.skipped)
-    assert not provision.CERT_DIR.exists()
-
-
-def test_admin_group_dry_run_writes_nothing(sandbox, monkeypatch):
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
-    runner = Recorder(dry_run=True)
-
-    provision.stage_admin_group(runner, _options())
-
-    assert not provision.CERT_DIR.exists()
-
-
-# --- the registry ------------------------------------------------------------
-
-
-def test_the_certificate_covers_localhost_and_the_private_ip():
-    """The private IP is included now so the certificate survives builder and target splitting;
-    reissuing later means re-trusting it on every host that already had it."""
-    sans = provision.subject_alt_names("10.0.0.5")
-
-    assert "DNS:localhost" in sans
-    assert "IP:127.0.0.1" in sans
-    assert "IP:10.0.0.5" in sans
-
-
-def test_no_private_ip_still_yields_a_usable_certificate():
-    sans = provision.subject_alt_names(None)
-
-    assert "DNS:localhost" in sans
-    assert "IP:" in sans
-
-
-def test_the_registry_compose_contents():
-    """One `registry_compose()` render, checked against every property it must have.
-
-    - localhost-only bind: never exposed, so reachability is the whole of the access control.
-    - the cairn-managed label: so `cairn-adopt examine` can recognize this project as cairn's
-      own infrastructure by label — never by assuming anything from the project name.
-    - delete-enabled storage: what makes keep-N retention possible later; some hosted
-      registries cannot do it at all.
-    - no credentials: a localhost-bound registry needs no auth, so there is no secret in this
-      file at all.
-    """
-    rendered = provision.registry_compose()
-
-    assert f'"127.0.0.1:{provision.REGISTRY_PORT}:{provision.REGISTRY_PORT}"' in rendered
-    assert f'"{adopt_module.CAIRN_MANAGED_LABEL}=true"' in rendered
-    assert "REGISTRY_STORAGE_DELETE_ENABLED" in rendered
-    assert "PASSWORD" not in rendered.upper()
-    assert "htpasswd" not in rendered
-    assert "AUTH" not in rendered.upper()
-
-
-def test_the_registry_is_verified_over_tls_before_being_claimed(sandbox):
-    """Rule 6. An untrusted CA fails here rather than at the first push."""
-    provision.CERT_DIR.mkdir(parents=True)
-    (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
-    runner = Recorder(answers={})  # curl answers nothing
-
-    with pytest.raises(provision.Aborted, match="did not answer over TLS"):
-        provision.stage_registry(runner, _options(workdir=sandbox))
-
-
-def test_the_certificate_is_trusted_in_both_stores(sandbox):
-    """Python reads the system bundle; Docker reads its own per-registry directory."""
-    provision.CERT_DIR.mkdir(parents=True)
-    (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
-    runner = Recorder(answers={"curl": "ok"})
-
-    provision.stage_registry(runner, _options(workdir=sandbox))
-
-    system_ca = provision.SYSTEM_CA_DIR / "cairn-registry.crt"
-    assert system_ca.read_text(encoding="utf-8") == "cert\n"
-    docker_ca = provision.DOCKER_CERT_DIR / f"localhost:{provision.REGISTRY_PORT}" / "ca.crt"
-    assert docker_ca.read_text(encoding="utf-8") == "cert\n"
-    assert runner.ran("update-ca-certificates")
-
-
-def test_a_renewed_certificate_forces_the_registry_container_to_recreate(sandbox, monkeypatch):
-    """A running container has the old cert loaded in memory; `up -d` alone would leave it
-    serving a certificate nothing trusts anymore, since a changed bind-mounted file is
-    invisible to compose's own change detection (rule 1: re-running MUST converge)."""
-    monkeypatch.setattr(provision.os, "chmod", lambda path, mode: None)
-    provision.CERT_DIR.mkdir(parents=True)
-    (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
-    runner = Recorder(answers={"curl": "ok"})
-
-    provision.stage_registry(runner, _options(workdir=sandbox, force=True))
-
-    assert runner.ran("up -d --force-recreate")
-
-
-def test_a_reused_certificate_leaves_the_registry_container_alone(sandbox):
-    provision.CERT_DIR.mkdir(parents=True)
-    (provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
-    runner = Recorder(answers={"curl": "ok"})
-
-    provision.stage_registry(runner, _options(workdir=sandbox))
-
-    assert runner.ran("up -d")
-    assert not runner.ran("--force-recreate")
+    assert "openssl" not in builder.output
 
 
 # --- backup: verified, not assumed ------------------------------------------
@@ -613,9 +225,7 @@ def test_recon_records_how_to_put_the_stack_back(tmp_path):
         "CUSTOM_IMAGE=localhost:5000/erp\nCUSTOM_TAG=old\nDB_PASSWORD=secret\n", encoding="utf-8"
     )
     runner = Recorder(
-        answers={
-            "compose ls": f'[{{"Name": "erp", "ConfigFiles": "{tmp_path}/compose.yaml"}}]'
-        }
+        answers={"compose ls": f'[{{"Name": "erp", "ConfigFiles": "{tmp_path}/compose.yaml"}}]'}
     )
 
     provision.stage_recon(runner, _options())
@@ -734,7 +344,7 @@ def test_manifest_stage_requires_a_client_name(sandbox):
 
 
 def test_manifest_stage_creates_the_client_directory(sandbox, monkeypatch):
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    monkeypatch.setattr(provision, "group_gid", lambda name: None)
     runner = Recorder()
 
     provision.stage_manifest(runner, _options(client="acme"))
@@ -745,7 +355,7 @@ def test_manifest_stage_creates_the_client_directory(sandbox, monkeypatch):
 
 
 def test_manifest_stage_scaffolds_the_canonical_example(sandbox, monkeypatch):
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    monkeypatch.setattr(provision, "group_gid", lambda name: None)
     runner = Recorder()
 
     provision.stage_manifest(runner, _options(client="acme"))
@@ -758,7 +368,7 @@ def test_manifest_stage_scaffolds_the_canonical_example(sandbox, monkeypatch):
 def test_manifest_stage_never_touches_an_existing_manifest(sandbox, monkeypatch):
     """Unlike every other file `setup` writes, `--force` does not apply here — this file is
     the operator's own deployment source, not cairn's to manage."""
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    monkeypatch.setattr(provision, "group_gid", lambda name: None)
     client_dir = provision.MANIFEST_ROOT / "acme"
     client_dir.mkdir(parents=True)
     (client_dir / "cairn.toml").write_text("# hand-authored\n", encoding="utf-8")
@@ -771,7 +381,7 @@ def test_manifest_stage_never_touches_an_existing_manifest(sandbox, monkeypatch)
 
 
 def test_manifest_stage_shares_the_group(sandbox, monkeypatch):
-    monkeypatch.setattr(provision, "_group_gid", lambda name: 4242)
+    monkeypatch.setattr(provision, "group_gid", lambda name: 4242)
     chown_calls = []
     monkeypatch.setattr(provision.os, "chown", lambda path, uid, gid: chown_calls.append(path))
     runner = Recorder()
@@ -784,7 +394,7 @@ def test_manifest_stage_shares_the_group(sandbox, monkeypatch):
 
 def test_manifest_stage_never_reads_siblings_under_srv(sandbox, monkeypatch):
     """`/srv/cairn/` is cairn's own namespace; a host's `/srv` may hold unrelated data."""
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    monkeypatch.setattr(provision, "group_gid", lambda name: None)
     sibling = provision.MANIFEST_ROOT.parent / "some-other-app"
     sibling.mkdir(parents=True)
     (sibling / "config.toml").write_text("not cairn's", encoding="utf-8")
@@ -796,7 +406,7 @@ def test_manifest_stage_never_reads_siblings_under_srv(sandbox, monkeypatch):
 
 
 def test_manifest_stage_dry_run_writes_nothing(sandbox, monkeypatch):
-    monkeypatch.setattr(provision, "_group_gid", lambda name: None)
+    monkeypatch.setattr(provision, "group_gid", lambda name: None)
     runner = Recorder(dry_run=True)
 
     provision.stage_manifest(runner, _options(client="acme"))
@@ -809,7 +419,7 @@ def test_manifest_stage_dry_run_writes_nothing(sandbox, monkeypatch):
 
 def test_stage_timers_build_writes_only_the_build_timer(sandbox, monkeypatch):
     runner = Recorder()
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
 
     provision.stage_timers_build(runner, _options(workdir=sandbox))
 
@@ -819,7 +429,7 @@ def test_stage_timers_build_writes_only_the_build_timer(sandbox, monkeypatch):
 
 def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path, monkeypatch):
     runner = Recorder()
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
 
     provision.stage_timers_adopt(runner, _options(workdir=sandbox))
 
@@ -833,7 +443,9 @@ def test_timer_stage_is_root_gated(sandbox, monkeypatch):
     themselves (`BR-CLI-023`)."""
     runner = Recorder()
     monkeypatch.setattr(
-        provision, "_check_root", lambda: provision.Check("root", False, "must be run with sudo")
+        setup_runner,
+        "_check_root",
+        lambda: setup_runner.Check("root", False, "must be run with sudo"),
     )
 
     with pytest.raises(provision.Aborted, match="sudo"):
@@ -849,7 +461,7 @@ def test_a_timer_is_enabled_but_never_started(sandbox, stage, monkeypatch):
     """A timer firing before anyone has confirmed the manifest turns one wrong configuration
     into a wrong deploy every quarter of an hour."""
     runner = Recorder()
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", True, "ok"))
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
 
     stage(runner, _options(workdir=sandbox))
 
@@ -918,7 +530,9 @@ def test_a_manifest_path_with_spaces_is_quoted_in_the_script():
 
 
 def test_a_failed_gate_exits_two_and_changes_nothing(monkeypatch):
-    monkeypatch.setattr(provision, "_check_root", lambda: provision.Check("root", False, "no"))
+    monkeypatch.setattr(
+        setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
+    )
     runner = provision.Runner(dry_run=False, force=False)
 
     code = provision.execute(
@@ -933,7 +547,7 @@ def test_a_failed_gate_exits_two_and_changes_nothing(monkeypatch):
     assert code == 2
 
 
-def test_a_dry_run_of_a_whole_setup_reports_and_exits_zero(monkeypatch):
+def test_a_dry_run_of_a_whole_setup_reports_and_exits_zero():
     stub_funcs = dict.fromkeys(provision.ADOPT_STAGE_FUNCS, lambda runner, options: None)
     runner = provision.Runner(dry_run=True, force=False)
 
@@ -942,17 +556,3 @@ def test_a_dry_run_of_a_whole_setup_reports_and_exits_zero(monkeypatch):
     )
 
     assert code == 0
-
-
-def test_the_manifest_defaults_beside_the_workdir():
-    options = provision.SetupOptions(workdir=Path("/opt/cairn"))
-
-    assert options.manifest == Path("/opt/cairn/cairn.toml")
-
-
-def test_an_explicit_manifest_wins():
-    options = provision.SetupOptions(
-        workdir=Path("/opt/cairn"), manifest=Path("/srv/acme/cairn.toml")
-    )
-
-    assert options.manifest == Path("/srv/acme/cairn.toml")

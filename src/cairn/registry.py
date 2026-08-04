@@ -187,6 +187,51 @@ def digest_of(ref: ImageRef) -> str:
     return digest
 
 
+def delete_digest(ref: ImageRef, digest: str) -> None:
+    """Delete a manifest by digest (`BR-REG-006`, `DELETE /v2/<repo>/manifests/<digest>`).
+
+    Deletes by **digest**, never by tag name — the registry API has no operation to delete
+    "one tag": deleting a manifest removes every tag currently pointing at it. This is why
+    `retire` (`cli_build.py`) has always refused to delete a tag itself, and why
+    `registry_retention.py`'s whole algorithm exists to prove, before ever calling this, that
+    the digest carries no tag worth keeping.
+    """
+    _request(ref, f"/v2/{ref.repository}/manifests/{digest}", scope="pull,push", method="DELETE")
+
+
+def catalog(host: str) -> list[str]:
+    """Return every repository name in the registry at *host* (`GET /v2/_catalog`).
+
+    Anonymous only. cairn's own self-hosted registry (`cairn-registry setup`) is
+    unauthenticated — TLS only, no htpasswd — so this always succeeds against it. A registry
+    that requires authentication for catalog access is out of scope for `cairn-registry`,
+    which only ever operates on the one registry it itself provisions; a 401 here is reported
+    plainly rather than attempting the repository-scoped token dance the rest of this module
+    uses, since catalog access has no repository to scope a token to.
+    """
+    url = f"https://{host}/v2/_catalog"
+    try:
+        body, _ = _send(url, "GET", None, {"Accept": "application/json"})
+    except urllib.error.HTTPError as exc:
+        detail = _error_detail(exc) or f"{exc.code} {exc.reason}"
+        raise RegistryError(
+            f"{host}: the registry would not list its catalog ({detail}). "
+            f"`cairn-registry` only supports an unauthenticated catalog listing."
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise RegistryError(f"Cannot reach the registry at {host} ({exc.reason}).") from exc
+
+    payload = json.loads(body) if body else {}
+    if not isinstance(payload, dict):
+        raise RegistryError(f"{host}: expected a JSON object from the catalog endpoint.")
+    repositories = payload.get("repositories")
+    if repositories is None:
+        return []
+    if not isinstance(repositories, list):
+        raise RegistryError(f"{host}: the catalog's 'repositories' was not a list.")
+    return [name for name in repositories if isinstance(name, str)]
+
+
 def retag(source: ImageRef, tag: str) -> str:
     """Point *tag* at whatever *source* resolves to, server-side (`BR-DEPLOY-004`).
 
@@ -488,12 +533,12 @@ def _http_error(ref: ImageRef, method: str, exc: urllib.error.HTTPError) -> Regi
             f"that the namespace is right."
         )
     if exc.code in (401, 403):
-        verb = "push to" if method == "PUT" else "read"
+        verb = "push to" if method == "PUT" else "delete from" if method == "DELETE" else "read"
+        needs = "read" if method == "GET" else "write"
         return RegistryError(
             f"Not permitted to {verb} {ref.base} ({exc.code} {exc.reason}). Run "
-            f"`podman login {ref.registry}` with a token carrying "
-            f"{'write' if method == 'PUT' else 'read'} access — cairn never stores registry "
-            f"credentials."
+            f"`podman login {ref.registry}` with a token carrying {needs} access — cairn "
+            f"never stores registry credentials."
         )
     detail = _error_detail(exc)
     return RegistryError(

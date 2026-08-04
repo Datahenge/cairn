@@ -49,7 +49,8 @@ Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside 
 `DATA` data-plane boundary (off-limits; sole DB touch is `bench migrate` / opt-in
 `install-app`) · `CFG` environment-specific config on the sites volume (site config,
 local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` command surface ·
-`DOCS` published documentation.
+`DOCS` published documentation · `REG` registry lifecycle (provisioning, retention, garbage
+collection for the `cairn-registry` role, `ADR-048`).
 
 > cairn is **cofferdam-unaware** (`ADR-019`). cofferdam is only ever a
 > non-normative example of a local config file; the tool never depends on or special-

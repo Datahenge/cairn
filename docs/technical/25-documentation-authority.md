@@ -38,7 +38,7 @@ thin audience-specific summary.
 |---|---|
 | Project purpose, pillars, what it is/isn't | [../00-project-scope.md](../00-project-scope.md) |
 | Requirements index, identifiers, table of contents | [../requirements/00-overview.md](../requirements/00-overview.md) |
-| Per-area requirements | [../requirements/](../requirements/) (`01-vendoring.md` … `07-docs.md`) |
+| Per-area requirements | [../requirements/](../requirements/) (`01-vendoring.md` … `08-registry.md`) |
 | Documentation revision history (requirements + decisions + discussion) | [../CHANGELOG.md](../CHANGELOG.md) |
 | Software release history | [../../CHANGELOG.md](../../CHANGELOG.md) |
 | Open discovery/validation questions | [../../open/OPEN_QUESTIONS.md](../../open/OPEN_QUESTIONS.md) |
@@ -53,6 +53,7 @@ thin audience-specific summary.
 | Current implementation inventory | [05-implementation-index.md](05-implementation-index.md) |
 | Manifest / build-config full reference | [CONFIGURATION.md](CONFIGURATION.md) |
 | Registry choice tradeoffs | [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md), [ABOUT_GHCR.md](ABOUT_GHCR.md) |
+| Registry lifecycle: provisioning, retention, garbage collection (`cairn-registry`) | [../requirements/08-registry.md](../requirements/08-registry.md) |
 | Practice-level "why" narrative, no requirement numbers | [high-level-motivations-and-workflows.md](high-level-motivations-and-workflows.md) |
 
 ## Reading Orders

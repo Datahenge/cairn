@@ -45,10 +45,10 @@ over the tedious, error-prone parts.
 ## What it is / is not
 
 **Is:**
-- A Python package, **`datahenge-cairn`**, providing two role-specific CLIs —
-  `cairn-build` (build/control) and `cairn-adopt` (target) — that orchestrate `docker`,
-  `buildx`, `docker compose`, and `bench` against a vendored, pinned copy of
-  `frappe_docker` (`ADR-046`).
+- A Python package, **`datahenge-cairn`**, providing three role-specific CLIs —
+  `cairn-build` (build/control), `cairn-adopt` (target), and `cairn-registry` (registry
+  host) — that orchestrate `docker`, `buildx`, `docker compose`, and `bench` against a
+  vendored, pinned copy of `frappe_docker` (`ADR-046`, `ADR-048`).
 - Opinionated toward one common case: a single Docker host, done well.
 - A place where the *connective tissue* upstream omits (ref↔image records,
   desired-state, drift detection) becomes first-class.

@@ -31,10 +31,10 @@ ERPNext deployment **reproducible, immutable, and low-thought**, across two pill
 reproducible image builds and deploy lifecycle (git ref → image tag → running stack) —
 with a strict **data-plane boundary** (cairn ships code, not data).
 
-## Two roles, two CLIs, one package
+## Three roles, three CLIs, one package
 
-cairn runs in one of two roles, and — since `ADR-046` — the role is chosen by **which
-binary you invoke**, not detected at runtime:
+cairn runs in one of three roles, and — since `ADR-046`/`ADR-048` — the role is chosen by
+**which binary you invoke**, not detected at runtime:
 
 - **`cairn-build`** (build/control) — runs on the developer's laptop. Builds images from
   a manifest, manages the vendored tree, and pushes tagged images to the registry.
@@ -43,16 +43,21 @@ binary you invoke**, not detected at runtime:
   frappe_docker deployment into a descriptor (`examine`), then pulls images and
   reconciles the running compose stack toward the manifest's desired state
   (`reconcile`); never builds. Covered by `DEPLOY` and `DATA` below.
+- **`cairn-registry`** (registry host) — provisions and operates a self-hosted OCI
+  registry: lifecycle, introspection, retention, and garbage collection. Independent of
+  the other two roles — reads no manifest and no `[cairn.environments]` — and is
+  sometimes colocated with a builder or target, sometimes not. Covered by `REG` below.
 
-Both remain **one package, one repo** (`ADR-046`, superseding `ADR-018`'s single-binary
-answer but not its one-package one): the two entry points share the same config models,
-registry logic, and compose rendering internally. Role separation is now enforced at two
-levels — which binary is installed/invoked, and, for anything registry-side, still by
-**credentials** (a target's pull-only token means even `cairn-adopt` cannot push or
-retag). There is no more runtime role-detection (`ADR-028` retired) and no more `--role`
-flag on the privileged installer (folded into each CLI's own `setup` subcommand,
-`BR-CLI-021`) — the common, no-flag case `BR-CLI-014` wants is now the default shape of
-the command surface itself.
+All three remain **one package, one repo** (`ADR-046`/`ADR-048`, superseding `ADR-018`'s
+single-binary answer but not its one-package one): the entry points share config models,
+registry logic, and compose rendering internally where it makes sense to, though
+`cairn-registry` deliberately shares none of `config.py`/`environments.py` (`BR-REG-001`).
+Role separation is enforced at two levels — which binary is installed/invoked, and, for
+anything registry-side, still by **credentials** (a target's pull-only token means even
+`cairn-adopt` cannot push or retag). There is no runtime role-detection (`ADR-028`
+retired) and no `--role` flag on any privileged installer (folded into each CLI's own
+`setup` subcommand, `BR-CLI-021`) — the common, no-flag case `BR-CLI-014` wants is the
+default shape of the command surface itself.
 
 ## Table of contents (BR areas)
 
@@ -69,6 +74,7 @@ added below as they are drafted.
 | 05 | `CFG` | `05-config.md` | Configuration: target (on the sites volume) + build (local: registry, engine) | **approved** |
 | 06 | `CLI` | `06-cli.md` | Command surface and UX | **approved** |
 | 07 | `DOCS` | `07-docs.md` | Published documentation (GitHub Pages site) | **approved** |
+| 08 | `REG` | `08-registry.md` | Registry lifecycle: provisioning, retention, garbage collection | **approved** |
 
 ## Related documents
 

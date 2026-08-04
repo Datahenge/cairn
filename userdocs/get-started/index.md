@@ -1,8 +1,8 @@
 # Get Started
 
 Installs cairn and gets it onto a machine — whether that machine will go on to **build**
-images or **adopt and run** an existing deployment. The two roles diverge right after this
-page; see [Next steps](#next-steps) at the bottom.
+images, **adopt and run** an existing deployment, or **host a local registry**. The three
+roles diverge right after this page; see [Next steps](#next-steps) at the bottom.
 
 ## Prerequisites
 
@@ -32,18 +32,23 @@ sudo apt install pipx
 sudo pipx install --global datahenge-cairn
 ```
 
-This single install gives you **two** commands, not one:
+This single install gives you **three** commands, not one:
 
 - **`cairn-build`** — the builder role: `build`, `push`, `images`, `prune`, `new-tag`,
   `retag`, `retire`, `vendor`, `doctor`, `setup`.
 - **`cairn-adopt`** — the target role: `examine`, `reconcile`, `systemd-units`, `doctor`,
   `setup`.
+- **`cairn-registry`** — the registry-host role, needed only if you choose to self-host:
+  `status`, `start`, `stop`, `restart`, `images`, `prune`, `gc`, `doctor`, `setup`.
 
-There is no unified `cairn` command. Which one you need depends on what this machine does, not
-what's installed — the same package carries both.
+There is no unified `cairn` command. Which one(s) you need depends on what this machine does,
+not what's installed — the same package carries all three.
 
 ## Next steps
 
 - **[Builder](../builder/index.md)** — building and pushing images. Starts with
   `cairn-build doctor`.
 - **Target** — adopting and running an existing deployment. Not yet written.
+- **[Registry](../registry/index.md)** — provisioning and operating a self-hosted registry.
+  Starts with `cairn-registry doctor`. Only needed if you chose that option — see
+  [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md).

@@ -49,12 +49,14 @@ docs = [
   "mkdocs-material>=9.5",
 ]
 
-# Two entry points, one package (ADR-046): cairn-build (build/control) and cairn-adopt
-# (target) — no unified `cairn` command, no `cairn-provision`. Each carries its own `setup`
-# subcommand, privilege-gated, replacing the old separate installer (BR-CLI-021).
+# Three entry points, one package (ADR-046, ADR-048): cairn-build (build/control), cairn-adopt
+# (target), cairn-registry (registry host) — no unified `cairn` command, no `cairn-provision`.
+# Each carries its own `setup` subcommand, privilege-gated, replacing the old separate
+# installer (BR-CLI-021).
 [project.scripts]
 cairn-build = "cairn.cli_build:main"
 cairn-adopt = "cairn.cli_adopt:main"
+cairn-registry = "cairn.cli_registry:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cairn"]
