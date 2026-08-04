@@ -69,7 +69,7 @@ def test_push_invokes_the_engine(monkeypatch):
     monkeypatch.setattr(push.subprocess, "run", _run)
     push.push("ghcr.io/datahenge/erp:v16", "podman")
 
-    assert captured == [["podman", "push", "ghcr.io/datahenge/erp:v16"]]
+    assert captured == [["podman", "push", "--quiet", "ghcr.io/datahenge/erp:v16"]]
 
 
 def test_failure_points_at_login_not_at_cairn(monkeypatch):

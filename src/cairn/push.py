@@ -48,8 +48,21 @@ def assert_registry_configured(build_config: BuildConfig) -> None:
 
 
 def push(image: str, engine_name: str) -> None:
-    """Push one image reference with *engine_name*, or raise :class:`PushError`."""
-    command = [engine_name, "push", image]
+    """Push one image reference with *engine_name*, or raise :class:`PushError`.
+
+    Invoked with the engine's own ``--quiet`` (`BR-CLI-003`, `BR-CLI-011`): unquieted,
+    both engines print one line per layer ("Pushed", "Layer already exists"), which is
+    the engine's internal transfer bookkeeping, not something cairn computed — noise
+    at best, and read by a newcomer as an error at worst when a second push of the same
+    digest under `latest` (`BR-BUILD-008`) reports every layer as already present.
+    `--quiet` suppresses only that per-layer progress on both engines at cairn's
+    documented floors (Docker v23+, podman v4+, `ADR-027`); it does not suppress errors
+    or exit codes — Docker's `--quiet` briefly did (docker/cli#2284) but that was fixed
+    in 20.10.0, well below cairn's floor. cairn's own `Pushing …` / `Pushed …` framing
+    around the call already carries the reference; the digest was already reported once
+    after the build (`BR-BUILD-011`).
+    """
+    command = [engine_name, "push", "--quiet", image]
     try:
         result = subprocess.run(command, check=False)
     except FileNotFoundError as exc:

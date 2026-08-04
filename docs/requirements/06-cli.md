@@ -6,7 +6,7 @@ purpose: BR-CLI requirements — the command surface and UX conventions across a
 
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-04_
 
 The command surface across cairn's **three CLI entry points**, one file sectioned by role
 (`05-config.md`'s `A`/`B` split, precedent) rather than separate area files — most of what
@@ -42,6 +42,13 @@ same as it does to standalone `assign-tag`. *(BR-BUILD-014a, BR-CLI-004, BR-CLI-
 
 **`BR-CLI-003`** *(push)* — `cairn-build push [--id <tag>]` — upload a built image to the
 registry (default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*
+
+cairn invokes the engine's `push` with `--quiet`: unquieted, both print one line per layer
+("Pushed", "Layer already exists"), misread as an error on a `BR-BUILD-008` second push of
+the same digest under `latest`. Suppresses only progress, not errors/exit code, at cairn's
+floors (Docker v23+, podman v4+, `ADR-027`; see `push.py` for version history). Real failures
+still print and exit non-zero (`BR-CLI-011`); cairn's own framing already names the
+reference, the digest reported once already, after the build (`BR-BUILD-011`).
 
 **`BR-CLI-004`** *(pointer verbs — assign / retire, `ADR-052`)* — Neither command takes an
 environment name as an argument; both take `--manifest <path>` and read the environment from

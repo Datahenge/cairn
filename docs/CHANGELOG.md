@@ -9,7 +9,22 @@ code changes live in git history.
 
 ---
 
-## 2026-08-04 (latest — `BR-BUILD-016` extended: missing-token hint on a failed private-app lookup)
+## 2026-08-04 (latest — `BR-CLI-003`: push now invokes `--quiet`)
+
+Brian ran `cairn-build push` and saw raw engine per-layer output twice — once per tag
+(`BR-BUILD-008` pushes both, deliberately) — the second showing "Layer already exists" per
+layer. Correct, but noise a newcomer reads as an error.
+
+- **`BR-CLI-003`** gained a clause: `push.push()` now invokes `--quiet`, suppressing
+  per-layer progress at cairn's floors (Docker v23+, podman v4+) — verified it doesn't
+  suppress errors/exit codes there (docker/cli#2284, fixed in 20.10.0). cairn's own
+  `Pushing …`/`Pushed …` framing already names the
+  reference; the digest was already reported, once, after the build (`BR-BUILD-011`).
+- `BR-BUILD-008`'s dual-tag push is unchanged — that behavior is correct.
+
+---
+
+## 2026-08-04 (`BR-BUILD-016` extended: missing-token hint on a failed private-app lookup)
 
 Brian hit a failed `cairn-build build` against a private `github.com` app and, reading only
 git's own `ls-remote` failure ("could not read Username for 'https://github.com'"), suspected a
