@@ -7,7 +7,7 @@ for the tradeoffs against a client-owned cloud registry or GHCR. Assumes cairn i
 installed — see [Get Started](../get-started/index.md) if it isn't yet.
 
 `cairn-registry` is independent of the builder and target roles: it reads no manifest and no
-`[cairn.declared_environments]` — every decision comes from `/etc/cairn/registry.toml`
+`[cairn] environment` — every decision comes from `/etc/cairn/registry.toml`
 (optional; sane defaults apply if it's absent) and the registry's own API.
 
 ## Provision it

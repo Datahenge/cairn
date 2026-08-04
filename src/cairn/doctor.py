@@ -219,21 +219,51 @@ def check_shared_config_dir() -> CheckResult:
 
 
 def check_known_manifests() -> CheckResult:
-    """List manifests found under `/srv/cairn/*/cairn.toml`, informationally only
-    (`BR-CLI-022`).
+    """List manifests found under `/srv/cairn/*/*.toml`, and flag any duplicate
+    (`image_name`, `environment`) declaration within a client (`BR-CLI-007`, `ADR-052`).
 
-    A report, not a discovery mechanism: nothing here selects a manifest for any command
-    to act on — every manifest-consuming command still requires an explicit `--manifest`/
-    `$CAIRN_MANIFEST` (`BR-CLI-014`, unchanged).
+    A report, not a discovery mechanism: nothing here selects a manifest for any command to
+    act on — every manifest-consuming command still requires an explicit `--manifest`/
+    `$CAIRN_MANIFEST` (`BR-CLI-014`, unchanged). The duplicate check is validation only, for
+    the same reason: two manifests can legitimately share an `environment` name as long as
+    their `image_name`s differ (a registry tag is scoped to one repository), so what's
+    actually unsafe is the pair repeating together — case-insensitively, so `staging` and
+    `Staging` collide.
     """
     label = "known manifests"
     if not MANIFEST_ROOT.is_dir():
         return CheckResult(label, Status.OK, f"none found under {MANIFEST_ROOT}")
 
-    found = sorted(p.parent.name for p in MANIFEST_ROOT.glob("*/cairn.toml"))
-    if not found:
+    clients = sorted(p for p in MANIFEST_ROOT.iterdir() if p.is_dir())
+    if not clients:
         return CheckResult(label, Status.OK, f"none found under {MANIFEST_ROOT}")
-    return CheckResult(label, Status.OK, f"{', '.join(found)} (under {MANIFEST_ROOT})")
+
+    names: list[str] = []
+    collisions: list[str] = []
+    for client_dir in clients:
+        seen: dict[tuple[str, str], Path] = {}
+        for manifest_path in sorted(client_dir.glob("*.toml")):
+            names.append(f"{client_dir.name}/{manifest_path.name}")
+            try:
+                manifest = config.load_manifest(manifest_path)
+            except CairnError:
+                continue
+            if manifest.environment is None:
+                continue
+            key = (manifest.image_name, manifest.environment.lower())
+            if key in seen:
+                collisions.append(
+                    f"{client_dir.name}: '{manifest.image_name}'/'{manifest.environment}' "
+                    f"declared by both {seen[key].name} and {manifest_path.name}"
+                )
+            else:
+                seen[key] = manifest_path
+
+    if collisions:
+        return CheckResult(label, Status.WARN, "; ".join(collisions))
+    if not names:
+        return CheckResult(label, Status.OK, f"none found under {MANIFEST_ROOT}")
+    return CheckResult(label, Status.OK, f"{', '.join(names)} (under {MANIFEST_ROOT})")
 
 
 def check_descriptor() -> tuple[CheckResult, Descriptor | None]:

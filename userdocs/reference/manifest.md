@@ -10,6 +10,8 @@ for one.
 [cairn]
 image_name = "erpnext-v16"
 series = "v16"                      # the readable half of the image tag
+environment = "production"          # this manifest's declared environment — optional,
+                                     # and at most one per manifest
 
 [cairn.frappe]
 url = "https://github.com/frappe/frappe"
@@ -34,15 +36,12 @@ ref = "v16.26.1"
 python_version = "3.14.2"
 node_version = "24.13.0"
 install_chromium = true
-
-[cairn.declared_environments]
-production = "production"
-staging    = "staging"
 ```
 
-`cairn-build setup` scaffolds exactly this template — see [Builder](../builder/index.md).
-Only `image_name`, `[cairn.frappe]`, and at least one `[[cairn.apps]]` entry are
-required; everything else is optional and falls back to the defaults described below.
+`cairn-build setup --client <name> --environment <name>` scaffolds exactly this template
+— see [Builder](../builder/index.md). Only `image_name`, `[cairn.frappe]`, and at least
+one `[[cairn.apps]]` entry are required; everything else is optional and falls back to
+the defaults described below.
 
 ## `[cairn]`
 
@@ -50,6 +49,7 @@ required; everything else is optional and falls back to the defaults described b
 | --- | --- | --- |
 | `image_name` | yes | The image's name. Lowercase letters, digits, and `-`/`_`/`.` separators only — it becomes an OCI repository path component, and those are lowercase-only. |
 | `series` | no | The human-readable half of the image tag, e.g. `"v16"`, yielding tags like `v16-1b019793dc20`. No hyphens — the tag reads as `<series>-<hash>`, split on the last hyphen. Absent, the series is derived from the declared Frappe `ref` instead (`version-16` → `v16`). It's a **label, not a build input**: changing it later renames future images without invalidating or orphaning existing ones. |
+| `environment` | no | This manifest's declared environment — see [Environments](#environments) below. A manifest declares **at most one**. |
 
 ## `[cairn.frappe]`
 
@@ -96,53 +96,68 @@ Every knob left unset falls back to the Containerfile's own `ARG` default, which
 actually gets recorded as the build's effective, provenance-bearing input — not a value
 cairn invents.
 
-## `[cairn.declared_environments]`
+## Environments
 
-Optional, and **not a build input at all** — declaring a row here doesn't build, push, or
-point anything; no environment name ever reaches the image, and nothing happens to the
-registry until you separately run a pointer command. It's the control-side declared
-*list* of which environment names are legal: a table mapping environment name → registry
-tag, e.g. `production = "production"`. It's what `cairn-build assign-tag`/`retire` check
-against — you can only point an environment named here — and it's the half of the deploy
-model that `cairn-adopt reconcile` matches against a target's own descriptor, by tag name.
+`[cairn] environment` is optional, and **not a build input at all** — declaring it doesn't
+build, push, or point anything; no environment name ever reaches the image, and nothing
+happens to the registry until you separately run `assign-tag`. It names this manifest's
+**one** environment — its value **is** the registry tag a target watches, e.g.
+`environment = "production"` means the environment's tag in the registry is `production`.
+It's what `cairn-build assign-tag`/`retire` act on, and it's the half of the deploy model
+that `cairn-adopt reconcile` matches against a target's own descriptor, by tag name.
 
-Two environments may not point at the same tag: the tag *is* the pointer, so sharing one
-would make an `assign-tag` of either one silently redeploy both. Absent or empty, **no
-environment exists** — the pointer command reports that rather than creating one on your
-behalf.
+**A manifest declares at most one environment.** If you have `test`, `staging`, and
+`production`, that's three manifests — `cairn_test.toml`, `cairn_staging.toml`,
+`cairn_production.toml` — each with its own `environment` line, typically each pinned to
+its own git branch. `cairn-build setup --client <name> --environment <name>` scaffolds
+one at a time. Absent, this manifest declares no environment — `assign-tag`/`retire`
+report that rather than inventing one.
 
-**Why this exists — build once, promote many.** An image is deliberately
-environment-agnostic: the same artifact is meant to run under `dev`, then `staging`, then
-`production`, without ever being rebuilt. What moves between environments is only a
-registry tag, and that's the entire point of this table — it names which pointers are
-allowed to exist, so a build machine can never accidentally overwrite one it wasn't told
-about, and `production` in particular always requires deliberate confirmation before its
-pointer changes, whether that's the first time it's pointed at anything or the fiftieth.
+**Why one-per-manifest, and why this exists at all — build once, promote by proof.** An
+image is deliberately environment-agnostic: the same artifact can run under `test`, then
+`staging`, then `production`, without ever being rebuilt. What moves between environments
+is only a registry tag. `assign-tag` never takes another environment's word for it,
+though — it always resolves *this* manifest's own refs, right now, and only points the
+tag at an image if the registry already holds one matching exactly that resolution. If
+`test` and `staging` happen to declare the same refs at some moment (because, say, a
+release branch was fast-forwarded), `staging`'s own `assign-tag` finds the image `test`
+already built and points at it — proven by the registry, never asserted by a flag.
+`production` always requires deliberate confirmation before its pointer changes, whether
+that's the first time it's pointed at anything or the fiftieth.
 
-A worked example, given:
+A worked example — three manifests, one client:
 
 ```toml
-[cairn.declared_environments]
-staging    = "staging"
-production = "production"
+# cairn_test.toml — tracks the `test` branch
+[cairn]
+image_name  = "erpnext-v16"
+environment = "test"
+
+[cairn.frappe]
+url = "https://github.com/frappe/frappe"
+ref = "v16.25.0"
+
+[[cairn.apps]]
+name = "your_custom_app"
+url  = "https://github.com/your-org/your_custom_app"
+ref  = "test"                       # a branch: resolved fresh on every poll
 ```
 
 ```bash
-# Build once.
-cairn-build build --manifest cairn.toml --push
+# Each manifest's own build+retag, typically run on a timer (see Build Automation):
+cairn-build build --manifest cairn_test.toml --push --assign-tag --yes
+cairn-build build --manifest cairn_staging.toml --push --assign-tag --yes
+cairn-build build --manifest cairn_production.toml --push --assign-tag --yes
 
-# First time staging is declared, its pointer doesn't exist yet — assign-tag creates it:
-cairn-build assign-tag staging --latest
-
-# Tried it out, looks good — promote the *same* image to production (no rebuild):
-cairn-build assign-tag production --from staging --yes
-
-# A later build turns out bad — roll production back to what it ran before:
-cairn-build assign-tag production --previous
+# Rolled staging's branch back to an earlier commit and want production caught up faster
+# than waiting for its own next poll — no --from, just ask again:
+cairn-build assign-tag --manifest cairn_production.toml
 ```
 
-Every step above only moves a tag in the registry — `cairn-adopt reconcile` on the actual
-target is what notices the pointer moved and converges to it on its next poll.
+Every step above only resolves refs and, if proven, moves a tag in the registry —
+`cairn-adopt reconcile` on the actual target is what notices the pointer moved and
+converges to it on its next poll. See [Build Automation](../builder/automation.md) for
+the full unattended version of this, with no manual command at all.
 
 ## `[cairn.registry]`
 
@@ -165,8 +180,9 @@ override.
 
 ## Creating one
 
-There's no `cairn init`. Either let `cairn-build setup --client <name>` scaffold the
-starter template above into a fresh `/srv/cairn/<name>/cairn.toml` (see
-[Builder](../builder/index.md)), or hand-write one starting from that same template.
-Every table except `[cairn.build]` rejects unknown keys, so a typo fails at parse time
-naming the bad key, rather than quietly producing the wrong image.
+There's no `cairn init`. Either let `cairn-build setup --client <name> --environment
+<name>` scaffold the starter template above into a fresh
+`/srv/cairn/<client>/cairn_<environment>.toml` (see [Builder](../builder/index.md)), or
+hand-write one starting from that same template. Every table except `[cairn.build]`
+rejects unknown keys, so a typo fails at parse time naming the bad key, rather than
+quietly producing the wrong image.

@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import __version__, appsjson, engine, github_auth, resolve, tagging, vendor
+from . import __version__, appsjson, engine, github_auth, registry, resolve, tagging, vendor
 from .config import BuildConfig, Manifest
 from .errors import BuildError
 from .resolve import Resolution
@@ -392,6 +392,23 @@ def existing_image(build_plan: BuildPlan) -> str | None:
         raise BuildError(f"`{build_plan.engine_name}` not found on PATH.") from exc
 
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def existing_in_registry(
+    build_plan: BuildPlan, build_config: BuildConfig
+) -> registry.RemoteImage | None:
+    """Return the registry's copy of this build's primary tag, or None (`BR-BUILD-014a`, `ADR-052`).
+
+    The fallback `existing_image` doesn't have: that check only asks *this machine's* local
+    image store, so a cold local cache — or a second/replacement build machine — would rebuild
+    something the registry already holds, even though the primary tag is exactly as
+    deterministic remotely as it is locally (`BR-BUILD-008`). Checked whenever a registry is
+    configured, not gated on `--push`. Shared with `environments.py`'s `assign-tag` resolution
+    — both ask the same question of the same tag, so this is the one place that does.
+    """
+    if not build_config.registry:
+        return None
+    return registry.inspect_or_none(registry.parse_ref(build_plan.references[0]))
 
 
 def assert_image_exists(build_plan: BuildPlan) -> str:

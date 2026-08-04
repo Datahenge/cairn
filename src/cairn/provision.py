@@ -115,14 +115,20 @@ DESCRIPTOR_PATH = Path("/etc/cairn/adopt.toml")
 #: — everything under `MANIFEST_ROOT` is cairn's; nothing beside it is cairn's concern.
 MANIFEST_ROOT = Path("/srv/cairn")
 
-#: The starter manifest `setup` scaffolds into a client directory that has none yet — the
-#: same illustrative example published in `README.md`/`userdocs/reference/manifest.md`,
-#: `BR-BUILD-003`'s ordered-list comment included. One template, reused, not reinvented
-#: (`ADR-047`).
-MANIFEST_TEMPLATE = """\
+
+def manifest_template(environment: str) -> str:
+    """The starter manifest `setup` scaffolds into a client directory, for *environment*
+    (`BR-CLI-022`, `ADR-047`, `ADR-052`) — the same illustrative example published in
+    `README.md`/`userdocs/reference/manifest.md`, `BR-BUILD-003`'s ordered-list comment
+    included, with `[cairn] environment` pre-filled from what the operator just named on the
+    command line. One template, reused, not reinvented.
+    """
+    return f"""\
 [cairn]
 image_name = "erpnext-v16"
 series = "v16"                      # the readable half of the image tag
+environment = "{environment}"       # this manifest's declared environment — at most
+                                     # one per manifest, and its name is its tag
 
 [cairn.frappe]
 url = "https://github.com/frappe/frappe"
@@ -147,11 +153,8 @@ ref = "v16.26.1"
 python_version = "3.14.2"
 node_version = "24.13.0"
 install_chromium = true
-
-[cairn.declared_environments]
-production = "production"
-staging    = "staging"
 """
+
 
 #: rw-rw-r--, for a file under `/etc/cairn` an operator in the shared group is meant to edit
 #: (the descriptor; `builder.toml`, written by the operator, not cairn). Setgid on the
@@ -252,20 +255,24 @@ def stage_preflight_adopt(runner: Runner, options: SetupOptions) -> None:
 
 
 def stage_manifest(runner: Runner, options: SetupOptions) -> None:
-    """Provision `/srv/cairn/<client>/`, scaffolding a starter `cairn.toml` if none exists
-    yet (`BR-CLI-022`, `ADR-047`).
+    """Provision `/srv/cairn/<client>/`, scaffolding a starter `cairn_<environment>.toml` if
+    none exists yet (`BR-CLI-022`, `ADR-047`, `ADR-052`).
 
     `MANIFEST_ROOT` is cairn's own namespace within `/srv` — a host's `/srv` may already
     hold unrelated application data cairn has no business assuming anything about, so
     nothing outside this one directory is ever read, listed, or touched.
 
-    An existing `cairn.toml` is **never** modified, `--force` included: unlike every other
-    file `setup` can write, this one is the operator's own deployment source, not cairn's
-    to manage — `setup` only ever creates it as a courtesy starting point when the
-    directory has none at all.
+    An existing manifest is **never** modified, `--force` included: unlike every other file
+    `setup` can write, this one is the operator's own deployment source, not cairn's to
+    manage — `setup` only ever creates it as a courtesy starting point when this specific
+    environment has none yet. A distinctly-named file per call is what lets a client
+    directory hold several environments (`BR-DEPLOY-009`'s 1:1 model) instead of one shared
+    file being overwritten by the next `--environment`.
     """
     if not options.client:
         raise Aborted("--client <name> is required to provision a manifest directory")
+    if not options.environment:
+        raise Aborted("--environment <name> is required to scaffold a manifest")
 
     client_dir = MANIFEST_ROOT / options.client
     group_name = options.admin_group
@@ -286,7 +293,7 @@ def stage_manifest(runner: Runner, options: SetupOptions) -> None:
                     os.chmod(directory, SHARED_CONFIG_MODE)
     runner.report.done.append(f"{client_dir} provisioned")
 
-    manifest_path = client_dir / "cairn.toml"
+    manifest_path = client_dir / f"cairn_{options.environment}.toml"
     if manifest_path.exists():
         runner.say(f"    {manifest_path} already exists — leaving it")
         runner.report.skipped.append(f"{manifest_path} (already present, not modified)")
@@ -295,9 +302,21 @@ def stage_manifest(runner: Runner, options: SetupOptions) -> None:
     runner.say(f"    write {manifest_path} (starter manifest)")
     if runner.dry_run:
         return
-    manifest_path.write_text(MANIFEST_TEMPLATE, encoding="utf-8")
+    manifest_path.write_text(manifest_template(options.environment), encoding="utf-8")
     os.chmod(manifest_path, SHARED_FILE_MODE)
     runner.report.done.append(f"scaffolded a starter manifest at {manifest_path}")
+
+
+def build_unit_name(options: SetupOptions) -> str:
+    """The unit basename for *options*' environment (`ADR-052`) — e.g. ``cairn-build-production``.
+
+    Parameterized so more than one manifest's build timer can coexist on one machine: two
+    `setup-timer` calls for two different manifests write two different, independently
+    manageable units, rather than the second silently colliding with the fixed name the first
+    used. The environment always comes from the manifest itself (`BR-DEPLOY-009a`), never a
+    flag, so this can never disagree with what the script it names actually builds.
+    """
+    return f"cairn-build-{options.environment}"
 
 
 def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
@@ -310,37 +329,36 @@ def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
     """
     require_root(runner)
     cairn_build = find_executable("cairn-build")
-    script = options.workdir / "build-and-advance.sh"
+    unit = build_unit_name(options)
+    script = options.workdir / f"{unit}.sh"
     runner.write(
         script, build_script(options, cairn_build), mode=0o755, what=f"build script at {script}"
     )
     runner.write(
-        SYSTEMD_DIR / "cairn-build.service", build_service(options, script), what="build service"
+        SYSTEMD_DIR / f"{unit}.service", build_service(options, script), what="build service"
     )
-    runner.write(SYSTEMD_DIR / "cairn-build.timer", build_timer(options), what="build timer")
+    runner.write(SYSTEMD_DIR / f"{unit}.timer", build_timer(options), what="build timer")
 
     runner.run(["systemctl", "daemon-reload"], what="reloading systemd")
-    runner.run(["systemctl", "enable", "cairn-build.timer"], what="enabling cairn-build.timer")
+    runner.run(["systemctl", "enable", f"{unit}.timer"], what=f"enabling {unit}.timer")
     runner.report.warnings.append(
-        "cairn-build.timer is enabled but NOT started — run the first build by hand first, "
-        "then `systemctl start cairn-build.timer`"
+        f"{unit}.timer is enabled but NOT started — run the first build by hand first, "
+        f"then `systemctl start {unit}.timer`"
     )
 
 
 def build_script(options: SetupOptions, cairn_build: Path) -> str:
-    """Build, advance the environment pointer, then prune superseded local images.
+    """Build and push, retag the environment onto whatever resulted, then prune superseded
+    local images (`ADR-052`).
 
     `cairn-build build --push` is already an idempotent change detector — it resolves refs,
-    computes the input hash, and short-circuits when that hash is already built. So a timer is
-    the whole of the trigger; no watcher is needed and a no-op poll costs three `git ls-remote`
-    calls.
-
-    `assign-tag` (`ADR-050`) replaces the old `new-tag`/`retag` split here specifically because
-    of this script: the first scheduled run against a brand-new environment has no pre-existing
-    pointer to move, and the merged command creates one instead of failing. `prune` (`ADR-051`)
-    rides the same script rather than a separate timer, since local cruft only ever exists
-    because this machine's own build just ran — there is no independent cadence for a separate
-    timer to hook that this script doesn't already know about.
+    computes the input hash, and short-circuits (locally, then in the registry, `BR-BUILD-014`/
+    `014a`) when that hash is already built. So a timer is the whole of the trigger; no watcher
+    is needed and a no-op poll costs three `git ls-remote` calls. `--assign-tag`
+    (`BR-CLI-002a`) folds the retag into the same call rather than a second command — no
+    `--environment` argument anywhere, since the manifest already declares exactly one
+    (`BR-DEPLOY-009a`). `prune` (`ADR-051`) rides the same script rather than a separate timer,
+    since local cruft only ever exists because this machine's own build just ran.
     """
     return f"""\
 #!/bin/bash -e
@@ -348,8 +366,7 @@ def build_script(options: SetupOptions, cairn_build: Path) -> str:
 # commits it resolves refs, sees the input hash is already built, and exits without building.
 cd {options.workdir}
 MANIFEST={shlex.quote(str(options.manifest))}
-{cairn_build} build --manifest "$MANIFEST" --push
-{cairn_build} assign-tag {shlex.quote(options.environment)} --latest --yes --manifest "$MANIFEST"
+{cairn_build} build --manifest "$MANIFEST" --push --assign-tag --yes
 {cairn_build} prune --keep 1 --yes
 """
 
@@ -364,7 +381,7 @@ def build_service(options: SetupOptions, script: Path) -> str:
     """
     return f"""\
 [Unit]
-Description=cairn-build — build a new image if the manifest's refs have moved
+Description=cairn-build ({options.environment}) — build if the manifest's refs have moved
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -390,14 +407,14 @@ def build_timer(options: SetupOptions) -> str:
     """
     return f"""\
 [Unit]
-Description=cairn-build — poll for new commits and build
+Description=cairn-build ({options.environment}) — poll for new commits and build
 
 [Timer]
 OnBootSec=5min
 OnUnitInactiveSec={options.build_interval}
 RandomizedDelaySec=60
 Persistent=true
-Unit=cairn-build.service
+Unit={build_unit_name(options)}.service
 
 [Install]
 WantedBy=timers.target

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cairn import build, github_auth, transcript, vendor
+from cairn import build, github_auth, registry, transcript, vendor
 from cairn.config import App, BuildConfig, Frappe, Manifest
 from cairn.errors import BuildError, VendorDriftError
 from cairn.resolve import RefKind, Resolution, ResolvedRef
@@ -411,6 +411,49 @@ def test_the_existence_check_asks_about_the_primary_tag(monkeypatch):
     build.existing_image(_plan())
 
     assert seen == ["ghcr.io/datahenge/erpnext-btu-v16:v16-abc123"]
+
+
+# --- registry-side fallback (BR-BUILD-014a, ADR-052) -------------------------
+
+
+def test_existing_in_registry_finds_a_remote_match(monkeypatch):
+    """The primary tag is exactly as deterministic remotely as it is locally, so a cold
+    local cache costs a registry read instead of a rebuild."""
+    monkeypatch.setattr(registry, "inspect_or_none", lambda ref: _remote_image("sha256:remote"))
+
+    found = build.existing_in_registry(_plan(), BuildConfig(registry="ghcr.io"))
+
+    assert found is not None
+    assert found.digest == "sha256:remote"
+
+
+def test_existing_in_registry_reports_nothing_without_a_configured_registry():
+    """Nothing to check against — asking would be a request to a registry the operator
+    never chose (`BR-CFG-009`)."""
+    assert build.existing_in_registry(_plan(), BuildConfig()) is None
+
+
+def test_existing_in_registry_checks_the_primary_tag(monkeypatch):
+    seen: list[str] = []
+    monkeypatch.setattr(
+        registry,
+        "inspect_or_none",
+        lambda ref: (seen.append(str(ref)), None)[1],
+    )
+
+    build.existing_in_registry(_plan(), BuildConfig(registry="ghcr.io"))
+
+    assert seen == ["ghcr.io/datahenge/erpnext-btu-v16:v16-abc123"]
+
+
+def _remote_image(digest):
+    return registry.RemoteImage(
+        ref=registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-abc123"),
+        digest=digest,
+        media_type="application/vnd.oci.image.manifest.v1+json",
+        size=1,
+        labels={},
+    )
 
 
 # --- post-conditions and failure visibility (BR-CLI-011, BR-CLI-015) --------

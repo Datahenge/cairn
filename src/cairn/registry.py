@@ -125,14 +125,14 @@ def parse_ref(reference: str) -> ImageRef:
         raise RegistryError(
             f"'{reference}' is not a full image reference. Write it as "
             f"<registry>/<namespace>/<name>:<tag>, e.g. "
-            f"ghcr.io/datahenge/erpnext-btu-v16:production."
+            f"registry.example.com/acmecorp/erpnext-v16:production."
         )
 
     registry, _, repository = remainder.partition("/")
     if "." not in registry and ":" not in registry and registry != "localhost":
         raise RegistryError(
             f"'{reference}' has no registry host, so cairn cannot tell where to send the "
-            f"request. Prefix it with the registry, e.g. ghcr.io/{remainder}:{tag}."
+            f"request. Prefix it with the registry, e.g. registry.example.com/{remainder}:{tag}."
         )
     return ImageRef(registry=registry, repository=repository, tag=tag)
 
@@ -175,6 +175,20 @@ def inspect(ref: ImageRef) -> RemoteImage:
         size=_manifest_size(manifest),
         labels=_labels(ref, config["digest"]),
     )
+
+
+def inspect_or_none(ref: ImageRef) -> RemoteImage | None:
+    """Like :func:`inspect`, but a missing image reads as ``None`` rather than a raised error.
+
+    For a caller deciding "build or reuse" (`BR-BUILD-014a`, `ADR-052`) rather than reporting a
+    hard failure — the same trade-off every other "does this tag exist yet" caller in this
+    codebase already accepts: any `RegistryError` (not found, auth, network) reads as "cannot
+    confirm this exists," not specifically "confirmed absent".
+    """
+    try:
+        return inspect(ref)
+    except RegistryError:
+        return None
 
 
 def digest_of(ref: ImageRef) -> str:

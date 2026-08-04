@@ -65,7 +65,7 @@ unarchived.
 | [ADR-030](030-provenance-label-schema-com-datahenge-cairn-standard-oci-keys.md) | `authoritative` | Provenance label schema: `com.datahenge.cairn.*` + standard OCI keys |
 | [ADR-031](031-three-execution-contexts-a-build-transcript-only-when-nobody.md) | `authoritative` | Three execution contexts; a build transcript only when nobody else owns the record |
 | [ADR-032](032-one-image-per-input-hash-prune-only-what-cairn-labelled.md) | `authoritative` | One image per input hash; prune only what cairn labelled |
-| [ADR-033](033-the-declared-environment-list-is-a-cairn-environments-table-in.md) | `authoritative` | The declared environment list is a `[cairn.environments]` table in the manifest |
+| [ADR-033](033-the-declared-environment-list-is-a-cairn-environments-table-in.md) | `archived` | The declared environment list is a `[cairn.environments]` table in the manifest |
 | [ADR-034](034-the-target-environment-descriptor-is-etc-cairn-environment-toml.md) | `authoritative` | The target environment descriptor is `/etc/cairn/adopt.toml`, one per host |
 | [ADR-035](035-cairn-emits-systemd-units-it-never-installs-them.md) | `authoritative` | cairn emits systemd units; it never installs them |
 | [ADR-036](036-cairn-speaks-the-registry-api-directly-rather-than-shelling-out.md) | `authoritative` | cairn speaks the registry API directly, rather than shelling out |
@@ -80,7 +80,8 @@ unarchived.
 | [ADR-046](046-two-cli-entry-points-cairn-build-and-cairn-adopt-replace-the.md) | `authoritative` | Two CLI entry points, `cairn-build` and `cairn-adopt`, replace the unified `cairn` binary and `cairn-provision` |
 | [ADR-047](047-canonical-manifest-home-srv-cairn-scaffolding-and-setup-timer.md) | `authoritative` | Canonical manifest home `/srv/cairn/<client>/`, `setup` scaffolding, and the `setup`/`setup-timer` split |
 | [ADR-048](048-cairn-registry-a-third-cli-for-local-registry-lifecycle.md) | `authoritative` | `cairn-registry`, a third CLI entry point for local-registry provisioning, retention, and garbage collection |
-| [ADR-050](050-new-tag-and-retag-merge-into-assign-tag.md) | `authoritative` | `new-tag` and `retag` merge into one command, `assign-tag` |
+| [ADR-050](050-new-tag-and-retag-merge-into-assign-tag.md) | `archived` | `new-tag` and `retag` merge into one command, `assign-tag` |
+| [ADR-052](052-manifest-environment-1-1-proof-not-assertion-promotion.md) | `authoritative` | Manifest:environment is 1:1; promotion is proof, not assertion |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../../decisions/](../../decisions/)
 instead, as lightweight decisions.

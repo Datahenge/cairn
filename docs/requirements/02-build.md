@@ -10,7 +10,7 @@ _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · La
 
 Requirements for building a custom ERPNext image from a manifest, using the vendored
 `frappe_docker` `custom/Containerfile`. Conventions: see `/CLAUDE.md`. Decisions cited:
-`ADR-004`, `ADR-007`, `ADR-009`, `ADR-011`, `ADR-015`.
+`ADR-004`, `ADR-007`, `ADR-009`, `ADR-011`, `ADR-015`, `ADR-052`.
 
 ---
 
@@ -23,10 +23,12 @@ declaring exactly one, environment-agnostic image. *(ADR-015)*
 section (`url`, `ref`) driving `FRAPPE_PATH`/`FRAPPE_BRANCH`; an **ordered** `[[cairn.apps]]`
 list (`name`, `url`, `ref`) for ERPNext + custom apps; and `[cairn.build]` knobs
 (`python_version`, `node_version`, `install_chromium`) with an optional passthrough for the
-long tail (`debian_base`, `wkhtmltopdf_*`). It MAY provide an optional
-`[cairn.declared_environments]` table — the declared environment list of `BR-DEPLOY-009`
-(`ADR-033`), which no build reads — and an optional `[cairn] series` naming the legible half
-of the image tag (`BR-BUILD-008`, `ADR-032`). *(ADR-015, ADR-032, ADR-033)*
+long tail (`debian_base`, `wkhtmltopdf_*`). It MAY provide an optional `[cairn] environment`
+string — the manifest's single declared environment (`BR-DEPLOY-009`, `ADR-052`), which no
+build reads or writes by default (see `BR-CLI-002a` for the opt-in `--assign-tag` flag) — and
+an optional `[cairn] series` naming the legible half of the image tag (`BR-BUILD-008`,
+`ADR-032`). A manifest declares **at most one** environment; there is no table, no list, and
+no cross-manifest reference — `ADR-052`. *(ADR-015, ADR-032, ADR-052)*
 
 **`BR-BUILD-003`** — `[[cairn.apps]]` is **order-significant**: cairn MUST preserve manifest
 order into `apps.json` and into the deploy-time install sequence, and MUST NOT reorder or
@@ -107,6 +109,16 @@ multi-gigabyte images.
 Consequently **one input hash SHOULD correspond to one image**, and cairn's refusal to
 rebuild is what makes that true in practice. `--rebuild` remains available for the case
 where an image is believed corrupt. *(ADR-032, BR-CLI-005, BR-CLI-018)*
+
+**`BR-BUILD-014a`** *(registry-side fallback, `ADR-052`)* — When the local check
+(`BR-BUILD-014`) misses **and** a registry is configured, cairn MUST also check whether the
+primary tag already exists in that registry before deciding to build, checked whenever a
+registry is configured — not gated on `--push`. A hit MUST be reported distinctly from a local
+hit (naming the registry), and MUST skip the build the same way a local hit does. This is what
+makes a build machine's cache miss (a cold local store, or a second/replacement machine) cost
+a registry read instead of a full rebuild, since the primary tag is deterministic regardless of
+which machine computed it first. cairn MUST NOT pull the image locally as a side effect of a
+registry hit. *(ADR-052)*
 
 ## Build invocation
 

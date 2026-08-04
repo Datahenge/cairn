@@ -155,17 +155,35 @@ def build_command(
             help="Leave the reusable build layers unnamed in the engine's image list.",
         ),
     ] = False,
+    assign_tag: Annotated[
+        bool,
+        typer.Option(
+            "--assign-tag",
+            help="Also point this manifest's declared environment at the pushed image.",
+        ),
+    ] = False,
+    assume_yes: Annotated[
+        bool, typer.Option("--yes", help="Do not ask for confirmation before --assign-tag.")
+    ] = False,
 ) -> None:
-    """Build the image declared by cairn.toml (BR-CLI-002, BR-CLI-016, BR-CLI-017).
+    """Build the image declared by cairn.toml (BR-CLI-002, BR-CLI-002a, BR-CLI-016, BR-CLI-017).
 
     Default is **build-only**; `--push` also uploads, and is checked for a configured
     registry up front so a long build cannot succeed only to fail at the last step.
+    `--assign-tag` additionally points this manifest's declared environment at whatever image
+    resulted — freshly built or found already published — reusing the digest this command
+    already resolved rather than re-checking from scratch (`ADR-052`).
 
     At a terminal the whole run is also saved to a transcript, because nothing else is
     keeping it (`ADR-031`); under CI or systemd it is not, because something already is.
     """
     if transcript_path is not None and no_transcript:
         raise typer.BadParameter("--transcript and --no-transcript contradict each other.")
+    if assign_tag and not push_after:
+        raise typer.BadParameter(
+            "--assign-tag requires --push — there is nothing to retag until the image is "
+            "pushed."
+        )
 
     def _action() -> int:
         watch = timing.Stopwatch()
@@ -237,6 +255,8 @@ def build_command(
             typer.echo(plan.render())
             return 0
 
+        digest: str | None = None
+
         if not rebuild and (held := build.existing_image(plan)):
             note(f"Image {held}")
             done(f"Already built {plan.references[0]}")
@@ -245,32 +265,45 @@ def build_command(
                 "Rebuilding would produce an identical image under a new id and leave "
                 "this one nameless — pass --rebuild to do it anyway."
             )
-            return 0
+            digest = held
+        elif not rebuild and build_config.registry and (
+            remote := build.existing_in_registry(plan, build_config)
+        ):
+            note(f"Image {remote.digest}")
+            done(f"Already published to {build_config.registry}: {plan.references[0]}")
+            step("  Found in the registry; nothing to build.")
+            digest = remote.digest
+        else:
+            step(f"Building {plan.references[0]}")
+            step(
+                f"  {plan.engine_name}, {len(plan.build_args)} build args, "
+                f"{len(plan.labels)} labels, apps.json as a build secret "
+                f"— `--dry-run` prints the full command. This takes several minutes."
+            )
+            with watch.phase("image build"):
+                build.run(plan, sink)
 
-        step(f"Building {plan.references[0]}")
-        step(
-            f"  {plan.engine_name}, {len(plan.build_args)} build args, "
-            f"{len(plan.labels)} labels, apps.json as a build secret "
-            f"— `--dry-run` prints the full command. This takes several minutes."
-        )
-        with watch.phase("image build"):
-            build.run(plan, sink)
+            with watch.phase("verify image"):
+                digest = build.assert_image_exists(plan)
+            for reference in plan.references:
+                done(f"Built {reference}")
+            note(f"Image {digest}")
 
-        with watch.phase("verify image"):
-            digest = build.assert_image_exists(plan)
-        for reference in plan.references:
-            done(f"Built {reference}")
-        note(f"Image {digest}")
+            if not no_cache_tag:
+                _tag_cache_stage(plan, watch)
 
-        if not no_cache_tag:
-            _tag_cache_stage(plan, watch)
+            if push_after:
+                with watch.phase("push"):
+                    for reference in plan.references:
+                        step(f"Pushing {reference}…")
+                        push.push(reference, plan.engine_name)
+                        done(f"Pushed {reference}")
 
-        if push_after:
-            with watch.phase("push"):
-                for reference in plan.references:
-                    step(f"Pushing {reference}…")
-                    push.push(reference, plan.engine_name)
-                    done(f"Pushed {reference}")
+        if assign_tag:
+            environment = environments.require(manifest, build_config)
+            source_ref = registry.parse_ref(plan.references[0])
+            assignment = environments.check_known(environment, source_ref, digest)
+            return _apply_assignment(assignment, assume_yes=assume_yes)
 
         return 0
 
@@ -482,187 +515,109 @@ def _registry_repository(
     return registry.parse_ref(f"{base}:latest")
 
 
-def _assign_tag(
-    name: str,
-    *,
-    latest: bool,
-    previous: bool,
-    identifier: str | None,
-    from_env: str | None,
-    manifest_path: Path | None,
-    dry_run: bool,
-    assume_yes: bool,
-) -> int:
-    """Create or move an environment pointer — the body of ``assign-tag`` (`ADR-050`).
-
-    Deploy, promote, and rollback are one operation (`BR-DEPLOY-004`); whether this
-    particular call creates the pointer for the first time or moves an existing one is
-    decided by registry state, not by which command the operator typed, and is reported
-    rather than gated on.
+def _apply_assignment(assignment: environments.Assignment, *, assume_yes: bool) -> int:
+    """Report a checked :class:`~cairn.environments.Assignment`, and apply it if proven
+    (`ADR-052`) — the shared body of ``assign-tag`` and ``build --assign-tag``.
     """
-    selector, source_name = _selector(latest, previous, identifier, from_env)
-
-    found = config.find_manifest(explicit=manifest_path)
-    manifest = config.load_manifest(found)
-    build_config = config.load_build_config(found)
-
-    environment = environments.require(manifest, build_config, name)
-    source_environment = (
-        environments.require(manifest, build_config, source_name) if source_name else None
-    )
-
-    candidates = None
-    if selector in (environments.Selector.LATEST, environments.Selector.PREVIOUS):
-        step(f"Reading {environment.ref.base} to find the image…")
-        held, _ = images.inspect_registry(environment.ref)
-        candidates = [
-            registry.RemoteImage(
-                ref=environment.ref.with_tag(image.tags[0]),
-                digest=image.digest,
-                media_type="",
-                size=image.size,
-                labels=image.labels,
-            )
-            for image in held
-            if image.tags
-        ]
-
-    move = environments.plan_move(
-        environment,
-        selector=selector,
-        identifier=identifier,
-        source_environment=source_environment,
-        candidates=candidates,
-    )
-    action = environments.action(move)  # "created" or "moved" — reported, never refused on.
-
-    typer.echo(move.render())
-    if dry_run:
+    typer.echo(assignment.render())
+    if not assignment.found:
         return 0
 
-    if move.is_noop:
-        done(f"{environment.name} already points at {move.source.digest}")
+    if assignment.is_noop:
+        done(f"{assignment.environment.name} already points at {assignment.digest}")
         return 0
 
-    # The production gate (BR-CLI-010). Asked after the move is fully decided, so the digest
-    # in the prompt is the digest that will be deployed. Applies whether this creates
+    # The production gate (BR-CLI-010), asked after the assignment is fully decided, so the
+    # digest in the prompt is the digest that will be deployed. Applies whether this creates
     # production's pointer for the first time or moves it — both are equally consequential.
-    verb = "Create" if action == "created" else "Move"
+    creating = assignment.previous_digest is None
+    verb = "Create" if creating else "Move"
     if (
-        environment.is_production
+        assignment.environment.is_production
         and not assume_yes
-        and not typer.confirm(f"{verb} '{environment.name}' to this image?", default=False)
+        and not typer.confirm(
+            f"{verb} '{assignment.environment.name}' to this image?", default=False
+        )
     ):
         note("The pointer was not moved.")
         return 0
 
-    step(f"Pointing {environment.ref} at {move.source.digest}…")
-    digest = environments.apply(move)
-    if action == "created":
-        done(f"{environment.name} did not exist — created it, now pointing at {digest}")
+    step(f"Pointing {assignment.environment.ref} at {assignment.digest}…")
+    digest = environments.apply(assignment)
+    if creating:
+        done(f"{assignment.environment.name} did not exist — created it, now pointing at {digest}")
     else:
-        done(f"{environment.name} moved to {digest}")
+        done(f"{assignment.environment.name} moved to {digest}")
     step("  The target converges on its next poll; nothing was pulled or rebuilt.")
     return 0
-
-
-def _selector(
-    latest: bool, previous: bool, identifier: str | None, from_env: str | None
-) -> tuple[environments.Selector, str | None]:
-    """Validate that exactly one selector was given, and return it (`BR-CLI-004`)."""
-    chosen = [
-        (environments.Selector.LATEST, latest),
-        (environments.Selector.PREVIOUS, previous),
-        (environments.Selector.IDENTIFIER, identifier is not None),
-        (environments.Selector.FROM_ENV, from_env is not None),
-    ]
-    given = [selector for selector, present in chosen if present]
-
-    if not given:
-        raise typer.BadParameter(
-            "Choose which image to point at: --latest, --previous, --id <tag>, or --from <env>."
-        )
-    if len(given) > 1:
-        raise typer.BadParameter(
-            "Only one of --latest, --previous, --id, and --from may be given — they each "
-            "name a different image."
-        )
-    return given[0], from_env
 
 
 @app.command(
     "assign-tag",
     help=(
-        "Point an environment at an image — creates its pointer if this is the first time, "
-        "moves it otherwise. Nothing is rebuilt or pulled; production asks first."
+        "Point this manifest's declared environment at a matching image already in the "
+        "registry, if one exists. Never builds."
     ),
 )
 def assign_tag_command(
-    environment: Annotated[str, typer.Argument(help="The declared environment to point.")],
-    latest: Annotated[bool, typer.Option("--latest", help="The newest image cairn built.")] = False,
-    previous: Annotated[
-        bool, typer.Option("--previous", help="The image before the one running now.")
-    ] = False,
-    identifier: Annotated[
-        str | None, typer.Option("--id", help="A specific tag already in the registry.")
-    ] = None,
-    from_env: Annotated[
-        str | None, typer.Option("--from", help="Whatever another environment runs now.")
-    ] = None,
     manifest_path: Annotated[
         Path | None,
         typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
     dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Show the move, and make none.")
+        bool, typer.Option("--dry-run", help="Show the result, and change nothing.")
     ] = False,
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
 ) -> None:
-    """Create or move an environment's pointer (BR-CLI-004, BR-CLI-009, BR-CLI-010,
-    BR-DEPLOY-004, ADR-050)."""
-    run(
-        lambda: _assign_tag(
-            environment,
-            latest=latest,
-            previous=previous,
-            identifier=identifier,
-            from_env=from_env,
-            manifest_path=manifest_path,
-            dry_run=dry_run,
-            assume_yes=assume_yes,
-        )
-    )
-
-
-@app.command(
-    "retire",
-    help="Decommission an environment from cairn. Touches no image or registry tag.",
-)
-def retire_command(
-    environment: Annotated[str, typer.Argument(help="The declared environment to retire.")],
-    manifest_path: Annotated[
-        Path | None,
-        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
-    ] = None,
-) -> None:
-    """Decommission an environment at cairn's layer only (BR-CLI-009)."""
+    """Resolve this manifest's own refs and retag onto a matching registry image, if one
+    exists (BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-DEPLOY-004, ADR-052).
+    """
 
     def _action() -> int:
         found = config.find_manifest(explicit=manifest_path)
         manifest = config.load_manifest(found)
         build_config = config.load_build_config(found)
-        retiring = environments.retire(manifest, build_config, environment)
+
+        step("Resolving refs and checking the registry (contacts each app's remote)…")
+        assignment = environments.check(manifest, build_config)
+
+        if dry_run:
+            typer.echo(assignment.render())
+            return 0
+
+        return _apply_assignment(assignment, assume_yes=assume_yes)
+
+    run(_action)
+
+
+@app.command(
+    "retire",
+    help="Decommission this manifest's environment from cairn. Touches no image or registry tag.",
+)
+def retire_command(
+    manifest_path: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
+    ] = None,
+) -> None:
+    """Decommission this manifest's environment at cairn's layer only (BR-CLI-009)."""
+
+    def _action() -> int:
+        found = config.find_manifest(explicit=manifest_path)
+        manifest = config.load_manifest(found)
+        build_config = config.load_build_config(found)
+        retiring = environments.retire(manifest, build_config)
 
         typer.echo(
             "\n".join(
                 [
                     f"Retire '{retiring.name}' by removing this line from {found}:",
-                    f'  [cairn.declared_environments]  {retiring.name} = "{retiring.tag}"',
+                    f'  environment = "{retiring.name}"',
                 ]
             )
         )
         typer.secho(
-            f"Warning: the registry tag '{retiring.tag}' will still exist and still resolve. "
+            f"Warning: the registry tag '{retiring.name}' will still exist and still resolve. "
             f"cairn does not delete it — a registry version can carry several tags, so "
             f"deleting it could destroy an image another environment still points at. Any "
             f"target still holding this descriptor will also keep converging to it; remove "
@@ -704,6 +659,12 @@ def setup_command(
     client: Annotated[
         str,
         typer.Option("--client", help="Client name; provisions /srv/cairn/<name>/."),
+    ],
+    environment: Annotated[
+        str,
+        typer.Option(
+            "--environment", help="Environment this manifest is for; scaffolds cairn_<name>.toml."
+        ),
     ],
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print every action, and change nothing.")
@@ -747,6 +708,7 @@ def setup_command(
         skip_disk_free=skip_disk_free,
         admin_group=None if no_admin_group else admin_group,
         client=client,
+        environment=environment,
     )
     runner = Runner(dry_run=dry_run, force=force)
     raise typer.Exit(
@@ -759,6 +721,9 @@ def setup_command(
     help="Install (but do not start) the build-automation timer. Must be run with sudo.",
 )
 def setup_timer_command(
+    manifest_path: Annotated[
+        Path, typer.Option("--manifest", help="The manifest this build timer advances.")
+    ],
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Print every action, and change nothing.")
     ] = False,
@@ -767,30 +732,32 @@ def setup_timer_command(
     ] = False,
     workdir: Annotated[
         Path,
-        typer.Option("--workdir", help="The deployment directory cairn.toml lives in."),
+        typer.Option("--workdir", help="Directory to record in reported paths."),
     ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
-    manifest_path: Annotated[
-        Path | None,
-        typer.Option("--manifest", help="Deployment manifest for the build timer."),
-    ] = None,
-    environment: Annotated[
-        str, typer.Option("--environment", help="Environment the build timer advances.")
-    ] = "production",
     build_interval: Annotated[
         str, typer.Option("--build-interval", help="Build poll interval.")
     ] = "15min",
 ) -> None:
-    """Install the build-automation timer only (BR-CLI-023, ADR-047).
+    """Install the build-automation timer only (BR-CLI-023, ADR-047, ADR-052).
 
     Root-gated the same way `setup` is — writing to `/etc/systemd/system` needs it, and
-    this command has no preceding `preflight` stage of its own to have already checked.
+    this command has no preceding `preflight` stage of its own to have already checked. Takes
+    no `--environment` — the manifest declares at most one (`BR-DEPLOY-009a`), so the timer's
+    unit names and the environment its script advances are both read from *manifest_path*
+    itself rather than typed a second time somewhere they could disagree with it.
     """
+    manifest = config.load_manifest(manifest_path)
+    if manifest.environment is None:
+        raise typer.BadParameter(
+            f"{manifest_path} declares no environment — add `[cairn] environment = \"...\"` "
+            f"before installing a build timer for it."
+        )
     options = SetupOptions(
         dry_run=dry_run,
         force=force,
         workdir=workdir,
         manifest=manifest_path,
-        environment=environment,
+        environment=manifest.environment,
         build_interval=build_interval,
     )
     runner = Runner(dry_run=dry_run, force=force)

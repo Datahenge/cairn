@@ -6,12 +6,12 @@ purpose: BR-DEPLOY requirements — deploying images to environments and keeping
 
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-04_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
 `ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
-`ADR-042`, `ADR-043`, `ADR-046`.
+`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`.
 
 ---
 
@@ -54,12 +54,19 @@ Three reasons, of which the first is structural:
 
 ## Pointer operations
 
-**`BR-DEPLOY-004`** — Deploy, promote, and rollback are the **same operation**: point an
-environment tag at a chosen **existing** image, with **no rebuild**, via a **server-side
-retag** (no local pull). The target converges on its next poll.
-- **rollback** = repoint an env tag to a prior image;
-- **promote** = repoint a downstream env tag to whatever an upstream env tag points at.
-*(ADR-010)*
+**`BR-DEPLOY-004`** *(promotion is proof, not assertion, `ADR-052`)* — Deploy, promote, and
+rollback are the **same operation**: resolve one environment's own manifest to its **current**
+resolved refs, and if an image already exists in the registry under that exact deterministic
+tag (`BR-BUILD-008`), point the environment's tag at it — a **server-side retag** (no rebuild,
+no local pull). If no such image exists yet, there is nothing to point at; only `build` creates
+one. The target converges on its next poll.
+- **rollback** = reset the environment's tracked ref to an earlier commit (outside cairn), then
+  resolve again — if that commit's image still exists in the registry (not yet GC'd), it retags
+  instantly with no rebuild.
+- **promote** = a downstream environment's own resolve-and-check happens to match an image an
+  upstream environment already built. Nothing asserts this is a promotion; the registry match is
+  the proof. There is no cross-environment reference of any kind — one environment's pointer
+  operation never reads another environment's manifest or tag. *(ADR-010, ADR-052)*
 
 ## Registry introspection
 
@@ -85,20 +92,30 @@ Watchtower, Flux, or ArgoCD. *(ADR-024)*
 
 ## Environment model
 
-**`BR-DEPLOY-009`** — An environment is defined in **two halves joined only by the env tag
-name**: a thin **control-side declared environment list** (environment → registry tag) and a
-**target-side environment descriptor** on each host. The declared list is the source of
-truth for which environments exist and gates `assign-tag`/`retire` (`BR-CLI-009`, `ADR-050`).
-Control-side commands operate on the **registry only** and MUST NOT require a target host's
-address or inbound access. *(ADR-005, ADR-006, ADR-010)*
+**`BR-DEPLOY-009`** *(1:1, `ADR-052`)* — An environment is defined in **two halves joined only
+by the env tag name**: a **control-side declared environment**, at most one per manifest, and a
+**target-side environment descriptor** on each host. The manifest's declared environment (if
+any) is what gates `assign-tag`/`retire` for that manifest (`BR-CLI-009`). Control-side
+commands operate on the **registry only** and MUST NOT require a target host's address or
+inbound access. There is no shared, cross-manifest environment list — each manifest is
+authoritative only for its own environment. *(ADR-005, ADR-006, ADR-010, ADR-052)*
 
-**`BR-DEPLOY-009a`** *(location of the declared list)* — The declared environment list is an
-optional `[cairn.declared_environments]` table in `cairn.toml`, mapping environment name →
-registry tag (`ADR-033`, renamed by `ADR-049`). It is discovered with the manifest
-(`BR-CFG-012`) and requires no flag. Absent or empty, **no environment exists**: the pointer
-verbs MUST report that rather than create one (`BR-CLI-009`). No environment name may reach a
-build — the table exists to name registry pointers, and the image stays environment-agnostic
-(`BR-BUILD-001`). *(ADR-033, ADR-049)*
+**`BR-DEPLOY-009a`** *(location and uniqueness of the declared environment, `ADR-052`)* — The
+declared environment is an optional `[cairn] environment` string in `cairn.toml` — a manifest
+declares **at most one**. It is discovered with the manifest (`BR-CFG-012`) and requires no
+flag; no command takes an environment name as an argument — every environment-targeting command
+takes `--manifest <path>` instead (`BR-CLI-004`). Absent, the manifest declares no environment
+and `assign-tag`/`retire` against it MUST report that (`BR-CLI-009`). No environment name may
+reach a build by default — the image stays environment-agnostic (`BR-BUILD-001`) unless
+`build --assign-tag` is explicitly given (`BR-CLI-002a`).
+
+**Uniqueness key: (client, image_name, environment), not environment alone.** The same
+environment name MAY legitimately repeat across different `image_name`s within one client —
+this mirrors the registry's own tag scoping, since an environment name is nothing but a
+registry tag, and a tag's uniqueness is already scoped to one repository
+(`<registry>/<namespace>/<image_name>`). Two manifests sharing both the same `image_name` and
+the same `environment` within one client is a conflict `cairn-build doctor` MUST detect and
+report, case-insensitively (`BR-CLI-007`). *(ADR-033, ADR-049, ADR-052)*
 
 **`BR-DEPLOY-010`** — The target-side **environment descriptor** declares: image + watched
 tag; which frappe_docker overrides to compose (db, redis, proxy, TLS); domain/host and

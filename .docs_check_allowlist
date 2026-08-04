@@ -14,11 +14,17 @@ docs/archive/CHANGELOG-2026-07.md = 12500
 # invitation to keep adding to it.
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
-docs/requirements/03-deploy.md = 2300
-docs/requirements/06-cli.md = 2850
+docs/requirements/02-build.md = 2050
+# ^ new entry 2026-08-04: BR-BUILD-002/014a for the manifest:environment 1:1 redesign and
+# the registry-side existing-image fallback (ADR-052) — genuine new requirement content.
+docs/requirements/03-deploy.md = 2450
+# ^ bumped 2026-08-04 for BR-DEPLOY-004/009/009a's promotion-is-proof-not-assertion rewrite
+# (ADR-052).
+docs/requirements/06-cli.md = 3150
 # ^ bumped 2026-08-03 for BR-CLI-024..027 (cairn-registry, ADR-048); genuine new command-
 # surface content, not sprawl — section C already delegates substance to BR-REG rather
-# than restating it. Bumped again 2026-08-04 for the new-tag/retag -> assign-tag merge
-# (ADR-050, BR-CLI-004/009/010).
+# than restating it. Bumped again 2026-08-04, twice: first for the new-tag/retag ->
+# assign-tag merge (ADR-050, since superseded), then for ADR-052's manifest:environment
+# 1:1 redesign (BR-CLI-002a/004/007/009/022/023).
 docs/technical/ABOUT_GHCR.md = 3500
 docs/technical/high-level-motivations-and-workflows.md = 2000

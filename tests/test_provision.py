@@ -415,29 +415,39 @@ def test_manifest_stage_requires_a_client_name(sandbox):
     runner = Recorder()
 
     with pytest.raises(provision.Aborted, match="--client"):
-        provision.stage_manifest(runner, _options(client=None))
+        provision.stage_manifest(runner, _options(client=None, environment="test"))
+
+
+def test_manifest_stage_requires_an_environment_name(sandbox):
+    """A manifest declares at most one environment (`ADR-052`) — scaffolding needs to know
+    which before it can name the file."""
+    runner = Recorder()
+
+    with pytest.raises(provision.Aborted, match="--environment"):
+        provision.stage_manifest(runner, _options(client="acme", environment=""))
 
 
 def test_manifest_stage_creates_the_client_directory(sandbox, monkeypatch):
     monkeypatch.setattr(provision, "group_gid", lambda name: None)
     runner = Recorder()
 
-    provision.stage_manifest(runner, _options(client="acme"))
+    provision.stage_manifest(runner, _options(client="acme", environment="test"))
 
     client_dir = provision.MANIFEST_ROOT / "acme"
     assert client_dir.is_dir()
-    assert (client_dir / "cairn.toml").is_file()
+    assert (client_dir / "cairn_test.toml").is_file()
 
 
 def test_manifest_stage_scaffolds_the_canonical_example(sandbox, monkeypatch):
     monkeypatch.setattr(provision, "group_gid", lambda name: None)
     runner = Recorder()
 
-    provision.stage_manifest(runner, _options(client="acme"))
+    provision.stage_manifest(runner, _options(client="acme", environment="test"))
 
-    written = (provision.MANIFEST_ROOT / "acme" / "cairn.toml").read_text(encoding="utf-8")
-    assert written == provision.MANIFEST_TEMPLATE
+    written = (provision.MANIFEST_ROOT / "acme" / "cairn_test.toml").read_text(encoding="utf-8")
+    assert written == provision.manifest_template("test")
     assert "Order matters" in written  # BR-BUILD-003's required ordered-list comment
+    assert 'environment = "test"' in written
 
 
 def test_manifest_stage_never_touches_an_existing_manifest(sandbox, monkeypatch):
@@ -446,12 +456,12 @@ def test_manifest_stage_never_touches_an_existing_manifest(sandbox, monkeypatch)
     monkeypatch.setattr(provision, "group_gid", lambda name: None)
     client_dir = provision.MANIFEST_ROOT / "acme"
     client_dir.mkdir(parents=True)
-    (client_dir / "cairn.toml").write_text("# hand-authored\n", encoding="utf-8")
+    (client_dir / "cairn_test.toml").write_text("# hand-authored\n", encoding="utf-8")
     runner = Recorder(force=True)
 
-    provision.stage_manifest(runner, _options(client="acme", force=True))
+    provision.stage_manifest(runner, _options(client="acme", environment="test", force=True))
 
-    assert (client_dir / "cairn.toml").read_text(encoding="utf-8") == "# hand-authored\n"
+    assert (client_dir / "cairn_test.toml").read_text(encoding="utf-8") == "# hand-authored\n"
     assert any("not modified" in line for line in runner.report.skipped)
 
 
@@ -461,7 +471,7 @@ def test_manifest_stage_shares_the_group(sandbox, monkeypatch):
     monkeypatch.setattr(provision.os, "chown", lambda path, uid, gid: chown_calls.append(path))
     runner = Recorder()
 
-    provision.stage_manifest(runner, _options(client="acme"))
+    provision.stage_manifest(runner, _options(client="acme", environment="test"))
 
     assert provision.MANIFEST_ROOT in chown_calls
     assert provision.MANIFEST_ROOT / "acme" in chown_calls
@@ -475,7 +485,7 @@ def test_manifest_stage_never_reads_siblings_under_srv(sandbox, monkeypatch):
     (sibling / "config.toml").write_text("not cairn's", encoding="utf-8")
     runner = Recorder()
 
-    provision.stage_manifest(runner, _options(client="acme"))
+    provision.stage_manifest(runner, _options(client="acme", environment="test"))
 
     assert (sibling / "config.toml").read_text(encoding="utf-8") == "not cairn's"
 
@@ -484,7 +494,7 @@ def test_manifest_stage_dry_run_writes_nothing(sandbox, monkeypatch):
     monkeypatch.setattr(provision, "group_gid", lambda name: None)
     runner = Recorder(dry_run=True)
 
-    provision.stage_manifest(runner, _options(client="acme"))
+    provision.stage_manifest(runner, _options(client="acme", environment="test"))
 
     assert not provision.MANIFEST_ROOT.exists()
 
@@ -496,10 +506,22 @@ def test_stage_timers_build_writes_only_the_build_timer(sandbox, monkeypatch):
     runner = Recorder()
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
 
-    provision.stage_timers_build(runner, _options(workdir=sandbox))
+    provision.stage_timers_build(runner, _options(workdir=sandbox, environment="test"))
 
-    assert (provision.SYSTEMD_DIR / "cairn-build.timer").exists()
+    assert (provision.SYSTEMD_DIR / "cairn-build-test.timer").exists()
     assert not (provision.SYSTEMD_DIR / "cairn-reconcile.timer").exists()
+
+
+def test_stage_timers_build_unit_names_are_parameterized_per_environment(sandbox, monkeypatch):
+    """Two `setup-timer` calls for two different environments must coexist on one machine,
+    not collide on a shared fixed unit name (`ADR-052`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+
+    provision.stage_timers_build(Recorder(), _options(workdir=sandbox, environment="staging"))
+    provision.stage_timers_build(Recorder(), _options(workdir=sandbox, environment="production"))
+
+    assert (provision.SYSTEMD_DIR / "cairn-build-staging.timer").exists()
+    assert (provision.SYSTEMD_DIR / "cairn-build-production.timer").exists()
 
 
 def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path, monkeypatch):
@@ -573,7 +595,9 @@ def test_the_build_timer_measures_from_the_end_of_the_last_run():
     assert "OnCalendar=" not in rendered
 
 
-def test_the_build_script_builds_then_advances_the_pointer_then_prunes():
+def test_the_build_script_builds_and_assign_tags_then_prunes():
+    """One line does build + retag (`--assign-tag`, `BR-CLI-002a`) — no separate assign-tag
+    command, and no `--environment` argument anywhere (`ADR-052`)."""
     rendered = provision.build_script(
         _options(
             workdir=Path("/opt/cairn"),
@@ -584,13 +608,10 @@ def test_the_build_script_builds_then_advances_the_pointer_then_prunes():
     )
 
     assert "build --manifest" in rendered
-    assert "assign-tag test --latest --yes" in rendered
+    assert "--push --assign-tag --yes" in rendered
+    assert "--environment" not in rendered
     assert "prune --keep 1 --yes" in rendered
-    assert (
-        rendered.index("build --manifest")
-        < rendered.index("assign-tag test")
-        < rendered.index("prune --keep")
-    )
+    assert rendered.index("--push --assign-tag") < rendered.index("prune --keep")
 
 
 def test_a_manifest_path_with_spaces_is_quoted_in_the_script():

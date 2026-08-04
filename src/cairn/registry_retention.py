@@ -1,7 +1,7 @@
 """The registry retention algorithm (`BR-REG-006`/`007`/`008`, `ADR-048`).
 
 Decides which registry digests are safe to delete, without ever reading a manifest or
-`[cairn.declared_environments]` (`BR-REG-001`) — every fact this module needs comes from the
+`[cairn] environment` (`BR-REG-001`) — every fact this module needs comes from the
 registry's own tag list.
 
 **The safety rule, in one sentence:** a digest is eligible only if *every* tag currently

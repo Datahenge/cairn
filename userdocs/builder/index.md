@@ -34,18 +34,24 @@ manifest builds correctly by hand.
 
 ## Provision the manifest directory
 
-Once `doctor` shows the two expected warnings above, run `setup` as root, naming your client:
+Once `doctor` shows the two expected warnings above, run `setup` as root, naming your client
+and the environment this manifest is for:
 
 ```bash
-sudo cairn-build setup --client acmecorp
+sudo cairn-build setup --client acmecorp --environment production
 ```
+
+A manifest declares **at most one** environment (see [the manifest
+reference](../reference/manifest.md#environments)) — for `test`/`staging`/`production`, run
+`setup` again with each `--environment`, once per environment, and you'll get one
+distinctly-named manifest per environment in the same client directory.
 
 This does two things in one privileged run:
 
 - **`/etc/cairn`** — created and shared with the `cairn-admins` group (mode `2775`), the same
   group your own account joined in [Get Started](../get-started/index.md).
-- **`/srv/cairn/acmecorp/`** — provisioned, with a starter `cairn.toml` scaffolded into it,
-  since none existed yet.
+- **`/srv/cairn/acmecorp/`** — provisioned, with a starter `cairn_production.toml` scaffolded
+  into it, since none existed yet.
 
 Example output:
 
@@ -65,21 +71,21 @@ workdir /home/brian
     group 'cairn-admins' already exists (gid 1001)
 
 [manifest]
-    write /srv/cairn/acmecorp/cairn.toml (starter manifest)
+    write /srv/cairn/acmecorp/cairn_production.toml (starter manifest)
 
 --- summary ---
   did: /etc/cairn shared with group 'cairn-admins' (mode 2775)
   did: /srv/cairn/acmecorp provisioned
-  did: scaffolded a starter manifest at /srv/cairn/acmecorp/cairn.toml
+  did: scaffolded a starter manifest at /srv/cairn/acmecorp/cairn_production.toml
   skipped: group 'cairn-admins' (already exists)
 ```
 
-`setup` is idempotent — re-running it later won't overwrite an edited `cairn.toml`, and steps
+`setup` is idempotent — re-running it later won't overwrite an edited manifest, and steps
 that already exist (like the group above) are reported as skipped, not redone.
 
 ## Edit the manifest
 
-Edit the scaffolded `cairn.toml` for your deployment — see [the manifest
+Edit the scaffolded `cairn_production.toml` for your deployment — see [the manifest
 reference](../reference/manifest.md) for every field.
 
 ## Run the build
@@ -87,14 +93,14 @@ reference](../reference/manifest.md) for every field.
 Preview first — nothing is built, pushed, or touched:
 
 ```bash
-cairn-build build --manifest /srv/cairn/acmecorp/cairn.toml --dry-run
+cairn-build build --manifest /srv/cairn/acmecorp/cairn_production.toml --dry-run
 ```
 
 This resolves every ref (contacting each app's remote), computes the tags, and prints the
 exact command a real build would run. Once it looks right, drop `--dry-run`:
 
 ```bash
-cairn-build build --manifest /srv/cairn/acmecorp/cairn.toml
+cairn-build build --manifest /srv/cairn/acmecorp/cairn_production.toml
 ```
 
 Progress prints as it works — resolving refs, building, verifying the image landed,
@@ -175,15 +181,16 @@ terminal output has scrolled away.
   `[cairn.registry]`](../reference/manifest.md#cairnregistry) or [`builder.toml`'s
   registry keys](../reference/builder-config.md).
 - **Point an environment at it.** An *environment* (`production`, `staging`, …) is just a
-  named, moving registry tag that a target machine watches — declared in the manifest's
-  [`[cairn.declared_environments]`](../reference/manifest.md#cairndeclared_environments),
-  which has a full worked example of what this buys you (build once, promote the same image
-  through several environments, roll back by repointing). In short: `cairn-build assign-tag
-  <env> --latest` — creates the environment's pointer the first time, moves it every time
-  after, and always says which of the two it did. The same command also promotes (`--from
-  <env>`) and rolls back (`--previous`). Nothing is rebuilt or pulled either way; moving
-  `production` asks for confirmation first — whether that move creates the pointer or moves
-  it.
+  named, moving registry tag that a target machine watches — this manifest's own declared
+  `environment` (see [Environments](../reference/manifest.md#environments), which has a
+  full worked example of what this buys you: build once, let each environment's own
+  manifest prove a match, roll back by repointing). `cairn-build assign-tag --manifest
+  /srv/cairn/acmecorp/cairn_production.toml` resolves this manifest's refs, checks the
+  registry, and — only if it finds a match — points `production` at it, creating the
+  pointer the first time and moving it every time after. Nothing is rebuilt or pulled
+  either way; moving `production` asks for confirmation first, whether that's the first
+  time it's pointed at anything or the fiftieth. No `--latest`/`--previous`/`--from` — there
+  is only ever one correct answer: what this manifest's own refs currently resolve to.
 - **Adopt it.** `cairn-adopt` is the target-side binary — it polls the environment's tag
   and converges on its own next poll once the pointer moves; nothing pushes into the
   target. The target-side walkthrough isn't written yet; see [Get

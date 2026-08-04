@@ -117,6 +117,7 @@ class BuildStubs:
     manifest_path: Path
     seen: dict = field(default_factory=dict)
     held: str | None = None  #: what `build.existing_image` finds already built
+    remote: object | None = None  #: what `build.existing_in_registry` finds, or None
     fails: Exception | None = None  #: what `build.run` raises, if anything
 
 
@@ -156,6 +157,9 @@ def stubs(project, monkeypatch) -> BuildStubs:
     )
     monkeypatch.setattr(build, "plan", _plan_stub)
     monkeypatch.setattr(build, "existing_image", lambda build_plan: state.held)
+    monkeypatch.setattr(
+        build, "existing_in_registry", lambda build_plan, build_config: state.remote
+    )
     monkeypatch.setattr(build, "run", _run_stub)
     monkeypatch.setattr(build, "assert_image_exists", lambda build_plan: DIGEST)
     monkeypatch.setattr(build, "tag_cache_stage", _tag_cache_stage)
@@ -179,14 +183,14 @@ def local(project, monkeypatch):
     return project
 
 
-def _manifest_with_environments(**environments):
+def _manifest_with_environment(environment="staging"):
     base = _manifest()
     return Manifest(
         image_name=base.image_name,
         frappe=base.frappe,
         apps=base.apps,
         build=base.build,
-        declared_environments=environments or {"production": "production", "staging": "staging"},
+        environment=environment,
     )
 
 
@@ -212,7 +216,7 @@ def registry_repo(project, monkeypatch):
     manifest_path.touch()
     monkeypatch.setattr(config, "find_manifest_or_none", lambda explicit=None: manifest_path)
     monkeypatch.setattr(config, "find_manifest", lambda explicit=None: explicit or manifest_path)
-    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environments())
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment())
     monkeypatch.setattr(
         config,
         "load_build_config",
@@ -221,18 +225,39 @@ def registry_repo(project, monkeypatch):
     return manifest_path
 
 
+#: The primary tag `_plan()` computes — what `environments.check()` asks the registry about.
+_PRIMARY_REF = "ghcr.io/datahenge/erpnext-btu-v16:v16.0.1-1b019793dc20"
+
+
+def _found(digest):
+    """What `build.existing_in_registry` returns when a matching image exists."""
+    return registry.RemoteImage(
+        ref=registry.parse_ref(_PRIMARY_REF),
+        digest=digest,
+        media_type="application/vnd.oci.image.manifest.v1+json",
+        size=2_750_000_000,
+        labels={images.INPUT_HASH_LABEL: "1b019793dc20"},
+    )
+
+
 @dataclass
 class PointerStubs:
-    """What the registry was asked to do, and what it reported back."""
+    """What `assign-tag` was asked to do, and what it reported back."""
 
     seen: dict = field(default_factory=dict)
+    environment: str | None = "staging"  #: this manifest's declared environment
     current: str | None = None  #: digest the environment's tag resolves to now
-    catalog: list = field(default_factory=list)
+    found: registry.RemoteImage | None = None  #: what `build.existing_in_registry` finds
 
 
 @pytest.fixture
-def pointers(registry_repo, monkeypatch) -> PointerStubs:
-    state = PointerStubs(catalog=[_remote("aaa111", tags=("v16",))])
+def pointers(project, monkeypatch) -> PointerStubs:
+    state = PointerStubs()
+    manifest_path = project / "cairn.toml"
+    manifest_path.touch()
+
+    def _load_manifest(path):
+        return _manifest_with_environment(state.environment)
 
     def _digest_of(ref):
         if state.current is None:
@@ -241,27 +266,19 @@ def pointers(registry_repo, monkeypatch) -> PointerStubs:
 
     def _retag(source, tag):
         state.seen["retag"] = (str(source), tag)
-        return source_digest(source)
+        return "sha256:" + "f" * 64
 
-    def source_digest(source):
-        return next(
-            (image.digest for image in state.catalog if source.tag in image.tags),
-            "sha256:" + "f" * 64,
-        )
-
-    def _inspect(ref):
-        return registry.RemoteImage(
-            ref=ref,
-            digest=source_digest(ref),
-            media_type="application/vnd.oci.image.manifest.v1+json",
-            size=2_750_000_000,
-            labels={images.INPUT_HASH_LABEL: "aaa111"},
-        )
-
+    monkeypatch.setattr(config, "find_manifest", lambda explicit=None: explicit or manifest_path)
+    monkeypatch.setattr(config, "load_manifest", _load_manifest)
+    monkeypatch.setattr(
+        config,
+        "load_build_config",
+        lambda path=None: BuildConfig(registry="ghcr.io", namespace="datahenge"),
+    )
+    monkeypatch.setattr(build, "plan", lambda manifest, build_config: _plan(project))
+    monkeypatch.setattr(build, "existing_in_registry", lambda plan, build_config: state.found)
     monkeypatch.setattr(registry, "digest_of", _digest_of)
     monkeypatch.setattr(registry, "retag", _retag)
-    monkeypatch.setattr(registry, "inspect", _inspect)
-    monkeypatch.setattr(images, "inspect_registry", lambda base: (state.catalog, 0))
     return state
 
 
@@ -664,43 +681,60 @@ def test_a_failed_removal_exits_nonzero_without_aborting_the_rest(prunable):
     assert "Could not remove bbb000000000" in result.stderr
 
 
-# --- assign-tag (BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-DEPLOY-004, ADR-050) -----
+# --- assign-tag (BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-DEPLOY-004, ADR-052) -----
 
 
-def test_assign_tag_creates_the_pointer_when_absent(pointers):
-    """The first run against a brand-new environment creates its pointer — no separate
-    'new-tag' step, and no refusal."""
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
+def test_assign_tag_creates_the_pointer_when_a_match_exists(pointers):
+    """The first run against a brand-new environment creates its pointer, proven by a
+    matching image already in the registry — no separate 'new-tag' step, no refusal."""
+    pointers.found = _found("sha256:built")
+
+    result = runner.invoke(cli_build.app, ["assign-tag"])
 
     assert result.exit_code == 0
-    assert pointers.seen["retag"] == ("ghcr.io/datahenge/erpnext-btu-v16:v16", "staging")
+    assert pointers.seen["retag"] == (_PRIMARY_REF, "staging")
     assert "did not exist — created it" in result.stdout
 
 
-def test_assign_tag_refuses_an_undeclared_environment(pointers):
-    """No auto-vivification: a typo must not quietly create an environment."""
-    result = runner.invoke(cli_build.app, ["assign-tag", "stagng", "--latest"])
+def test_assign_tag_refuses_a_manifest_with_no_environment(pointers):
+    """No auto-vivification: a manifest with nothing declared is refused, not guessed."""
+    pointers.environment = None
+
+    result = runner.invoke(cli_build.app, ["assign-tag"])
 
     assert result.exit_code == 2
-    assert "No such environment 'stagng'" in result.stderr
-    assert "production, staging" in result.stderr
+    assert "declares no environment" in result.stderr
     assert "retag" not in pointers.seen
 
 
 def test_assign_tag_moves_an_existing_pointer(pointers):
     pointers.current = "sha256:" + "9" * 64
+    pointers.found = _found("sha256:built")
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "staging"
     assert "moved to" in result.stdout
 
 
+def test_assign_tag_reports_nothing_found_and_writes_nothing(pointers):
+    """Proof, not assertion (ADR-052): with no matching image, assign-tag does nothing —
+    it never triggers a build."""
+    pointers.found = None
+
+    result = runner.invoke(cli_build.app, ["assign-tag"])
+
+    assert result.exit_code == 0
+    assert "nothing in the registry matches" in result.stdout
+    assert "retag" not in pointers.seen
+
+
 def test_dry_run_moves_nothing(pointers):
     pointers.current = "sha256:" + "9" * 64
+    pointers.found = _found("sha256:built")
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "--dry-run"])
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -710,9 +744,10 @@ def test_dry_run_moves_nothing(pointers):
 def test_a_pointer_already_on_the_image_is_reported_not_rewritten(pointers):
     """An assign-tag that changes nothing still writes a manifest; saying so beats a
     cheerful success message that hides it."""
-    pointers.current = pointers.catalog[0].digest
+    pointers.found = _found("sha256:same")
+    pointers.current = "sha256:same"
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag"])
 
     assert result.exit_code == 0
     assert "already points at" in result.stdout
@@ -721,9 +756,11 @@ def test_a_pointer_already_on_the_image_is_reported_not_rewritten(pointers):
 
 def test_production_asks_before_moving(pointers):
     """BR-CLI-010: the production gate, and the default answer is no."""
+    pointers.environment = "production"
     pointers.current = "sha256:" + "9" * 64
+    pointers.found = _found("sha256:built")
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest"], input="n\n")
+    result = runner.invoke(cli_build.app, ["assign-tag"], input="n\n")
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -733,7 +770,10 @@ def test_production_asks_before_moving(pointers):
 def test_production_gate_applies_to_creation_too(pointers):
     """Creating production's pointer for the first time is at least as consequential as
     moving it, so the gate must not be conditioned on which of the two this is."""
-    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest"], input="n\n")
+    pointers.environment = "production"
+    pointers.found = _found("sha256:built")
+
+    result = runner.invoke(cli_build.app, ["assign-tag"], input="n\n")
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -741,18 +781,22 @@ def test_production_gate_applies_to_creation_too(pointers):
 
 
 def test_production_moves_when_confirmed(pointers):
+    pointers.environment = "production"
     pointers.current = "sha256:" + "9" * 64
+    pointers.found = _found("sha256:built")
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest"], input="y\n")
+    result = runner.invoke(cli_build.app, ["assign-tag"], input="y\n")
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "production"
 
 
 def test_yes_skips_the_production_gate_for_automation(pointers):
+    pointers.environment = "production"
     pointers.current = "sha256:" + "9" * 64
+    pointers.found = _found("sha256:built")
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest", "--yes"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "--yes"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "production"
@@ -762,61 +806,74 @@ def test_non_production_is_not_gated(pointers):
     """The gate is deliberately narrow — every environment confirming would train the habit
     of confirming without reading."""
     pointers.current = "sha256:" + "9" * 64
+    pointers.found = _found("sha256:built")
 
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag"])
 
     assert result.exit_code == 0
     assert "retag" in pointers.seen
 
 
-def test_a_selector_is_required(pointers):
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging"])
-
-    assert result.exit_code == 2
-    assert "--latest" in result.stderr
-
-
-def test_selectors_are_mutually_exclusive(pointers):
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest", "--previous"])
-
-    assert result.exit_code == 2
-    assert "only one of" in result.stderr.lower()
-
-
-def test_from_promotes_whatever_another_environment_runs(pointers):
-    """Promotion reads the *source* environment's pointer, not the newest image."""
-    pointers.current = "sha256:" + "9" * 64
-
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--from", "production"])
-
-    assert result.exit_code == 0
-    assert pointers.seen["retag"][0] == "ghcr.io/datahenge/erpnext-btu-v16:production"
-
-
-def test_id_points_at_a_named_tag(pointers):
-    pointers.current = "sha256:" + "9" * 64
-
-    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--id", "v16.0.1-aaa111"])
-
-    assert result.exit_code == 0
-    assert pointers.seen["retag"][0].endswith(":v16.0.1-aaa111")
-
-
 def test_retire_touches_nothing_and_warns_the_tag_persists(pointers):
-    result = runner.invoke(cli_build.app, ["retire", "staging"])
+    result = runner.invoke(cli_build.app, ["retire"])
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
-    assert 'staging = "staging"' in result.stdout
-    assert "[cairn.declared_environments]" in result.stdout
+    assert 'environment = "staging"' in result.stdout
     assert "will still exist" in result.stderr
 
 
-def test_retire_refuses_an_undeclared_environment(pointers):
-    result = runner.invoke(cli_build.app, ["retire", "nope"])
+def test_retire_refuses_a_manifest_with_no_environment(pointers):
+    pointers.environment = None
+
+    result = runner.invoke(cli_build.app, ["retire"])
 
     assert result.exit_code == 2
-    assert "No such environment 'nope'" in result.stderr
+    assert "declares no environment" in result.stderr
+
+
+# --- build --assign-tag (BR-CLI-002a, ADR-052) -------------------------------
+
+
+def _raise_not_found(ref):
+    raise RegistryError(f"{ref} does not exist in the registry.")
+
+
+def test_build_assign_tag_requires_push(stubs):
+    result = runner.invoke(cli_build.app, ["build", "--assign-tag"])
+
+    assert result.exit_code == 2
+    assert "--push" in result.stderr
+
+
+def test_build_assign_tag_retags_after_a_fresh_build(stubs, monkeypatch):
+    """Reuses the digest `build` already resolved — no second resolve-and-check."""
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("staging"))
+    monkeypatch.setattr(registry, "digest_of", _raise_not_found)
+    seen = {}
+    monkeypatch.setattr(
+        registry, "retag", lambda source, tag: seen.setdefault("retag", (str(source), tag))
+    )
+
+    result = runner.invoke(cli_build.app, ["build", "--push", "--assign-tag", "--yes"])
+
+    assert result.exit_code == 0
+    assert seen["retag"][1] == "staging"
+    assert "created it" in result.stdout
+
+
+def test_build_assign_tag_gates_production(stubs, monkeypatch):
+    monkeypatch.setattr(
+        config, "load_manifest", lambda path: _manifest_with_environment("production")
+    )
+    monkeypatch.setattr(registry, "digest_of", _raise_not_found)
+    seen = {}
+    monkeypatch.setattr(registry, "retag", lambda source, tag: seen.setdefault("retag", tag))
+
+    result = runner.invoke(cli_build.app, ["build", "--push", "--assign-tag"], input="n\n")
+
+    assert result.exit_code == 0
+    assert "retag" not in seen
 
 
 # --- push (BR-CLI-003) -----------------------------------------------------
@@ -906,7 +963,9 @@ def test_setup_is_root_gated(tmp_path, monkeypatch):
         setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
     )
 
-    result = runner.invoke(cli_build.app, ["setup", "--client", "acme", "--dry-run"])
+    result = runner.invoke(
+        cli_build.app, ["setup", "--client", "acme", "--environment", "test", "--dry-run"]
+    )
 
     assert result.exit_code == 2
     assert "root" in result.stderr
@@ -934,7 +993,8 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     )
 
     result = runner.invoke(
-        cli_build.app, ["setup", "--client", "acme", "--only", "preflight", "--dry-run"]
+        cli_build.app,
+        ["setup", "--client", "acme", "--environment", "test", "--only", "preflight", "--dry-run"],
     )
 
     assert result.exit_code == 0
@@ -946,13 +1006,24 @@ def test_setup_requires_a_client_name(tmp_path, monkeypatch):
     """No default client (`BR-CLI-022`) — omitting it is a usage error, not a guess."""
     monkeypatch.chdir(tmp_path)
 
-    result = runner.invoke(cli_build.app, ["setup", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["setup", "--environment", "test", "--dry-run"])
 
     assert result.exit_code != 0
     assert "--client" in result.stderr
 
 
-# --- setup-timer (BR-CLI-023, ADR-047) --------------------------------------
+def test_setup_requires_an_environment_name(tmp_path, monkeypatch):
+    """A manifest declares at most one environment (`ADR-052`) — the scaffolded file needs
+    to know which, up front, not as an afterthought edit."""
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(cli_build.app, ["setup", "--client", "acme", "--dry-run"])
+
+    assert result.exit_code != 0
+    assert "--environment" in result.stderr
+
+
+# --- setup-timer (BR-CLI-023, ADR-047, ADR-052) ------------------------------
 
 
 def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
@@ -962,11 +1033,30 @@ def test_setup_timer_is_root_gated(tmp_path, monkeypatch):
     monkeypatch.setattr(
         setup_runner, "_check_root", lambda: setup_runner.Check("root", False, "no")
     )
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("test"))
+    manifest_path = tmp_path / "cairn_test.toml"
+    manifest_path.touch()
 
-    result = runner.invoke(cli_build.app, ["setup-timer", "--dry-run"])
+    result = runner.invoke(
+        cli_build.app, ["setup-timer", "--manifest", str(manifest_path), "--dry-run"]
+    )
 
     assert result.exit_code == 2
     assert "root" in result.stderr
+
+
+def test_setup_timer_requires_a_manifest_with_an_environment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest())  # environment=None
+    manifest_path = tmp_path / "cairn_test.toml"
+    manifest_path.touch()
+
+    result = runner.invoke(
+        cli_build.app, ["setup-timer", "--manifest", str(manifest_path), "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "declares no environment" in result.stderr
 
 
 def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
@@ -975,8 +1065,13 @@ def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
 
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
     monkeypatch.setattr(provision, "find_executable", lambda name: tmp_path / name)
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("test"))
+    manifest_path = tmp_path / "cairn_test.toml"
+    manifest_path.touch()
 
-    result = runner.invoke(cli_build.app, ["setup-timer", "--dry-run"])
+    result = runner.invoke(
+        cli_build.app, ["setup-timer", "--manifest", str(manifest_path), "--dry-run"]
+    )
 
     assert result.exit_code == 0
     assert "[timers]" in result.stderr

@@ -2,7 +2,7 @@
 
 Provisions and operates a local OCI registry: lifecycle (`status`/`start`/`stop`/`restart`),
 introspection (`images`), retention (`prune`), and garbage collection (`gc`). Independent of
-the other two roles — reads no manifest and no `[cairn.declared_environments]` (`BR-REG-001`); every
+the other two roles — reads no manifest and no `[cairn] environment` (`BR-REG-001`); every
 decision comes from `/etc/cairn/registry.toml` and the registry's own API.
 """
 

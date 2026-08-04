@@ -82,8 +82,8 @@ class RegistryConfigError(CairnError):
 
 
 class UnknownEnvironmentError(CairnError):
-    """The named environment is absent from the declared list, and cairn does not
-    create one implicitly (BR-CLI-009, no auto-vivification)."""
+    """The manifest declares no environment, and cairn does not invent one implicitly
+    (BR-CLI-009, no auto-vivification, ADR-052)."""
 
 
 class DescriptorError(CairnError):

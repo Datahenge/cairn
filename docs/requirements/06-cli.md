@@ -14,7 +14,7 @@ governs the CLI is shared UX convention (logging, `--json`, config discovery, he
 applying identically across binaries. Mostly *cites* verbs defined in other areas; adds the
 create/move/retire guards, global flags, and output/exit conventions. Conventions:
 `/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`,
-`ADR-046`, `ADR-048`.
+`ADR-046`, `ADR-048`, `ADR-052`.
 
 ---
 
@@ -32,22 +32,34 @@ ADR-048)*
 [--dry-run]` — build the image from `cairn.toml` (resolve refs → apps.json → tagged image +
 provenance labels). **Default is build-only**; `--push` also uploads. *(BR-BUILD-*)*
 
+**`BR-CLI-002a`** *(build's optional `--assign-tag`, `ADR-052`)* — `build` MAY be given
+`--assign-tag` (boolean, no value): after a successful `--push` (or a no-op short-circuit,
+`BR-BUILD-014`/`014a`), it performs the same retag step `assign-tag` (`BR-CLI-004`) does,
+reusing the digest `build` already resolved rather than re-running `assign-tag`'s own
+resolve-and-check from scratch. `--assign-tag` without `--push` MUST be refused as a
+contradiction — nothing was pushed to retag. The `:production` gate (`BR-CLI-010`) applies the
+same as it does to standalone `assign-tag`. *(BR-BUILD-014a, BR-CLI-004, BR-CLI-010, ADR-052)*
+
 **`BR-CLI-003`** *(push)* — `cairn-build push [--id <tag>]` — upload a built image to the
 registry (default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*
 
-**`BR-CLI-004`** *(pointer verbs — assign / retire, `ADR-050`)* —
-- `cairn-build assign-tag <env> <selector>` — **create** the environment's pointer if it does
-  not exist yet, or **move** it (server-side retag, no rebuild) if it does. The command reports
-  which of the two happened.
-- `cairn-build retire <env>` — **decommission** an environment from cairn (see `BR-CLI-009`).
+**`BR-CLI-004`** *(pointer verbs — assign / retire, `ADR-052`)* — Neither command takes an
+environment name as an argument; both take `--manifest <path>` and read the environment from
+the file (`BR-DEPLOY-009a`).
 
-Selector for `assign-tag`: `--latest | --previous | --id <ident> | --from <env>` (`--from`
-points at whatever another env currently runs → cross-env promotion). Exactly one selector MUST
-be given; two or more is an error naming the conflict, since each selects a different image.
+- `cairn-build assign-tag --manifest <path> [--yes] [--dry-run]` — resolves the manifest's refs
+  to their **current** commits, computes the deterministic primary tag (`BR-BUILD-008`), and
+  checks the registry. **Found:** retags the manifest's declared environment onto that digest
+  (server-side, no rebuild) and reports it. **Not found:** reports that and does **nothing** —
+  `assign-tag` MUST NOT trigger a build. There is no selector menu (`--latest`/`--previous`/
+  `--id`/`--from`, `ADR-050`, retired) — there is only ever one well-defined answer: what the
+  manifest's own refs currently, factually resolve to.
+- `cairn-build retire --manifest <path>` — **decommission** the manifest's declared environment
+  from cairn (see `BR-CLI-009`).
 
-An earlier draft added an opt-in `--install-app <apps>` here (predating the `ADR-050` merge). It
-was **struck** 2026-07-25 (`ADR-037`, `BR-DEPLOY-003a`): installing a Frappe App is the
-operator's act, not a pointer move's. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023)*
+An earlier draft added an opt-in `--install-app <apps>` here. It was **struck** 2026-07-25
+(`ADR-037`, `BR-DEPLOY-003a`): installing a Frappe App is the operator's act, not a pointer
+move's. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023, ADR-052)*
 
 **`BR-CLI-005`** *(introspection)* — `cairn-build images [--tags] [--local] [--json]`.
 
@@ -68,17 +80,20 @@ mistaken for a complete inventory. *(BR-DEPLOY-005, BR-BUILD-011, BR-BUILD-014, 
 **`BR-CLI-006`** *(vendor)* — `cairn-build vendor status | sync` — thin ventwig wrappers.
 *(BR-VEND-*)*
 
-**`BR-CLI-009`** *(existence guards; no auto-vivification, `ADR-050`)* — Environment existence
-as a **name** is set by cairn's **declared environment list** (control-side, `BR-DEPLOY-009`):
-`assign-tag <env>` and `retire <env>` MUST **error if `<env>` is not declared**
-(`No such environment '<env>'`), regardless of whether its registry pointer exists yet.
+**`BR-CLI-009`** *(no declared environment, no auto-vivification, `ADR-052`)* — `assign-tag
+--manifest <path>` and `retire --manifest <path>` MUST **error if that manifest declares no
+environment** (`<path> declares no environment`) — there is nothing to point or decommission.
+Since a manifest declares at most one environment (`BR-DEPLOY-009a`), there is no "wrong name"
+to guard against — only "no name at all."
 
-Whether the pointer itself already exists is separate, and `assign-tag` MUST **report, not
-refuse on it**: create if absent, move if present, stating which occurred.
+Whether the environment's registry pointer already exists is a separate, later question
+`assign-tag` answers by resolving and checking the registry (`BR-CLI-004`), never by refusing
+up front.
 
-`retire <env>` removes `<env>` from the declared list, touches **no images**, and MUST warn
-that the **registry tag name persists** (GHCR has no per-tag delete — see `03-deploy.md`).
-*(BR-DEPLOY-009)*
+`retire --manifest <path>` removes the declaration from that manifest (the operator's edit,
+not cairn's — cairn only validates and warns), touches **no images**, and MUST warn that the
+**registry tag name persists** (GHCR has no per-tag delete — see `03-deploy.md`).
+*(BR-DEPLOY-009, BR-DEPLOY-009a, ADR-052)*
 
 **`BR-CLI-010`** *(prod gate)* — Any command that creates, moves, or retires a
 **`:production`** pointer MUST require **explicit confirmation** — interactive prompt by
@@ -238,7 +253,12 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
   available memory, `setup`'s own preflight floors (`BR-DEPLOY-021`), reported here too;
   **`git`**, which cairn resolves every manifest ref with (`BR-BUILD-005`); `ventwig status`
   clean; config valid; `/etc/cairn`'s current group, permissions, and the invoking user's
-  membership, reported only, never mutated (`BR-CFG-015`, `ADR-043`).
+  membership, reported only, never mutated (`BR-CFG-015`, `ADR-043`); and, extending the
+  existing known-manifests listing (`BR-CLI-022`), a **duplicate-declaration check**
+  (`ADR-052`): every `.toml` found under a client's directory is read for its `image_name` +
+  `environment`, and any (`image_name`, `environment`) pair repeating within that client MUST
+  be reported — case-insensitively, so `staging` and `Staging` collide. This is validation
+  only; no command resolves an environment name to a manifest this way, per `BR-DEPLOY-009a`.
 - **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
   `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
 - **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under
@@ -263,25 +283,33 @@ only path, since every action it takes MUST remain documented for an operator to
 `ADR-043`'s `/etc/cairn` group-sharing stage runs as part of it unchanged. *(BR-DEPLOY-021,
 BR-DEPLOY-022, ADR-040, ADR-043, ADR-046)*
 
-**`BR-CLI-022`** *(canonical manifest home + scaffolding, `ADR-047`)* — `cairn-build setup`
-requires `--client <name>` (no default; omitting it fails) and provisions
+**`BR-CLI-022`** *(canonical manifest home + scaffolding, `ADR-047`, `ADR-052`)* — `cairn-build
+setup` requires `--client <name>` (no default; omitting it fails) and provisions
 `/srv/cairn/<name>/` — creating `/srv/cairn/` first if absent — group-shared like `/etc/cairn`
 (`BR-CLI-021`, `ADR-043`). Cairn MUST NOT read, list, or assume anything about sibling paths
 under `/srv` — only `/srv/cairn/` is its namespace.
 
-If `/srv/cairn/<name>/cairn.toml` is absent, `setup` scaffolds it from the canonical
-illustrative manifest (`README.md`/`userdocs/reference/manifest.md`, `BR-BUILD-003`'s ordered-list comment
-included); an existing one MUST NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report
-manifests found under `/srv/cairn/*/cairn.toml`, informationally only, never for selection —
-`BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-021, ADR-043, ADR-047)*
+`setup` also requires `--environment <name>` and scaffolds a **distinctly-named** manifest,
+`/srv/cairn/<client>/cairn_<environment>.toml`, if absent — from the canonical illustrative
+manifest (`README.md`/`userdocs/reference/manifest.md`, `BR-BUILD-003`'s ordered-list comment
+included, `[cairn] environment` pre-filled), so a client directory holding several environments
+holds several distinctly-named files, per `BR-DEPLOY-009`'s 1:1 model. An existing file MUST
+NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report manifests found under
+`/srv/cairn/*/*.toml`, informationally and for the duplicate-declaration check (`BR-CLI-007`),
+never for selection — `BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-009,
+BR-DEPLOY-021, ADR-043, ADR-047, ADR-052)*
 
-**`BR-CLI-023`** *(setup-timer, `ADR-047`)* — Both CLIs carry a `setup-timer` subcommand,
-separate from `setup`, installing only the build/reconcile systemd timer — enabled, not
-started, unchanged in substance from `ADR-046`'s `setup --only timers`. Split out for
-discoverability in `--help`, where a first-time reader would otherwise miss the flag before
-their first manual build or reconcile. `cairn-build`'s script runs `build --push`,
-`assign-tag --latest --yes`, then `prune --keep 1 --yes` — disk cleanup rides the same
-script rather than a separate timer (`ADR-051`). *(ADR-046, ADR-047, ADR-050, ADR-051)*
+**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-052`)* — Both CLIs carry a `setup-timer`
+subcommand, separate from `setup`, installing only the build/reconcile systemd timer —
+enabled, not started, unchanged in substance from `ADR-046`'s `setup --only timers`. Split out
+for discoverability in `--help`, where a first-time reader would otherwise miss the flag
+before their first manual build or reconcile. Takes `--manifest <path>` only — no
+`--environment` flag; the unit names are parameterized from the manifest's own declared
+environment (`cairn-build-<environment>.service`/`.timer`), so `setup-timer` for two different
+manifests coexists on one host. `cairn-build`'s script runs `build --push --assign-tag --yes`,
+then `prune --keep 1 --yes` — disk cleanup rides the same script rather than a separate timer
+(`ADR-051`), and the retag step rides `build`'s own `--assign-tag` flag (`BR-CLI-002a`) rather
+than a second command. *(ADR-046, ADR-047, ADR-051, ADR-052)*
 
 ## E. Shared conventions (all three CLIs)
 

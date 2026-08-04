@@ -1,19 +1,22 @@
-"""Tests for environment pointers (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004/009a).
+"""Tests for environment pointers (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004/009a, ADR-052).
 
-The registry transport is stubbed; what is under test is the declaration model — which
-environments exist, which pointer moves are permitted, and how a selector chooses an image.
+The registry transport is stubbed; what is under test is the declaration model — at most one
+environment per manifest — and the resolve/check/retag sequence that replaces the old
+selector menu.
 
-Boundaries: the CLI's flag handling and the production prompt live in `test_cli.py`; the
-manifest's own parsing of `[cairn.declared_environments]` lives in `test_config.py`.
+Boundaries: the CLI's flag handling and the production prompt live in `test_cli_build.py`; the
+manifest's own parsing of `[cairn] environment` lives in `test_config.py`; `build.plan()`'s own
+resolution logic lives in `test_build.py`.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
-from cairn import environments, registry
+from cairn import build, environments, registry
 from cairn.config import App, BuildConfig, Frappe, Manifest
 from cairn.errors import RegistryError, UnknownEnvironmentError
 from cairn.images import INPUT_HASH_LABEL
@@ -21,12 +24,12 @@ from cairn.images import INPUT_HASH_LABEL
 CONFIG = BuildConfig(registry="ghcr.io", namespace="datahenge")
 
 
-def _manifest(**environments_):
+def _manifest(environment="production"):
     return Manifest(
         image_name="erpnext-btu-v16",
         frappe=Frappe("https://github.com/frappe/frappe", "v16.0.1"),
         apps=(App("erpnext", "https://github.com/frappe/erpnext", "v16.0.1"),),
-        declared_environments=environments_ or {"production": "production", "staging": "staging"},
+        environment=environment,
     )
 
 
@@ -40,257 +43,226 @@ def _remote(digest, tag="v16"):
     )
 
 
-# --- the declared list (BR-DEPLOY-009a) -------------------------------------
+def _plan():
+    return build.BuildPlan(
+        image_base="ghcr.io/datahenge/erpnext-btu-v16",
+        primary_tag="v16-aaa111",
+        moving_tag="latest",
+        build_args={},
+        cache_bust="x",
+        labels={},
+        resolution=None,  # not read by check()
+        apps_json="[]",
+        context=Path("/tmp"),
+        containerfile=Path("/tmp/Containerfile"),
+        engine_name="docker",
+    )
 
 
-def test_declared_environments_resolve_to_repository_references():
+# --- the declared environment (BR-DEPLOY-009a) ------------------------------
+
+
+def test_a_declared_environment_resolves_to_a_repository_reference():
     """The environment's tag is composed onto the same base `cairn build` pushes to, so the
     pointer and the images it may point at cannot end up in different repositories."""
     declared = environments.declared(_manifest(), CONFIG)
 
-    assert set(declared) == {"production", "staging"}
-    assert str(declared["staging"].ref) == "ghcr.io/datahenge/erpnext-btu-v16:staging"
+    assert declared is not None
+    assert declared.name == "production"
+    assert str(declared.ref) == "ghcr.io/datahenge/erpnext-btu-v16:production"
 
 
 def test_a_manifest_declaring_none_has_none():
-    """Absent the table, no environment exists — a fact the verbs act on, not a gap to fill."""
+    """Absent `[cairn] environment`, no environment exists — a fact the commands act on, not
+    a gap to fill."""
     manifest = Manifest(
-        image_name="erpnext-btu-v16",
-        frappe=Frappe("u", "v16.0.1"),
-        apps=(),
-        declared_environments={},
+        image_name="erpnext-btu-v16", frappe=Frappe("u", "v16.0.1"), apps=(), environment=None
     )
 
-    assert environments.declared(manifest, CONFIG) == {}
+    assert environments.declared(manifest, CONFIG) is None
 
 
-def test_requiring_an_undeclared_environment_lists_what_exists():
-    with pytest.raises(UnknownEnvironmentError, match="production, staging"):
-        environments.require(_manifest(), CONFIG, "prod")
+def test_requiring_a_manifest_with_no_environment_is_refused():
+    manifest = Manifest(image_name="x", frappe=Frappe("u", "v16"), apps=(), environment=None)
+
+    with pytest.raises(UnknownEnvironmentError, match=re.escape("declares no environment")):
+        environments.require(manifest, CONFIG)
 
 
-def test_requiring_one_when_none_are_declared_says_how_to_declare_one():
-    manifest = Manifest(
-        image_name="x", frappe=Frappe("u", "v16"), apps=(), declared_environments={}
-    )
-
-    with pytest.raises(UnknownEnvironmentError, match=re.escape("[cairn.declared_environments]")):
-        environments.require(manifest, CONFIG, "production")
-
-
-def test_an_environments_tag_may_differ_from_its_name():
-    """The name is what the operator types; the tag is what a registry's conventions require."""
-    declared = environments.declared(_manifest(production="live"), CONFIG)
-
-    assert declared["production"].tag == "live"
-    assert declared["production"].is_production is True
-
-
-def test_production_is_matched_on_the_name_not_the_tag():
+def test_production_is_matched_on_the_name_case_insensitively():
     """The confirmation quotes the name back, so that is what must decide the gate."""
-    declared = environments.declared(_manifest(production="stable", staging="production"), CONFIG)
-
-    assert declared["production"].is_production is True
-    assert declared["staging"].is_production is False
-
-
-# --- guards (BR-CLI-009, ADR-050) -------------------------------------------
+    assert environments.declared(_manifest("production"), CONFIG).is_production is True
+    assert environments.declared(_manifest("staging"), CONFIG).is_production is False
+    assert environments.declared(_manifest("PRODUCTION"), CONFIG).is_production is True
 
 
-def _move(previous):
-    return environments.Move(
-        environment=environments.declared(_manifest(), CONFIG)["staging"],
-        source=_remote("sha256:" + "a" * 64),
-        previous_digest=previous,
+# --- Assignment: the shared retag mechanics (ADR-052) -----------------------
+
+
+def test_check_known_reads_the_current_pointer_itself(monkeypatch):
+    """`build --assign-tag` (`BR-CLI-002a`) supplies the digest it already resolved, but
+    still needs `check_known` to read what the environment's tag *currently* points at."""
+    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:previous")
+    environment = environments.declared(_manifest(), CONFIG)
+    source_ref = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111")
+
+    assignment = environments.check_known(environment, source_ref, "sha256:new")
+
+    assert assignment.digest == "sha256:new"
+    assert assignment.previous_digest == "sha256:previous"
+
+
+def test_check_known_reports_creation_when_no_pointer_exists_yet():
+    environment = environments.declared(_manifest(), CONFIG)
+    source_ref = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111")
+    assignment = environments.Assignment(
+        environment=environment,
+        source_ref=source_ref,
+        digest="sha256:" + "a" * 64,
+        previous_digest=None,
     )
 
-
-def test_action_reports_created_when_no_pointer_exists_yet():
-    """assign-tag's first run against a brand-new environment creates, never refuses."""
-    assert environments.action(_move(None)) == "created"
+    assert assignment.found is True
+    assert assignment.is_noop is False
 
 
-def test_action_reports_moved_when_a_pointer_already_exists():
-    assert environments.action(_move("sha256:" + "9" * 64)) == "moved"
-
-
-# --- selectors (BR-CLI-004) -------------------------------------------------
-
-
-@pytest.fixture
-def declared_staging(monkeypatch):
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "9" * 64)
-    return environments.declared(_manifest(), CONFIG)["staging"]
-
-
-def test_latest_picks_the_newest_candidate(declared_staging):
-    newest, older = _remote("sha256:new"), _remote("sha256:old")
-
-    move = environments.plan_move(
-        declared_staging, selector=environments.Selector.LATEST, candidates=[newest, older]
+def test_check_known_reports_a_noop_when_already_pointing_there():
+    environment = environments.declared(_manifest(), CONFIG)
+    source_ref = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111")
+    assignment = environments.Assignment(
+        environment=environment,
+        source_ref=source_ref,
+        digest="sha256:" + "a" * 64,
+        previous_digest="sha256:" + "a" * 64,
     )
 
-    assert move.source.digest == "sha256:new"
+    assert assignment.is_noop is True
 
 
-def test_latest_with_no_candidates_says_to_build_first(declared_staging):
-    with pytest.raises(RegistryError, match="cairn build --push"):
-        environments.plan_move(
-            declared_staging, selector=environments.Selector.LATEST, candidates=[]
-        )
-
-
-def test_previous_skips_whatever_is_running_now(monkeypatch):
-    """A rollback target is 'an image that is not the one running', which is not the same
-    question as 'an image older than the current one' — a pointer may already be rolled back."""
-    running = "sha256:" + "9" * 64
-    monkeypatch.setattr(registry, "digest_of", lambda ref: running)
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-
-    move = environments.plan_move(
-        staging,
-        selector=environments.Selector.PREVIOUS,
-        candidates=[_remote(running), _remote("sha256:earlier")],
+def test_check_known_reports_a_move_when_pointing_elsewhere():
+    environment = environments.declared(_manifest(), CONFIG)
+    source_ref = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111")
+    assignment = environments.Assignment(
+        environment=environment,
+        source_ref=source_ref,
+        digest="sha256:" + "a" * 64,
+        previous_digest="sha256:" + "9" * 64,
     )
 
-    assert move.source.digest == "sha256:earlier"
+    assert assignment.found is True
+    assert assignment.is_noop is False
 
 
-def test_previous_with_nothing_earlier_is_refused(monkeypatch):
-    running = "sha256:" + "9" * 64
-    monkeypatch.setattr(registry, "digest_of", lambda ref: running)
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-
-    with pytest.raises(RegistryError, match="No earlier image"):
-        environments.plan_move(
-            staging, selector=environments.Selector.PREVIOUS, candidates=[_remote(running)]
-        )
-
-
-def test_from_reads_the_source_environments_pointer(monkeypatch):
-    """Promotion deploys what the upstream environment *actually runs*, which may be older
-    than the newest image — that is the entire point of promoting rather than deploying."""
-    inspected: list[str] = []
-
-    def _inspect(ref):
-        inspected.append(str(ref))
-        return _remote("sha256:whatever-production-runs")
-
-    monkeypatch.setattr(registry, "inspect", _inspect)
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "9" * 64)
-    declared = environments.declared(_manifest(), CONFIG)
-
-    move = environments.plan_move(
-        declared["staging"],
-        selector=environments.Selector.FROM_ENV,
-        source_environment=declared["production"],
+def test_render_names_the_environment_and_digest():
+    environment = environments.declared(_manifest(), CONFIG)
+    source_ref = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111")
+    assignment = environments.Assignment(
+        environment=environment,
+        source_ref=source_ref,
+        digest="sha256:" + "a" * 64,
+        previous_digest="sha256:old",
     )
 
-    assert move.source.digest == "sha256:whatever-production-runs"
-    assert inspected == ["ghcr.io/datahenge/erpnext-btu-v16:production"]
+    rendered = assignment.render()
+
+    assert "environment  production" in rendered
+    assert "sha256:" + "a" * 64 in rendered
+    assert "currently    sha256:old" in rendered
 
 
-def test_id_inspects_that_exact_tag(monkeypatch):
-    inspected: list[str] = []
-    monkeypatch.setattr(
-        registry,
-        "inspect",
-        lambda ref: (inspected.append(str(ref)), _remote("sha256:named"))[1],
-    )
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "9" * 64)
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-
-    environments.plan_move(
-        staging, selector=environments.Selector.IDENTIFIER, identifier="v16.0.1-aaa111"
+def test_render_when_nothing_matches_says_so_without_a_digest():
+    environment = environments.declared(_manifest(), CONFIG)
+    assignment = environments.Assignment(
+        environment=environment, source_ref=None, digest=None, previous_digest=None
     )
 
-    assert inspected == ["ghcr.io/datahenge/erpnext-btu-v16:v16.0.1-aaa111"]
+    assert "nothing in the registry matches" in assignment.render()
 
 
-def test_a_selector_called_without_its_argument_is_a_bug_not_user_error(declared_staging):
-    """These are unreachable through the CLI, which validates first; if one fires it is
-    cairn's fault and should surface as an internal error, not an actionable message."""
-    with pytest.raises(ValueError, match="requires an identifier"):
-        environments.plan_move(declared_staging, selector=environments.Selector.IDENTIFIER)
-
-    with pytest.raises(ValueError, match="requires a source environment"):
-        environments.plan_move(declared_staging, selector=environments.Selector.FROM_ENV)
+# --- apply(): the server-side write (BR-DEPLOY-004) -------------------------
 
 
-# --- the move itself (BR-DEPLOY-004) ---------------------------------------
-
-
-def test_a_nonexistent_pointer_reads_as_no_previous_digest(monkeypatch):
-    """The normal state before a first deploy, and not a failure."""
-
-    def _absent(ref):
-        raise RegistryError("does not exist")
-
-    monkeypatch.setattr(registry, "digest_of", _absent)
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-
-    move = environments.plan_move(
-        staging, selector=environments.Selector.LATEST, candidates=[_remote("sha256:a")]
-    )
-
-    assert move.previous_digest is None
-    assert "does not exist yet" in move.render()
-
-
-def test_a_move_onto_the_same_image_is_recognised_as_a_noop(monkeypatch):
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:same")
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-
-    move = environments.plan_move(
-        staging, selector=environments.Selector.LATEST, candidates=[_remote("sha256:same")]
-    )
-
-    assert move.is_noop is True
-    assert "would change nothing" in move.render()
-
-
-def test_applying_a_move_retags_server_side(monkeypatch):
-    """No rebuild and no pull: the whole of deploy, promote and rollback."""
+def test_apply_retags_server_side(monkeypatch):
+    """No rebuild and no pull: the whole of deploy, promote, and rollback."""
     seen: dict = {}
     monkeypatch.setattr(
         registry,
         "retag",
         lambda source, tag: (seen.update(source=str(source), tag=tag), "sha256:done")[1],
     )
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-
-    digest = environments.apply(
-        environments.Move(
-            environment=staging, source=_remote("sha256:a", tag="v16"), previous_digest=None
-        )
+    environment = environments.declared(_manifest(), CONFIG)
+    source_ref = registry.parse_ref("ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111")
+    assignment = environments.Assignment(
+        environment=environment, source_ref=source_ref, digest="sha256:a", previous_digest=None
     )
+
+    digest = environments.apply(assignment)
 
     assert digest == "sha256:done"
-    assert seen == {"source": "ghcr.io/datahenge/erpnext-btu-v16:v16", "tag": "staging"}
+    assert seen == {
+        "source": "ghcr.io/datahenge/erpnext-btu-v16:v16-aaa111",
+        "tag": "production",
+    }
 
 
-def test_the_rendered_move_names_the_digest_that_will_deploy():
-    """The production confirmation quotes this, so it must be the decided digest and not the
-    selector that will later choose one."""
-    staging = environments.declared(_manifest(), CONFIG)["staging"]
-    move = environments.Move(
-        environment=staging, source=_remote("sha256:" + "a" * 64), previous_digest="sha256:old"
+def test_apply_refuses_to_write_nothing():
+    environment = environments.declared(_manifest(), CONFIG)
+    assignment = environments.Assignment(
+        environment=environment, source_ref=None, digest=None, previous_digest=None
     )
 
-    rendered = move.render()
-    assert "sha256:" + "a" * 64 in rendered
-    assert "currently    sha256:old" in rendered
-    assert "input hash   aaa111" in rendered
+    with pytest.raises(AssertionError):
+        environments.apply(assignment)
+
+
+# --- check(): resolve, then check the registry (ADR-052) --------------------
+
+
+def test_check_finds_a_match_and_reports_the_current_pointer(monkeypatch):
+    """`check` reuses `build.plan()`'s own resolution, so the tag it looks for is exactly
+    the one a real build of this manifest would produce."""
+    monkeypatch.setattr(build, "plan", lambda manifest, build_config: _plan())
+    monkeypatch.setattr(
+        build, "existing_in_registry", lambda plan, build_config: _remote("sha256:found")
+    )
+    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:old")
+
+    assignment = environments.check(_manifest(), CONFIG)
+
+    assert assignment.found is True
+    assert assignment.digest == "sha256:found"
+    assert assignment.previous_digest == "sha256:old"
+
+
+def test_check_reports_nothing_found_without_touching_the_registry_tag(monkeypatch):
+    monkeypatch.setattr(build, "plan", lambda manifest, build_config: _plan())
+    monkeypatch.setattr(build, "existing_in_registry", lambda plan, build_config: None)
+
+    def _absent(ref):
+        raise RegistryError("does not exist")
+
+    monkeypatch.setattr(registry, "digest_of", _absent)
+    retagged = []
+    monkeypatch.setattr(registry, "retag", lambda source, tag: retagged.append(tag))
+
+    assignment = environments.check(_manifest(), CONFIG)
+
+    assert assignment.found is False
+    assert retagged == []
+
+
+# --- retire (BR-CLI-009) -----------------------------------------------------
 
 
 def test_retire_validates_but_removes_nothing():
     """cairn deletes no tag and edits no manifest; retirement is the operator's edit."""
-    retiring = environments.retire(_manifest(), CONFIG, "staging")
+    retiring = environments.retire(_manifest("staging"), CONFIG)
 
     assert retiring.name == "staging"
-    assert retiring.tag == "staging"
 
 
-def test_retiring_an_undeclared_environment_is_refused():
-    with pytest.raises(UnknownEnvironmentError, match="No such environment"):
-        environments.retire(_manifest(), CONFIG, "nope")
+def test_retiring_a_manifest_with_no_environment_is_refused():
+    manifest = Manifest(image_name="x", frappe=Frappe("u", "v16"), apps=(), environment=None)
+
+    with pytest.raises(UnknownEnvironmentError):
+        environments.retire(manifest, CONFIG)

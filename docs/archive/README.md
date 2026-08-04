@@ -21,6 +21,9 @@ needed.
 | [023-opt-in-bench-install-app-never-automatic.md](023-opt-in-bench-install-app-never-automatic.md) | `ADR-023` | `ADR-037` |
 | [028-cairn-doctor-is-role-aware-detected-from-context.md](028-cairn-doctor-is-role-aware-detected-from-context.md) | `ADR-028` | `ADR-046` |
 | [041-the-machine-build-config-file-is-named-builder-toml-not-config.md](041-the-machine-build-config-file-is-named-builder-toml-not-config.md) | `ADR-041` (in `decisions/`) | `ADR-042` |
+| [033-the-declared-environment-list-is-a-cairn-environments-table-in.md](033-the-declared-environment-list-is-a-cairn-environments-table-in.md) | `ADR-033` | `ADR-052` |
+| [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `ADR-049` (in `decisions/`) | `ADR-052` |
+| [050-new-tag-and-retag-merge-into-assign-tag.md](050-new-tag-and-retag-merge-into-assign-tag.md) | `ADR-050` | `ADR-052` |
 
 ## Index — archived-for-size
 
