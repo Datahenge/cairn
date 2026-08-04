@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "datahenge-cairn"
-version = "0.3.3"
+version = "0.3.4"
 description = "Wrapper around frappe_docker for reproducible ERPNext image builds and pull-based deploys on a single VPS."
 readme = "README.md"
 requires-python = ">=3.11"
