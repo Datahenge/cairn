@@ -28,3 +28,12 @@ sanctioned path if it ever becomes essential is a deliberate fork (`ADR-021`).
 **Ordered list:** `[[cairn.apps]]` order is significant (install order); documented
 prominently in `README.md` and MUST appear inline in every shipped template
 (`BR-BUILD-003`). Requirements: `docs/requirements/02-build.md`.
+
+**Branch vs. tag is a real choice, not a lint to silence (added 2026-08-04).** A branch
+(e.g. `version-16`) always resolves to that branch's newest commit at build time, so pinning
+to one lets a manifest auto-track a target's latest release with no edit required — that is
+exactly "always the latest" as a stated intent, not a mistake. The cost is reproducibility:
+two builds of the same manifest, days apart, can resolve to different commits and produce
+different images. A tag trades the auto-update away for a fixed commit. `BR-BUILD-005`
+warns rather than refuses for this reason, and the scaffolded template (`BR-CLI-022`)
+defaults to a tag, since a first-time user hasn't yet stated which tradeoff they want.

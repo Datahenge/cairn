@@ -6,7 +6,7 @@ purpose: BR-BUILD requirements — building a custom ERPNext image from a manife
 
 # BR-BUILD — Image Build Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-04_
 
 Requirements for building a custom ERPNext image from a manifest, using the vendored
 `frappe_docker` `custom/Containerfile`. Conventions: see `/CLAUDE.md`. Decisions cited:
@@ -42,7 +42,9 @@ resolve dependencies. This rule MUST be documented in `README.md`, and every shi
 **`BR-BUILD-005`** — Refs pin by **branch or tag only** (raw commit SHA unsupported). cairn
 MUST resolve every ref (Frappe + each app) to its commit at build time and record it in
 provenance; it MUST NOT freeze commits into the build. The manifest SHOULD pin to tags;
-cairn SHOULD warn when a moving branch is used. *(ADR-015)*
+cairn SHOULD warn when a moving branch is used — deliberately, not merely tolerated: it lets
+a manifest auto-track a target's latest release, at the cost of reproducibility (`ADR-015`
+has the tradeoff). *(ADR-015)*
 
 **`BR-BUILD-006`** — `apps.json` MUST be passed only as a **build secret**
 (`--secret id=apps_json`), never as a build-arg. *(ADR-015, ADR-027)*

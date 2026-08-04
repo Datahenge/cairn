@@ -20,6 +20,23 @@ dropped back down to match. `W-014` closed.
 
 ---
 
+## 2026-08-04 (later — scaffolded manifest defaults to tags, not `version-16`)
+
+Surfaced doing a real first build: `cairn-build build --dry-run` correctly warned that
+pinning to the `version-16` branch is non-reproducible (`BR-BUILD-005`), and the shipped
+template was pinning to it by example. Changed the one shared template
+(`src/cairn/provision.py` `MANIFEST_TEMPLATE`, `README.md`, `userdocs/reference/manifest.md`
+— kept in sync per `ADR-047`) to pin Frappe/ERPNext to tags (`v16.25.0`/`v16.26.1`) instead.
+
+No requirement changed — `BR-BUILD-005` already said the manifest *should* pin to tags and
+cairn *should* warn on a branch; the template just wasn't following its own advice. Added a
+rationale note to `ADR-015` (kept `02-build.md` within its word-count ceiling) and to
+`userdocs/reference/manifest.md`'s `ref` row: branch pinning is a **deliberate,
+still-supported** choice for a user who wants every build to auto-track a moving target's
+latest release, not a mistake cairn merely tolerates — hence warn, not refuse.
+
+---
+
 ## 2026-08-04 — `CONFIGURATION.md` retired; reference migrated to `userdocs/`
 
 Retired, not rewritten — resolves `DOCS-01`. Content re-verified against source, split into

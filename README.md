@@ -50,13 +50,19 @@ series = "v16"
 
 [cairn.frappe]
 url = "https://github.com/frappe/frappe"
-ref = "version-16"
+ref = "v16.25.0"
 
 [[cairn.apps]]
 name = "erpnext"
 url = "https://github.com/frappe/erpnext"
-ref = "version-16"
+ref = "v16.26.1"
 ```
+
+`ref` takes a tag or a branch. A tag is reproducible — the same tag always resolves to the
+same commit. A branch such as `version-16` is a moving pointer: it always builds that
+branch's newest commit, which is convenient if what you actually want is "always the
+latest release," at the cost of two builds from the same manifest potentially producing
+different images. cairn warns, but does not refuse, when a manifest pins to a branch.
 
 Every command names its manifest explicitly — `--manifest <path>`, or `$CAIRN_MANIFEST` if
 you'd rather not repeat the flag. cairn never searches a directory for one: on a shared

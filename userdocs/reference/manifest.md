@@ -13,20 +13,22 @@ series = "v16"                      # the readable half of the image tag
 
 [cairn.frappe]
 url = "https://github.com/frappe/frappe"
-ref = "version-16"
+ref = "v16.25.0"                    # a tag: reproducible. A branch (e.g. "version-16")
+                                     # always builds its latest commit instead — cairn warns
+                                     # when one is used, but it stays supported on purpose.
 
 # Order matters: apps install in this order, and cairn never reorders or resolves
 # dependencies for you. List every app after the apps it depends on.
 [[cairn.apps]]
 name = "erpnext"
 url = "https://github.com/frappe/erpnext"
-ref = "version-16"
+ref = "v16.26.1"
 
 # Uncomment and edit to add another app, after the apps it depends on:
 # [[cairn.apps]]
 # name = "your_custom_app"
 # url = "https://github.com/your-org/your_custom_app"
-# ref = "version-16"
+# ref = "v1.2.3"
 
 [cairn.build]
 python_version = "3.14.2"
@@ -57,7 +59,7 @@ through the app list.
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `url` | yes | Git URL to clone. |
-| `ref` | yes | Branch or tag — not a commit SHA. A 40-character hex string is rejected outright: cairn resolves refs to commits itself and records the result, so pinning a literal commit here would bypass that and go stale silently. |
+| `ref` | yes | Branch or tag — not a commit SHA. A 40-character hex string is rejected outright: cairn resolves refs to commits itself and records the result, so pinning a literal commit here would bypass that and go stale silently. **Tags are reproducible** — the same tag always resolves to the same commit, which is why the scaffolded template pins to one. **A branch (e.g. `version-16`) is a moving pointer** — cairn resolves it fresh at every build, so it's a legitimate way to always pick up the newest release without editing the manifest; the tradeoff is that two builds from the same manifest, days apart, can produce different images. cairn warns rather than refuses when a manifest pins to a branch, since that may be exactly what you want. |
 
 ## `[[cairn.apps]]`
 
