@@ -67,6 +67,22 @@ def known_manifests_ok(monkeypatch):
     )
 
 
+@pytest.fixture
+def disk_ok(monkeypatch):
+    """Composition tests must not depend on how much free disk the test host has."""
+    monkeypatch.setattr(
+        doctor, "check_disk", lambda selected: doctor.CheckResult.of("free disk", True, "ok")
+    )
+
+
+@pytest.fixture
+def memory_ok(monkeypatch):
+    """Composition tests must not depend on how much memory the test host has."""
+    monkeypatch.setattr(
+        doctor, "check_memory", lambda: doctor.CheckResult.of("available memory", True, "ok")
+    )
+
+
 def _stub_config(monkeypatch, build_config, apps=()):
     monkeypatch.setattr(doctor.config, "find_manifest", lambda explicit=None: Path("cairn.toml"))
     monkeypatch.setattr(
@@ -255,11 +271,118 @@ def test_engine_failure_is_reported_not_raised(monkeypatch):
     assert result.status is doctor.Status.FAIL and selected is None
 
 
+# --- disk & memory (the same floors `setup`'s preflight gates a build on) --
+
+
+def test_check_disk_reads_the_docker_data_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "_run", lambda command: _completed(0, stdout=f"{tmp_path}\n"))
+    monkeypatch.setattr(
+        doctor.shutil, "disk_usage", lambda path: type("U", (), {"free": 999_000_000_000})()
+    )
+
+    result = doctor.check_disk(DOCKER)
+
+    assert result.status is doctor.Status.OK
+    assert str(tmp_path) in result.detail
+    assert "999 GB" in result.detail
+
+
+def test_check_disk_reads_the_podman_graph_root(monkeypatch, tmp_path):
+    seen: list[list[str]] = []
+
+    def _run(command):
+        seen.append(command)
+        return _completed(0, stdout=f"{tmp_path}\n")
+
+    monkeypatch.setattr(doctor, "_run", _run)
+    monkeypatch.setattr(
+        doctor.shutil, "disk_usage", lambda path: type("U", (), {"free": 999_000_000_000})()
+    )
+
+    doctor.check_disk(PODMAN)
+
+    assert seen == [["podman", "info", "--format", "{{.Store.GraphRoot}}"]]
+
+
+def test_check_disk_falls_back_to_root_when_the_probe_fails(monkeypatch):
+    monkeypatch.setattr(doctor, "_run", lambda command: None)
+    seen: list[Path] = []
+
+    def _disk_usage(path):
+        seen.append(path)
+        return type("U", (), {"free": 999_000_000_000})()
+
+    monkeypatch.setattr(doctor.shutil, "disk_usage", _disk_usage)
+
+    doctor.check_disk(None)
+
+    assert seen == [Path("/")]
+
+
+def test_check_disk_fails_below_the_minimum(monkeypatch):
+    monkeypatch.setattr(doctor, "_run", lambda command: None)
+    monkeypatch.setattr(
+        doctor.shutil, "disk_usage", lambda path: type("U", (), {"free": 1_000_000_000})()
+    )
+
+    result = doctor.check_disk(None)
+
+    assert result.status is doctor.Status.FAIL
+    assert "needs" in result.detail
+
+
+def test_check_disk_fails_when_undeterminable(monkeypatch):
+    monkeypatch.setattr(doctor, "_run", lambda command: None)
+
+    def _raise(path):
+        raise OSError("no such filesystem")
+
+    monkeypatch.setattr(doctor.shutil, "disk_usage", _raise)
+
+    result = doctor.check_disk(None)
+
+    assert result.status is doctor.Status.FAIL
+    assert "cannot be determined" in result.detail
+
+
+def test_check_memory_reports_available_gb(monkeypatch):
+    monkeypatch.setattr(doctor, "read_available_memory_gb", lambda meminfo: 8.5)
+
+    result = doctor.check_memory()
+
+    assert result.status is doctor.Status.OK
+    assert "8.5 GB" in result.detail
+
+
+def test_check_memory_fails_below_the_minimum(monkeypatch):
+    monkeypatch.setattr(doctor, "read_available_memory_gb", lambda meminfo: 1.0)
+
+    result = doctor.check_memory()
+
+    assert result.status is doctor.Status.FAIL
+    assert "OOM" in result.detail
+
+
+def test_check_memory_fails_when_undeterminable(monkeypatch):
+    monkeypatch.setattr(doctor, "read_available_memory_gb", lambda meminfo: None)
+
+    result = doctor.check_memory()
+
+    assert result.status is doctor.Status.FAIL
+    assert "/proc/meminfo" in result.detail
+
+
 # --- check composition (ADR-027) --------------------------------------------
 
 
 def test_buildx_checked_only_for_docker(
-    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok, known_manifests_ok
+    monkeypatch,
+    all_vendor_checks_pass,
+    config_ok,
+    shared_config_ok,
+    known_manifests_ok,
+    disk_ok,
+    memory_ok,
 ):
     """ADR-027: a docker machine is checked for the buildx plugin."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: DOCKER)
@@ -273,6 +396,8 @@ def test_buildx_checked_only_for_docker(
         "config",
         "build engine",
         "docker buildx",
+        "free disk",
+        "available memory",
         "git",
         "vendored tree",
         "vendor .git",
@@ -283,7 +408,13 @@ def test_buildx_checked_only_for_docker(
 
 
 def test_buildx_not_checked_for_podman(
-    monkeypatch, all_vendor_checks_pass, config_ok, shared_config_ok, known_manifests_ok
+    monkeypatch,
+    all_vendor_checks_pass,
+    config_ok,
+    shared_config_ok,
+    known_manifests_ok,
+    disk_ok,
+    memory_ok,
 ):
     """ADR-027: a podman machine is never told to install a Docker plugin it won't use."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
@@ -294,6 +425,8 @@ def test_buildx_not_checked_for_podman(
     assert labels == [
         "config",
         "build engine",
+        "free disk",
+        "available memory",
         "git",
         "vendored tree",
         "vendor .git",
@@ -303,7 +436,9 @@ def test_buildx_not_checked_for_podman(
     ]
 
 
-def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass, shared_config_ok):
+def test_configured_engine_reaches_detection(
+    monkeypatch, all_vendor_checks_pass, shared_config_ok, disk_ok, memory_ok
+):
     """BR-CFG-008: `engine =` from build config drives detection with no flag."""
     seen: list[str | None] = []
     _stub_config(monkeypatch, config_module.BuildConfig(engine="podman"))
@@ -320,7 +455,7 @@ def test_configured_engine_reaches_detection(monkeypatch, all_vendor_checks_pass
 
 
 def test_explicit_engine_overrides_configured_one(
-    monkeypatch, all_vendor_checks_pass, shared_config_ok
+    monkeypatch, all_vendor_checks_pass, shared_config_ok, disk_ok, memory_ok
 ):
     """An explicit argument wins over the configured preference."""
     seen: list[str | None] = []
@@ -341,7 +476,7 @@ def test_explicit_engine_overrides_configured_one(
 
 
 def test_all_checks_run_even_after_a_failure(
-    monkeypatch, config_ok, shared_config_ok, known_manifests_ok
+    monkeypatch, config_ok, shared_config_ok, known_manifests_ok, disk_ok, memory_ok
 ):
     """BR-CLI-007: one invocation reports the full picture; no short-circuit."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
@@ -354,6 +489,8 @@ def test_all_checks_run_even_after_a_failure(
     assert [r.status for r in results] == [
         doctor.Status.OK,  # config
         doctor.Status.OK,  # build engine
+        doctor.Status.OK,  # free disk
+        doctor.Status.OK,  # available memory
         doctor.Status.OK,  # git
         doctor.Status.FAIL,
         doctor.Status.FAIL,

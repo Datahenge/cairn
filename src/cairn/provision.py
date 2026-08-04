@@ -75,7 +75,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import adopt as adopt_module
-from . import systemd
+from . import engine, setup_runner, systemd
+from .errors import BuildEngineError
 from .setup_runner import (
     SHARED_CONFIG_MODE,
     SYSTEMD_DIR,
@@ -180,20 +181,65 @@ TIMER_STAGES = ("timers",)
 # --- stages shared by both roles ---------------------------------------------
 
 
+def _check_build_engine() -> tuple[Check, engine.BuildEngine | None]:
+    """Detect the build engine — docker or podman — the same way `cairn-build doctor`/
+    `build` already do (`ADR-027`), rather than hard-coding `docker` the way a deploy
+    target's preflight does (`base_preflight_checks`, always Docker, `ADR-002`).
+    """
+    try:
+        selected = engine.detect()
+    except BuildEngineError as exc:
+        return Check("build engine", False, str(exc).strip().splitlines()[0]), None
+    return Check("build engine", True, f"{selected.name} v{selected.version}"), selected
+
+
+def _build_engine_data_dir(runner: Runner, selected: engine.BuildEngine | None) -> Path:
+    """Where *selected* actually stores images and volumes — read, not assumed, since a
+    separate mount for it is common on a build machine.
+
+    Falls back to `/` when unknown: no engine was selected, or the probe itself failed.
+    """
+    if selected is not None and selected.name == engine.PODMAN:
+        output = runner.probe(["podman", "info", "--format", "{{.Store.GraphRoot}}"])
+    else:
+        output = runner.probe(["docker", "info", "--format", "{{.DockerRootDir}}"])
+    if output is None or not output.strip():
+        return Path("/")
+    return Path(output.strip())
+
+
 def stage_preflight_build(runner: Runner, options: SetupOptions) -> None:
-    """Gate a build machine: base checks, plus buildx/git (rule 5).
+    """Gate a build machine: the engine (docker or podman), its disk/memory floors, and git
+    (rule 5).
+
+    Does not call `base_preflight_checks` — that fixes the engine to Docker, right for a
+    deploy target but wrong here, since a build machine's engine is a genuine choice
+    (`ADR-027`). `docker compose` is never checked either: a build never runs it, only
+    `cairn-adopt`'s reconcile does. Free disk is read from wherever the *selected* engine
+    stores images; buildx is only checked when that engine needs it (docker — podman builds
+    with buildah in-process, no such plugin to check for).
 
     All results before the first failure is deliberate. An installer that dies on the first
     problem makes the operator discover prerequisites one reboot at a time.
     """
-    checks, disk_check = base_preflight_checks(runner, options)
-    extra = [
-        check_command(runner, "docker buildx", ["docker", "buildx", "version"]),
-        check_command(runner, "git", ["git", "--version"]),
-    ]
-    for check in extra:
+    engine_check, selected = _check_build_engine()
+    checks = [setup_runner._check_root(), engine_check]
+    if selected is not None and selected.needs_buildx:
+        checks.append(check_command(runner, "docker buildx", ["docker", "buildx", "version"]))
+    disk_check = setup_runner.check_disk(_build_engine_data_dir(runner, selected))
+    checks.append(disk_check)
+    checks.append(setup_runner.check_memory())
+    checks.append(check_command(runner, "git", ["git", "--version"]))
+
+    for check in checks:
         runner.say(check.render())
-    fail_on_checks(checks + extra, disk_check, options)
+    if not disk_check.ok and options.skip_disk_free:
+        runner.say("    overridden by --skip-disk-free")
+        runner.report.warnings.append(
+            "free disk was below the minimum but the check was overridden; "
+            "a build or migration may run out of room"
+        )
+    fail_on_checks(checks, disk_check, options)
 
 
 def stage_preflight_adopt(runner: Runner, options: SetupOptions) -> None:

@@ -21,7 +21,9 @@ from pathlib import Path
 import pytest
 
 from cairn import adopt as adopt_module
-from cairn import provision, setup_runner
+from cairn import engine, provision, setup_runner
+
+DOCKER = engine.BuildEngine(name="docker", version="27.3.1")
 
 
 def _options(**overrides) -> provision.SetupOptions:
@@ -136,6 +138,7 @@ def test_a_stage_outside_this_setup_is_reported_like_a_typo():
 
 def test_preflight_asks_a_builder_for_build_tools_and_an_adopt_setup_for_none(monkeypatch):
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision.engine, "detect", lambda: DOCKER)
 
     builder = Recorder()
     with pytest.raises(provision.Aborted):
@@ -152,6 +155,7 @@ def test_build_preflight_no_longer_demands_openssl(monkeypatch):
     """openssl was only ever needed to generate the registry's TLS cert — that moved to
     `cairn-registry setup` (`ADR-048`), so a build machine no longer needs it."""
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision.engine, "detect", lambda: DOCKER)
 
     def _ok_check(runner, label, command):
         return setup_runner.Check(label, True, "ok")
@@ -159,7 +163,7 @@ def test_build_preflight_no_longer_demands_openssl(monkeypatch):
     monkeypatch.setattr(provision, "check_command", _ok_check)
     monkeypatch.setattr(setup_runner, "check_command", _ok_check)
     monkeypatch.setattr(
-        setup_runner, "_check_memory", lambda: setup_runner.Check("available memory", True, "ok")
+        setup_runner, "check_memory", lambda: setup_runner.Check("available memory", True, "ok")
     )
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
@@ -169,6 +173,77 @@ def test_build_preflight_no_longer_demands_openssl(monkeypatch):
     provision.stage_preflight_build(builder, _options())
 
     assert "openssl" not in builder.output
+
+
+def test_build_preflight_never_checks_docker_compose(monkeypatch):
+    """A build never runs `docker compose` — only `cairn-adopt`'s reconcile does — so it is
+    not a build-machine prerequisite, unlike `cairn-adopt setup`'s (`base_preflight_checks`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision.engine, "detect", lambda: DOCKER)
+
+    builder = Recorder()
+    with pytest.raises(provision.Aborted):
+        provision.stage_preflight_build(builder, _options())
+
+    assert "docker compose" not in builder.output
+
+
+def test_build_preflight_succeeds_on_a_podman_only_machine(monkeypatch):
+    """`ADR-027`: a build machine's engine is a genuine choice — podman-only must work, not
+    just be tolerated alongside a docker install."""
+    podman = engine.BuildEngine(name="podman", version="5.4.2")
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision.engine, "detect", lambda: podman)
+
+    def _ok_check(runner, label, command):
+        return setup_runner.Check(label, True, "ok")
+
+    monkeypatch.setattr(provision, "check_command", _ok_check)
+    monkeypatch.setattr(
+        setup_runner, "check_memory", lambda: setup_runner.Check("available memory", True, "ok")
+    )
+    monkeypatch.setattr(
+        setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
+    )
+    builder = Recorder(answers={"podman info": "/var/lib/containers/storage\n"})
+
+    provision.stage_preflight_build(builder, _options())
+
+    assert "docker" not in builder.output
+    assert "podman v5.4.2" in builder.output
+    assert "/var/lib/containers/storage" in builder.output
+
+
+def test_build_preflight_skips_buildx_for_podman(monkeypatch):
+    """Podman builds with buildah in-process — there is no buildx plugin to check for."""
+    podman = engine.BuildEngine(name="podman", version="5.4.2")
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision.engine, "detect", lambda: podman)
+
+    builder = Recorder()
+    with pytest.raises(provision.Aborted):
+        provision.stage_preflight_build(builder, _options())
+
+    assert "buildx" not in builder.output
+
+
+def test_build_preflight_reports_when_no_engine_is_usable(monkeypatch):
+    """Neither docker nor podman present is a failed `build engine` check, not a crash."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+
+    def _raise():
+        raise engine.BuildEngineError("No usable build engine found.")
+
+    monkeypatch.setattr(provision.engine, "detect", _raise)
+    builder = Recorder()
+
+    with pytest.raises(provision.Aborted, match="build engine"):
+        provision.stage_preflight_build(builder, _options())
+
+
+def test_disk_data_dir_falls_back_to_root_when_no_engine_was_selected():
+    runner = Recorder()
+    assert provision._build_engine_data_dir(runner, None) == Path("/")
 
 
 # --- backup: verified, not assumed ------------------------------------------

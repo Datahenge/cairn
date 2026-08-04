@@ -338,7 +338,7 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
         setup_runner, "check_command", lambda r, label, c: setup_runner.Check(label, True, "ok")
     )
     monkeypatch.setattr(
-        setup_runner, "_check_memory", lambda: setup_runner.Check("memory", True, "ok")
+        setup_runner, "check_memory", lambda: setup_runner.Check("memory", True, "ok")
     )
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()

@@ -9,6 +9,58 @@ code changes live in git history.
 
 ---
 
+## 2026-08-04 (later still — `cairn-build doctor` gains a free-disk/memory check)
+
+`userdocs/builder/index.md` claimed `cairn-build doctor` already named the local image
+store's disk headroom "as part of their disk-space check" — a user ran `doctor` and found
+no such line. Traced to `BR-CLI-007`: the requirement, and `doctor.py`'s implementation,
+only ever specified this for `cairn-build setup`'s preflight (`setup_runner.py`); `doctor`
+never had it. Not a regression — the docs described a check that was never built. Checked
+whether this was a stable-vs-dev version mismatch instead (local `pyproject.toml` and the
+latest PyPI release both sit at `0.2.1`, and `doctor.py`'s git history shows the check was
+never present at any point) — ruled out.
+
+Brian confirmed a preference for `doctor` actually having the check rather than the docs
+being walked back, and chose to add both free disk and available memory (setup's preflight
+bundles them together; a memory-starved box is as unbuildable as a full one). `BR-CLI-007`
+updated to list them for `cairn-build doctor`; `doctor.py` gained `check_disk`/
+`check_memory`, reusing `setup_runner.MINIMUM_DISK_GB`/`MINIMUM_MEMORY_GB`/
+`read_available_memory_gb` rather than duplicating the thresholds. Along the way, `doctor`'s
+own disk-root lookup was made podman-aware (`podman info --format '{{.Store.GraphRoot}}'`)
+where `setup`'s data-dir lookup remains docker-only — a pre-existing, separate gap, flagged
+to Brian but not fixed here since it wasn't what was asked. `userdocs/builder/index.md`'s
+`doctor` example output updated (9 checks → 11).
+
+---
+
+## 2026-08-04 (yet later still — `cairn-build setup` was hard-coded to Docker)
+
+While fixing `doctor`'s missing disk check (previous entry), flagged that `setup`'s own
+disk-check data-dir lookup (`setup_runner._docker_data_dir`) was docker-only — a podman
+build machine would silently measure `/` instead of podman's real storage. Brian asked to
+fix it properly rather than patch around it. Investigating further showed the gap was
+bigger than the data-dir lookup: `stage_preflight_build` (`provision.py`) unconditionally
+required `docker` and `docker buildx`, so a podman-only machine couldn't pass `cairn-build
+setup` at all — `ADR-027`'s docker-or-podman pluggability, already honored by `doctor` and
+`build`, had never reached `setup`. It also unconditionally required `docker compose`,
+which a build never runs (that check belongs to `cairn-adopt setup`/`cairn-registry
+setup`, both genuinely fixed to Docker, `ADR-002`).
+
+Presented the choice — patch just the data-dir lookup (fixes little, since the mandatory
+`docker` check aborts first) vs. make the whole build preflight engine-aware — and Brian
+chose the full fix. `stage_preflight_build` now detects the engine the way `doctor`/`build`
+do, checks buildx only when the selected engine needs it, reads free disk from that
+engine's own data root, and drops the `docker compose` check. `setup_runner.py`'s
+`_check_disk`/`_check_memory` were promoted to public `check_disk`/`check_memory` (dropped
+the leading underscore) so `provision.py` could reuse the threshold logic without
+duplicating it — `base_preflight_checks` (still docker-only, correctly, for
+`cairn-adopt`/`cairn-registry`) is unchanged otherwise. `ADR-027` amended; `BR-DEPLOY-021`
+rule 5 reworded so "the engine" doesn't read as docker-only; `userdocs/builder/index.md`'s
+`setup` example output updated to match (the `docker`/`docker compose` lines became one
+`build engine` line, `docker compose` dropped entirely).
+
+---
+
 ## 2026-08-04 (later still — lessons-learned entry on CLI help verbosity)
 
 Added `docs/technical/04c-lessons-process-notes.md` §5: Typer's rich command-list panel

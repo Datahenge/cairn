@@ -60,4 +60,15 @@ from anything the engine leaves behind.
 The general rule this establishes: **behaviour that touches an engine's local storage must
 be decided per engine; behaviour that touches the image must not.** *(BR-BUILD-015,
 lessons §12)*
-*(BR-CLI-007, BR-BUILD-006/011/012, BR-CFG-008/010; amends `ADR-003`)*
+
+**Amended 2026-08-04 — `cairn-build setup`'s preflight was still hard-coded to Docker.**
+`doctor` and `build` already detected docker-or-podman as this ADR decided; `setup`'s
+preflight (`BR-DEPLOY-021` rule 5) did not — it unconditionally demanded `docker` and
+`docker buildx`, so a podman-only build machine could never pass `cairn-build setup` at
+all, regardless of engine choice. It also unconditionally demanded `docker compose`, which a
+build never runs — that check exists for `cairn-adopt setup`/`cairn-registry setup`, both
+genuinely fixed to Docker (`ADR-002`), not for a builder. Fixed: `cairn-build setup` now
+detects the engine the same way `doctor`/`build` do, checks buildx only when the selected
+engine needs it, reads free disk from that engine's own data root (docker's
+`DockerRootDir` or podman's `Store.GraphRoot`), and never checks `docker compose`.
+*(BR-CLI-007, BR-BUILD-006/011/012, BR-CFG-008/010, BR-DEPLOY-021; amends `ADR-003`)*

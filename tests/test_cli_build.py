@@ -920,9 +920,12 @@ def test_setup_is_root_gated(tmp_path, monkeypatch):
 
 def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    from cairn import provision, setup_runner
+    from cairn import engine, provision, setup_runner
 
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(
+        provision.engine, "detect", lambda: engine.BuildEngine(name="docker", version="27.3.1")
+    )
 
     def check_ok(runner, label, command):
         return setup_runner.Check(label, True, "ok")
@@ -930,7 +933,7 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_runner, "check_command", check_ok)
     monkeypatch.setattr(provision, "check_command", check_ok)
     monkeypatch.setattr(
-        setup_runner, "_check_memory", lambda: setup_runner.Check("memory", True, "ok")
+        setup_runner, "check_memory", lambda: setup_runner.Check("memory", True, "ok")
     )
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()

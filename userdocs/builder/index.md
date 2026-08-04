@@ -16,6 +16,8 @@ for example:
 WARN config          No manifest given. Pass --manifest <path>, or set $CAIRN_MANIFEST.
 OK   build engine    docker v29.6.2
 OK   docker buildx   github.com/docker/buildx v0.35.0 ...
+OK   free disk       199 GB free on /var/lib/docker
+OK   available memory 63.8 GB available
 OK   git             v2.47.3
 OK   vendored tree   matches its recorded pin
 OK   vendor .git     no nested .git
@@ -23,7 +25,7 @@ OK   build inputs    Containerfile complete
 WARN shared config   /etc/cairn does not exist yet — run this CLI's `setup` subcommand, or create it by hand
 OK   known manifests none found under /srv/cairn
 
-All 9 checks passed (2 warning(s)).
+All 11 checks passed (2 warning(s)).
 ```
 
 Both warnings above are expected at this point: there's no manifest yet (next section), and
@@ -53,11 +55,10 @@ workdir /home/brian
 
 [preflight]
   [ok] root                   running as root
-  [ok] docker                 Docker version 29.6.2, build dfc4efb
-  [ok] docker compose         Docker Compose version v5.3.1
+  [ok] build engine           docker v29.6.2
+  [ok] docker buildx          github.com/docker/buildx v0.35.0 a319e5b15052cf6557ceb666eb8ff6e32380b782
   [ok] free disk              199 GB free on /var/lib/docker
   [ok] available memory       63.8 GB available
-  [ok] docker buildx          github.com/docker/buildx v0.35.0 a319e5b15052cf6557ceb666eb8ff6e32380b782
   [ok] git                    git version 2.47.3
 
 [admin-group]

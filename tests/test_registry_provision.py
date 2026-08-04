@@ -129,7 +129,7 @@ def test_registry_preflight_demands_openssl(monkeypatch):
     monkeypatch.setattr(registry_provision, "check_command", _check)
     monkeypatch.setattr(setup_runner, "check_command", _check)
     monkeypatch.setattr(
-        setup_runner, "_check_memory", lambda: setup_runner.Check("available memory", True, "ok")
+        setup_runner, "check_memory", lambda: setup_runner.Check("available memory", True, "ok")
     )
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()

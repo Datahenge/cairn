@@ -92,12 +92,12 @@ def test_the_disk_gate_uses_the_documented_floor(monkeypatch):
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()
     )
-    assert setup_runner._check_disk().ok is False
+    assert setup_runner.check_disk().ok is False
 
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
     )
-    assert setup_runner._check_disk().ok is True
+    assert setup_runner.check_disk().ok is True
 
 
 def test_disk_check_targets_dockers_actual_data_dir(monkeypatch):
@@ -112,7 +112,7 @@ def test_disk_check_targets_dockers_actual_data_dir(monkeypatch):
         "disk_usage",
         lambda path: checked.append(path) or type("U", (), {"free": 40_000_000_000})(),
     )
-    setup_runner._check_disk(setup_runner._docker_data_dir(runner))
+    setup_runner.check_disk(setup_runner._docker_data_dir(runner))
     assert checked == [Path("/mnt/docker-data")]
 
 
@@ -149,7 +149,7 @@ def test_skip_disk_free_lets_a_short_disk_run_proceed(monkeypatch):
         lambda runner, label, command: setup_runner.Check(label, True, "ok"),
     )
     monkeypatch.setattr(
-        setup_runner, "_check_memory", lambda: setup_runner.Check("available memory", True, "ok")
+        setup_runner, "check_memory", lambda: setup_runner.Check("available memory", True, "ok")
     )
     monkeypatch.setattr(
         setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 10_000_000_000})()

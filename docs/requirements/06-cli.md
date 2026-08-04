@@ -233,10 +233,11 @@ answers which checks apply. Each accepts `--manifest` where relevant (`BR-CLI-01
 manifest warns rather than fails, since doctor legitimately runs before one exists.
 
 - **`cairn-build doctor`** — the selected build engine present and capable of secret-mount
-  builds (Docker Engine v23+, or podman v4+ — `ADR-027`); **`git`**, which cairn resolves every
-  manifest ref with (`BR-BUILD-005`); `ventwig status` clean; config valid; `/etc/cairn`'s
-  current group, permissions, and the invoking user's membership, reported only, never mutated
-  (`BR-CFG-015`, `ADR-043`).
+  builds (Docker Engine v23+, or podman v4+ — `ADR-027`); free disk under its data root and
+  available memory, `setup`'s own preflight floors (`BR-DEPLOY-021`), reported here too;
+  **`git`**, which cairn resolves every manifest ref with (`BR-BUILD-005`); `ventwig status`
+  clean; config valid; `/etc/cairn`'s current group, permissions, and the invoking user's
+  membership, reported only, never mutated (`BR-CFG-015`, `ADR-043`).
 - **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
   `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
 - **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under

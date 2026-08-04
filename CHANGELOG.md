@@ -9,7 +9,20 @@ the full ownership map.
 
 ## [Unreleased]
 
-Nothing recorded yet since this file was introduced.
+Nothing recorded yet since the last release.
+
+## [0.3.0]
+
+### Added
+- `cairn-build doctor` now reports free disk (under the build engine's own data root) and
+  available memory — the same floors `cairn-build setup`'s preflight already gated a build
+  on, now visible before `setup` ever runs.
+
+### Fixed
+- `cairn-build setup` no longer hard-requires Docker. Its preflight now detects docker or
+  podman the same way `doctor`/`build` already did — a podman-only build machine can now
+  pass `setup` at all, and free disk is read from whichever engine was actually selected.
+  It also no longer checks for `docker compose`, which a build never runs.
 
 ## [0.2.0]
 

@@ -7,11 +7,12 @@ one fails, so a single invocation reports the full picture; each failure names i
 (BR-CLI-015) and any failure makes the exit code non-zero (BR-CLI-012).
 
 **`cairn-build doctor` checks:** config valid (`BR-CFG-012`); a usable build engine —
-docker or podman (`ADR-027`) — plus buildx when the engine is docker; ``git``, which every
-manifest ref is resolved with (`BR-BUILD-005`); the vendored tree clean (BR-VEND-005),
-free of upstream git metadata (BR-VEND-007), and complete in its build inputs
-(BR-VEND-006); and, informationally only, which client manifests already exist under
-`/srv/cairn/` (`BR-CLI-022`).
+docker or podman (`ADR-027`) — plus buildx when the engine is docker; free disk under the
+engine's own data root and available memory, the same floors `setup`'s preflight gates a
+build on (`BR-DEPLOY-021`); ``git``, which every manifest ref is resolved with
+(`BR-BUILD-005`); the vendored tree clean (BR-VEND-005), free of upstream git metadata
+(BR-VEND-007), and complete in its build inputs (BR-VEND-006); and, informationally only,
+which client manifests already exist under `/srv/cairn/` (`BR-CLI-022`).
 
 **`cairn-adopt doctor` checks:** the descriptor itself parses; Docker is installed and its
 daemon reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import grp
 import os
+import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -48,6 +50,7 @@ from .errors import (
     RegistryError,
 )
 from .provision import MANIFEST_ROOT
+from .setup_runner import MINIMUM_DISK_GB, MINIMUM_MEMORY_GB, read_available_memory_gb
 
 _LABEL_WIDTH = 16
 
@@ -107,7 +110,10 @@ def run_build_checks(
     Config is checked first because it supplies the engine preference (`BR-CFG-008`);
     an explicit *preferred_engine* still wins over the configured one. The buildx check
     appears only when the selected engine needs it, so a podman machine is not told to
-    install a Docker plugin it will never use (`ADR-027`).
+    install a Docker plugin it will never use (`ADR-027`). Disk and memory are checked
+    right after — the same host-resource floors `setup`'s preflight gates a build on
+    (`BR-DEPLOY-021`) — once the engine is known, since free disk is read from wherever
+    that engine actually stores images, not assumed to be `/`.
     """
     config_result, build_config = check_config(manifest_path)
     engine_result, selected = check_build_engine(
@@ -117,6 +123,8 @@ def run_build_checks(
     results = [config_result, engine_result]
     if selected is not None and selected.needs_buildx:
         results.append(check_buildx())
+    results.append(check_disk(selected))
+    results.append(check_memory())
     return [
         *results,
         check_git(),
@@ -367,6 +375,60 @@ def check_build_engine(
     except BuildEngineError as exc:
         return CheckResult.of("build engine", False, _first_line(str(exc))), None
     return CheckResult.of("build engine", True, f"{selected.name} v{selected.version}"), selected
+
+
+def _engine_data_dir(selected: engine.BuildEngine | None) -> Path:
+    """Where *selected* actually stores images and volumes.
+
+    A separate mount for engine data is common on a build machine, and the root
+    filesystem having (or lacking) room says nothing about it, so this is read rather
+    than assumed. Falls back to `/` when unknown — no engine was selected, or the probe
+    itself failed.
+    """
+    if selected is None:
+        return Path("/")
+    if selected.name == engine.PODMAN:
+        result = _run([engine.PODMAN, "info", "--format", "{{.Store.GraphRoot}}"])
+    else:
+        result = _run([engine.DOCKER, "info", "--format", "{{.DockerRootDir}}"])
+    if result is None or result.returncode != 0 or not result.stdout.strip():
+        return Path("/")
+    return Path(result.stdout.strip())
+
+
+def check_disk(selected: engine.BuildEngine | None) -> CheckResult:
+    """Confirm free disk under the engine's data root meets what a build needs.
+
+    Room for a transient git checkout, the builder stage, the final image, and
+    BuildKit's cache — the same floor `setup`'s preflight gates a build on
+    (`MINIMUM_DISK_GB`).
+    """
+    label = "free disk"
+    path = _engine_data_dir(selected)
+    try:
+        free_gb = shutil.disk_usage(path).free / 1_000_000_000
+    except OSError as exc:
+        return CheckResult(label, Status.FAIL, f"cannot be determined ({exc})")
+    ok = free_gb >= MINIMUM_DISK_GB
+    detail = f"{free_gb:.0f} GB free on {path}" + ("" if ok else f" — needs {MINIMUM_DISK_GB} GB")
+    return CheckResult.of(label, ok, detail)
+
+
+def check_memory() -> CheckResult:
+    """Confirm available memory meets what Frappe's asset build needs.
+
+    Below `MINIMUM_MEMORY_GB` a build can OOM and take live containers with it — the
+    same floor `setup`'s preflight gates a build on.
+    """
+    label = "available memory"
+    available = read_available_memory_gb(Path("/proc/meminfo"))
+    if available is None:
+        return CheckResult(label, Status.FAIL, "cannot be determined from /proc/meminfo")
+    ok = available >= MINIMUM_MEMORY_GB
+    detail = f"{available:.1f} GB available" + (
+        "" if ok else f" — needs {MINIMUM_MEMORY_GB} GB; asset builds can OOM"
+    )
+    return CheckResult.of(label, ok, detail)
 
 
 def check_buildx() -> CheckResult:

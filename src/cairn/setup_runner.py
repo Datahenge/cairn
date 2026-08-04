@@ -229,7 +229,11 @@ def _docker_data_dir(runner: Runner) -> Path:
     return Path(output.strip())
 
 
-def _check_disk(path: Path = Path("/")) -> Check:
+def check_disk(path: Path = Path("/")) -> Check:
+    """Free disk at *path* against `MINIMUM_DISK_GB` — the caller decides which path, since
+    that's role/engine-specific (`_docker_data_dir` here for a fixed-Docker target; a build's
+    own engine-aware lookup lives in `provision.py`, `cairn-build setup`'s engine being a
+    genuine choice, `ADR-027`)."""
     try:
         free_gb = shutil.disk_usage(path).free / 1_000_000_000
     except OSError as exc:
@@ -242,7 +246,10 @@ def _check_disk(path: Path = Path("/")) -> Check:
     )
 
 
-def _check_memory() -> Check:
+def check_memory() -> Check:
+    """Available memory against `MINIMUM_MEMORY_GB` — identical for every role, so this is
+    the one preflight primitive every `stage_preflight_*` calls directly rather than each
+    keeping its own copy."""
     available = read_available_memory_gb(Path("/proc/meminfo"))
     if available is None:
         return Check("available memory", False, "cannot be determined from /proc/meminfo")
@@ -271,13 +278,21 @@ def read_available_memory_gb(meminfo: Path) -> float | None:
 
 
 def base_preflight_checks(runner: Runner, options: SetupOptions) -> tuple[list[Check], Check]:
-    disk_check = _check_disk(_docker_data_dir(runner))
+    """Docker, `docker compose`, free disk under Docker's own data root, and memory.
+
+    Fixed to Docker: every caller of this is either a deploy target (`cairn-adopt setup`,
+    always Docker, `ADR-002`) or the local registry (`cairn-registry setup`, which runs
+    Docker itself via `docker compose`). `cairn-build setup`'s preflight does not call this
+    — its engine is a genuine choice (`ADR-027`) and it assembles its own checks in
+    `provision.py`.
+    """
+    disk_check = check_disk(_docker_data_dir(runner))
     checks = [
         _check_root(),
         check_command(runner, "docker", ["docker", "--version"]),
         check_command(runner, "docker compose", ["docker", "compose", "version"]),
         disk_check,
-        _check_memory(),
+        check_memory(),
     ]
     for check in checks:
         runner.say(check.render())

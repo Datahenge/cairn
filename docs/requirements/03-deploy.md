@@ -208,9 +208,11 @@ invokes `setup`.
    prerequisite has such an override. Bypassing MUST still be reported — as a warning in the run's
    closing summary — never silently. The free-disk check MUST measure the filesystem the engine
    actually stores images and volumes on (the engine's reported data directory), not assume it is
-   the root filesystem — a host with a separate mount for Docker data would otherwise have the
-   wrong filesystem measured. Reported detail MUST name the path checked, so a mismatch is visible
-   rather than silently wrong.
+   the root filesystem — a host with a separate mount for engine data would otherwise have the
+   wrong filesystem measured. On a build machine "the engine" MUST mean whichever one `setup`
+   actually selected — docker or podman (`ADR-027`) — never assumed to be docker; a deploy target
+   or the local registry, both fixed to Docker (`ADR-002`), have only the one engine to measure.
+   Reported detail MUST name the path checked, so a mismatch is visible rather than silently wrong.
 6. **Verify what it claims.** A step reporting success MUST have confirmed its post-condition: a
    backup is confirmed to exist and be non-empty, a registry is confirmed reachable, a written
    descriptor is confirmed to parse. This is `BR-CLI-011`'s rule applied to provisioning.
