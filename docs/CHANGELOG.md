@@ -9,6 +9,19 @@ code changes live in git history.
 
 ---
 
+## 2026-08-04 (later still — lessons-learned entry on CLI help verbosity)
+
+Added `docs/technical/04c-lessons-process-notes.md` §5: Typer's rich command-list panel
+renders a command's entire first `help=` paragraph, not a truncated summary, so the
+multi-sentence prose in `cairn-build`/`cairn-adopt`/`cairn-registry`'s `help=` strings
+(commit `02584c8`) wrapped every command list across several lines per row. Went unnoticed
+for weeks until a user flagged it directly. No requirement changed — this is a technical
+finding about a tool cairn builds on (Typer), plus the process note that the fix was to
+delete the mechanism-explaining prose rather than relocate it, since `userdocs/` already
+owns that content.
+
+---
+
 ## 2026-08-04 (later — archived 2026-07-21 through 2026-07-27 to `docs/archive/`)
 
 This file hit its word-count sprawl limit a second time (`W-014`) on the entry below.

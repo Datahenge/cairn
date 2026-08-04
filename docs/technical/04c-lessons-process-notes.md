@@ -9,7 +9,7 @@ purpose: Durable findings about method and process — how this project avoids r
 Part of the [lessons-learned](04-lessons-learned.md) set. See that file for what this
 document type is for and how findings are marked (**measured** vs **reasoned**).
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-08-04_
 
 ---
 
@@ -99,3 +99,33 @@ Generalizable: **prefer conventions that can fail a test.** For a rule stated in
 the honest question is not "is the wording clear?" but "what would notice if I broke it?"
 If the answer is "a careful reader, eventually", the rule is decorative. This one was
 decorative for two days while being violated in two different channels.
+
+## 5. Typer's command-list panel prints the whole first paragraph, not a summary
+
+*Measured. Illuminates `BR-CLI-*` (CLI command surface).*
+
+Every `@app.command(help=...)` in `cli_build.py`, `cli_adopt.py`, and `cli_registry.py`
+carried full multi-sentence prose — not just what the command does, but why, and how it
+works internally. The assumption, never checked, was that Typer's `--help` command list
+shows some truncated summary the way `git help` or `click`'s default `get_short_help_str`
+does. It doesn't: Typer's rich help (`rich_utils._make_command_help`) splits `help` on the
+first blank line and renders the **entire first paragraph** verbatim in the list. A
+single-paragraph `help=` string of any length — three sentences, four — appears in full,
+wrapped across several lines per row. This shipped and went unnoticed for weeks; a user
+finally flagged the command list as unreadable.
+
+The fix (`fix(cli): trim command-list help text to a single scannable line`) was not to
+split each string into a short paragraph plus a hidden detail paragraph — the instinct to
+preserve the trimmed prose somewhere. It was to delete it. Sentences like "resolves every
+app ref to a commit, tags the result immutably, and stamps provenance onto the image"
+explain *mechanism*, and mechanism is `userdocs/`'s job (`AGENTS.md`: "the only tree a user
+ever sees"), not a CLI flag's. What stayed: defaults and safety caveats a user needs to
+invoke the command correctly (`--push` also uploads; must be run with sudo; moving
+production asks first). What went: rationale, internal steps, anything a user would only
+need if they were reading documentation rather than running a command.
+
+Generalizable: **verify a framework's actual rendering behavior before trusting help text
+to it, and when trimming, ask what the reader needs to act, not where else the trimmed
+prose could live.** A second home for over-long text is still over-long text; the fact
+that it was wrong for CLI help doesn't mean it was right anywhere in that command's
+surface.
