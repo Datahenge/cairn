@@ -4,7 +4,7 @@ The registry transport is stubbed; what is under test is the declaration model â
 environments exist, which pointer moves are permitted, and how a selector chooses an image.
 
 Boundaries: the CLI's flag handling and the production prompt live in `test_cli.py`; the
-manifest's own parsing of `[cairn.environments]` lives in `test_config.py`.
+manifest's own parsing of `[cairn.declared_environments]` lives in `test_config.py`.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import pytest
 
 from cairn import environments, registry
 from cairn.config import App, BuildConfig, Frappe, Manifest
-from cairn.errors import EnvironmentExistsError, RegistryError, UnknownEnvironmentError
+from cairn.errors import RegistryError, UnknownEnvironmentError
 from cairn.images import INPUT_HASH_LABEL
 
 CONFIG = BuildConfig(registry="ghcr.io", namespace="datahenge")
@@ -26,7 +26,7 @@ def _manifest(**environments_):
         image_name="erpnext-btu-v16",
         frappe=Frappe("https://github.com/frappe/frappe", "v16.0.1"),
         apps=(App("erpnext", "https://github.com/frappe/erpnext", "v16.0.1"),),
-        environments=environments_ or {"production": "production", "staging": "staging"},
+        declared_environments=environments_ or {"production": "production", "staging": "staging"},
     )
 
 
@@ -58,7 +58,7 @@ def test_a_manifest_declaring_none_has_none():
         image_name="erpnext-btu-v16",
         frappe=Frappe("u", "v16.0.1"),
         apps=(),
-        environments={},
+        declared_environments={},
     )
 
     assert environments.declared(manifest, CONFIG) == {}
@@ -70,9 +70,11 @@ def test_requiring_an_undeclared_environment_lists_what_exists():
 
 
 def test_requiring_one_when_none_are_declared_says_how_to_declare_one():
-    manifest = Manifest(image_name="x", frappe=Frappe("u", "v16"), apps=(), environments={})
+    manifest = Manifest(
+        image_name="x", frappe=Frappe("u", "v16"), apps=(), declared_environments={}
+    )
 
-    with pytest.raises(UnknownEnvironmentError, match=re.escape("[cairn.environments]")):
+    with pytest.raises(UnknownEnvironmentError, match=re.escape("[cairn.declared_environments]")):
         environments.require(manifest, CONFIG, "production")
 
 
@@ -92,7 +94,7 @@ def test_production_is_matched_on_the_name_not_the_tag():
     assert declared["staging"].is_production is False
 
 
-# --- guards (BR-CLI-009) ----------------------------------------------------
+# --- guards (BR-CLI-009, ADR-050) -------------------------------------------
 
 
 def _move(previous):
@@ -103,23 +105,13 @@ def _move(previous):
     )
 
 
-def test_creating_over_a_live_pointer_is_refused():
-    """It would be a deploy wearing the word 'new'."""
-    with pytest.raises(EnvironmentExistsError, match="use `cairn retag staging`"):
-        environments.assert_creating(_move("sha256:" + "9" * 64))
+def test_action_reports_created_when_no_pointer_exists_yet():
+    """assign-tag's first run against a brand-new environment creates, never refuses."""
+    assert environments.action(_move(None)) == "created"
 
 
-def test_creating_a_pointer_that_does_not_exist_is_allowed():
-    environments.assert_creating(_move(None))  # no exception is the assertion
-
-
-def test_moving_a_pointer_that_does_not_exist_is_refused():
-    with pytest.raises(UnknownEnvironmentError, match="new-tag"):
-        environments.assert_moving(_move(None))
-
-
-def test_moving_an_existing_pointer_is_allowed():
-    environments.assert_moving(_move("sha256:" + "9" * 64))
+def test_action_reports_moved_when_a_pointer_already_exists():
+    assert environments.action(_move("sha256:" + "9" * 64)) == "moved"
 
 
 # --- selectors (BR-CLI-004) -------------------------------------------------

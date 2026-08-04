@@ -34,12 +34,13 @@ sudo pipx install --global datahenge-cairn
 
 This single install gives you **three** commands, not one:
 
-- **`cairn-build`** — the builder role: `build`, `push`, `images`, `prune`, `new-tag`,
-  `retag`, `retire`, `vendor`, `doctor`, `setup`.
+- **`cairn-build`** — the builder role: `build`, `push`, `images`, `prune`, `assign-tag`,
+  `retire`, `vendor`, `doctor`, `setup`, `setup-timer`.
 - **`cairn-adopt`** — the target role: `examine`, `reconcile`, `systemd-units`, `doctor`,
-  `setup`.
+  `setup`, `setup-timer`.
 - **`cairn-registry`** — the registry-host role, needed only if you choose to self-host:
-  `status`, `start`, `stop`, `restart`, `images`, `prune`, `gc`, `doctor`, `setup`.
+  `status`, `start`, `stop`, `restart`, `images`, `prune`, `gc`, `doctor`, `setup`,
+  `setup-timer`.
 
 There is no unified `cairn` command. Which one(s) you need depends on what this machine does,
 not what's installed — the same package carries all three.

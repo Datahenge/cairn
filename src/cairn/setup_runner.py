@@ -429,12 +429,15 @@ def execute(
     only: str | None,
     *,
     program: str,
+    verb: str = "setup",
 ) -> int:
     """Run the chosen stages in order, report a summary, and return the exit code.
 
-    Shared by every role's `setup` — only *stage_funcs* and *available_stages* differ.
+    Shared by every role's `setup` and `setup-timer` — *stage_funcs*/*available_stages* differ
+    per role, and *verb* names which of the two subcommands is actually running, so the header
+    doesn't claim "setup" while a `setup-timer` run is what's underway.
     """
-    runner.say(f"{program} setup" + (" (dry run)" if runner.dry_run else ""))
+    runner.say(f"{program} {verb}" + (" (dry run)" if runner.dry_run else ""))
     runner.say(f"workdir {options.workdir}")
     runner.say("")
 

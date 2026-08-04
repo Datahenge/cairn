@@ -86,11 +86,6 @@ class UnknownEnvironmentError(CairnError):
     create one implicitly (BR-CLI-009, no auto-vivification)."""
 
 
-class EnvironmentExistsError(CairnError):
-    """``new-tag`` was asked to create an environment that already exists
-    (BR-CLI-009)."""
-
-
 class DescriptorError(CairnError):
     """The target's environment descriptor is missing or unusable
     (`BR-DEPLOY-010a`)."""

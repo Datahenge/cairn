@@ -105,11 +105,11 @@ class Manifest:
     never enters the input hash, so changing it renames future images without orphaning
     existing ones.
 
-    ``environments`` is the declared environment list (`BR-DEPLOY-009a`, `ADR-033`): the
-    control-side source of truth for which environments exist, mapping environment name to
-    the registry tag that serves as its desired-state pointer. No build reads it, and no
-    environment name reaches the image — the image is promoted between environments, not
-    built per environment.
+    ``declared_environments`` is the declared environment list (`BR-DEPLOY-009a`, `ADR-033`,
+    renamed by `ADR-049`): the control-side source of truth for which environments exist,
+    mapping environment name to the registry tag that serves as its desired-state pointer. No
+    build reads it, and no environment name reaches the image — the image is promoted between
+    environments, not built per environment.
     """
 
     image_name: str
@@ -117,7 +117,7 @@ class Manifest:
     apps: tuple[App, ...]
     build: dict[str, Any] = field(default_factory=dict)
     series: str | None = None
-    environments: dict[str, str] = field(default_factory=dict)
+    declared_environments: dict[str, str] = field(default_factory=dict)
     path: Path | None = None
 
 
@@ -163,9 +163,7 @@ def find_manifest(explicit: Path | None = None) -> Path:
     if env_value:
         path = Path(env_value).expanduser()
         if not path.is_file():
-            raise ManifestNotFoundError(
-                f"${MANIFEST_ENV_VAR} names {path}, but it is not a file."
-            )
+            raise ManifestNotFoundError(f"${MANIFEST_ENV_VAR} names {path}, but it is not a file.")
         return path
 
     raise ManifestNotFoundError(
@@ -197,7 +195,7 @@ def load_manifest(path: Path) -> Manifest:
         path,
         "[cairn]",
         root,
-        {"image_name", "frappe", "apps", "build", "series", "registry", "environments"},
+        {"image_name", "frappe", "apps", "build", "series", "registry", "declared_environments"},
     )
     return Manifest(
         image_name=_image_name(path, root),
@@ -205,7 +203,7 @@ def load_manifest(path: Path) -> Manifest:
         apps=_apps(path, root),
         build=_build_knobs(path, root),
         series=_series(path, root),
-        environments=_environments(path, root),
+        declared_environments=_declared_environments(path, root),
         path=path,
     )
 
@@ -416,21 +414,22 @@ def _series(path: Path, root: dict) -> str | None:
     return value
 
 
-def _environments(path: Path, root: dict) -> dict[str, str]:
-    """Validate the optional ``[cairn.environments]`` table (`BR-DEPLOY-009a`, `ADR-033`).
+def _declared_environments(path: Path, root: dict) -> dict[str, str]:
+    """Validate the optional ``[cairn.declared_environments]`` table (`BR-DEPLOY-009a`,
+    `ADR-033`, renamed by `ADR-049`).
 
     Environment name → registry tag. Absent or empty means **no environment exists**, which
     is a fact the pointer verbs act on rather than a gap they fill (`BR-CLI-009`).
 
     Two environments pointing at one tag is rejected: the tag *is* the desired-state pointer
     (`BR-DEPLOY-002`), so sharing one would make two environments impossible to move
-    independently — a retag of either would silently deploy to both.
+    independently — an `assign-tag` of either would silently deploy to both.
     """
-    section = root.get("environments", {})
+    section = root.get("declared_environments", {})
     if not isinstance(section, dict):
         raise ManifestInvalidError(
-            f"{path}: [cairn.environments] must be a table mapping environment name to "
-            f"registry tag, e.g. production = \"production\"."
+            f"{path}: [cairn.declared_environments] must be a table mapping environment name "
+            f'to registry tag, e.g. production = "production".'
         )
 
     environments: dict[str, str] = {}
@@ -438,19 +437,20 @@ def _environments(path: Path, root: dict) -> dict[str, str]:
     for name, tag in section.items():
         if not isinstance(tag, str) or not tag.strip():
             raise ManifestInvalidError(
-                f"{path}: [cairn.environments] '{name}' must name a registry tag as a "
-                f"non-empty string."
+                f"{path}: [cairn.declared_environments] '{name}' must name a registry tag as "
+                f"a non-empty string."
             )
         if not _TAG_RE.match(tag):
             raise ManifestInvalidError(
-                f"{path}: [cairn.environments] '{name}' tag '{tag}' is not a valid image "
-                f"tag — use letters, digits, and separators (-, _, .), up to 128 characters."
+                f"{path}: [cairn.declared_environments] '{name}' tag '{tag}' is not a valid "
+                f"image tag — use letters, digits, and separators (-, _, .), up to 128 "
+                f"characters."
             )
         if tag in claimed:
             raise ManifestInvalidError(
-                f"{path}: [cairn.environments] '{name}' and '{claimed[tag]}' both point at "
-                f"the tag '{tag}'. Each environment needs its own tag — the tag is what a "
-                f"target watches, so sharing one would deploy to both at once."
+                f"{path}: [cairn.declared_environments] '{name}' and '{claimed[tag]}' both "
+                f"point at the tag '{tag}'. Each environment needs its own tag — the tag is "
+                f"what a target watches, so sharing one would deploy to both at once."
             )
         claimed[tag] = name
         environments[name] = tag

@@ -1,9 +1,9 @@
-"""Environment pointers: create, move, retire (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004).
+"""Environment pointers: assign, retire (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004, ADR-050).
 
 An environment is a **name for a registry tag** and nothing more. The manifest's
-``[cairn.environments]`` table says which names exist (`BR-DEPLOY-009a`); the tag it maps to
-is the desired-state pointer a target watches (`BR-DEPLOY-002`). Moving that pointer is the
-whole of deploying:
+``[cairn.declared_environments]`` table says which names exist (`BR-DEPLOY-009a`); the tag it
+maps to is the desired-state pointer a target watches (`BR-DEPLOY-002`). Moving that pointer
+is the whole of deploying:
 
     deploy   = point an environment's tag at a newly built image
     promote  = point it at whatever another environment currently runs
@@ -13,11 +13,13 @@ All three are one operation on one tag, with **no rebuild and no pull** (`BR-DEP
 That equivalence is the reason a rollback is as fast and as boring as a deploy, and it is
 why this module has no notion of "forward" or "backward".
 
-**Existence is declared, never inferred** (`BR-CLI-009`). A tag that happens to exist in the
+**The name is declared, never inferred** (`BR-CLI-009`). A tag that happens to exist in the
 registry does not make an environment, and cairn will not create one to satisfy a command:
-`new-tag` refuses a name already declared, `retag` and `retire` refuse a name that is not.
-The alternative — auto-vivification — turns a typo into a silent new environment, which is
-the failure mode this rule exists to prevent.
+`assign-tag` and `retire` both refuse a name that is not in the declared list. The
+alternative — auto-vivification — turns a typo into a silent new environment, which is the
+failure mode this rule exists to prevent. Whether the *pointer itself* already exists is a
+separate, non-fatal question `assign-tag` answers by creating or moving it and reporting
+which (`ADR-050`) — it is no longer a reason to refuse.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from enum import Enum
 
 from . import registry
 from .config import BuildConfig, Manifest
-from .errors import EnvironmentExistsError, RegistryError, UnknownEnvironmentError
+from .errors import RegistryError, UnknownEnvironmentError
 from .images import INPUT_HASH_LABEL
 from .registry import ImageRef, RemoteImage
 
@@ -104,7 +106,7 @@ def declared(manifest: Manifest, build_config: BuildConfig) -> dict[str, Environ
     base = build_config.resolve_image_base(manifest.image_name)
     return {
         name: Environment(name=name, tag=tag, ref=registry.parse_ref(f"{base}:{tag}"))
-        for name, tag in manifest.environments.items()
+        for name, tag in manifest.declared_environments.items()
     }
 
 
@@ -116,31 +118,16 @@ def require(manifest: Manifest, build_config: BuildConfig, name: str) -> Environ
     raise UnknownEnvironmentError(_no_such(name, known))
 
 
-def assert_creating(move: Move) -> None:
-    """Refuse a ``new-tag`` whose pointer already exists (`BR-CLI-009`).
+def action(move: Move) -> str:
+    """Whether ``assign-tag`` creates this pointer or moves it (`ADR-050`).
 
     Existence has two levels and only the manifest's is authoritative for *whether an
     environment exists*: `require` has already established that the name is declared. What
-    remains is whether the pointer has ever been **materialized** in the registry. Creating
-    over a live pointer would be a deploy wearing the word "new", which is exactly the
-    surprise `BR-CLI-011` forbids.
+    this decides is whether the pointer has ever been **materialized** in the registry — and
+    unlike the old `new-tag`/`retag` split, that fact is no longer a reason to refuse.
+    `assign-tag` always proceeds; this only decides what it reports having done.
     """
-    if move.previous_digest is not None:
-        raise EnvironmentExistsError(
-            f"The tag '{move.environment.tag}' already exists, resolving to "
-            f"{move.previous_digest}. '{move.environment.name}' is already deployed, so this "
-            f"would be a move, not a create — use `cairn retag {move.environment.name}`."
-        )
-
-
-def assert_moving(move: Move) -> None:
-    """Refuse a ``retag`` whose pointer does not exist yet (`BR-CLI-009`)."""
-    if move.previous_digest is None:
-        raise UnknownEnvironmentError(
-            f"The tag '{move.environment.tag}' does not exist in "
-            f"{move.environment.ref.base}, so there is no pointer to move. Create it with "
-            f"`cairn new-tag {move.environment.name}`."
-        )
+    return "created" if move.previous_digest is None else "moved"
 
 
 def plan_move(
@@ -180,8 +167,8 @@ def retire(manifest: Manifest, build_config: BuildConfig, name: str) -> Environm
     """Confirm *name* may be retired, returning it (`BR-CLI-009`).
 
     cairn removes nothing here. Retirement is the operator deleting the entry from
-    ``[cairn.environments]``; this validates that the entry exists and hands back what the
-    caller must warn about — because **the registry tag persists**. GHCR has no per-tag
+    ``[cairn.declared_environments]``; this validates that the entry exists and hands back
+    what the caller must warn about — because **the registry tag persists**. GHCR has no per-tag
     delete, and deleting the underlying version would destroy an image other environments
     may still point at.
     """
@@ -247,7 +234,7 @@ def _current_digest(environment: Environment) -> str | None:
         return registry.digest_of(environment.ref)
     except RegistryError:
         # A tag that is not there is the normal state before the first deploy, and is not a
-        # failure — it is precisely what `new-tag` exists to fix.
+        # failure — it is precisely what `assign-tag` creates.
         return None
 
 
@@ -256,8 +243,8 @@ def _no_such(name: str, known: dict[str, Environment]) -> str:
     if not known:
         return (
             f"No such environment '{name}' — the manifest declares none. Add a "
-            f"[cairn.environments] table naming each environment and the registry tag it "
-            f"watches."
+            f"[cairn.declared_environments] table naming each environment and the registry "
+            f"tag it watches."
         )
     available = ", ".join(sorted(known))
     return f"No such environment '{name}'. Declared environments are: {available}."

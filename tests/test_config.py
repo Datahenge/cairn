@@ -132,28 +132,28 @@ def test_malformed_toml_is_reported_as_such(tmp_path):
         config.load_manifest(_manifest(tmp_path, "[cairn\n"))
 
 
-# --- the declared environment list (BR-DEPLOY-009a, ADR-033) ----------------
+# --- the declared environment list (BR-DEPLOY-009a, ADR-033, renamed by ADR-049) -------
 
 
 def test_environments_are_optional(tmp_path):
     """A manifest that only ever builds declares none, and that is not a defect — the
     pointer verbs report that no environment exists rather than inventing one."""
-    assert config.load_manifest(_manifest(tmp_path)).environments == {}
+    assert config.load_manifest(_manifest(tmp_path)).declared_environments == {}
 
 
 def test_environments_map_names_to_registry_tags(tmp_path):
-    text = VALID + '\n[cairn.environments]\nproduction = "production"\nstaging = "stg"\n'
+    text = VALID + '\n[cairn.declared_environments]\nproduction = "production"\nstaging = "stg"\n'
 
     manifest = config.load_manifest(_manifest(tmp_path, text))
 
-    assert manifest.environments == {"production": "production", "staging": "stg"}
+    assert manifest.declared_environments == {"production": "production", "staging": "stg"}
 
 
 @pytest.mark.parametrize(
     ("environments_table", "expected"),
     [
-        # sharing a tag would make a retag of either deploy to both at once — the tag *is*
-        # the desired-state pointer.
+        # sharing a tag would make an assign-tag of either deploy to both at once — the tag
+        # *is* the desired-state pointer.
         ('staging = "live"\nproduction = "live"\n', "both point at"),
         ("production = true\n", "must name a registry tag"),
         # a tag the registry would refuse must fail here, not after a build and a push.
@@ -161,7 +161,7 @@ def test_environments_map_names_to_registry_tags(tmp_path):
     ],
 )
 def test_environment_tags_are_validated(tmp_path, environments_table, expected):
-    text = VALID + "\n[cairn.environments]\n" + environments_table
+    text = VALID + "\n[cairn.declared_environments]\n" + environments_table
 
     with pytest.raises(ManifestInvalidError, match=expected):
         config.load_manifest(_manifest(tmp_path, text))
@@ -170,11 +170,11 @@ def test_environment_tags_are_validated(tmp_path, environments_table, expected):
 def test_environments_is_not_a_build_input(tmp_path):
     """No environment name may reach the image: it is promoted between environments, never
     built per environment."""
-    text = VALID + '\n[cairn.environments]\nproduction = "production"\n'
+    text = VALID + '\n[cairn.declared_environments]\nproduction = "production"\n'
 
     manifest = config.load_manifest(_manifest(tmp_path, text))
 
-    assert "environments" not in manifest.build
+    assert "declared_environments" not in manifest.build
     assert "production" not in str(manifest.build)
 
 

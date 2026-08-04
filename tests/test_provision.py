@@ -573,7 +573,7 @@ def test_the_build_timer_measures_from_the_end_of_the_last_run():
     assert "OnCalendar=" not in rendered
 
 
-def test_the_build_script_builds_then_advances_the_pointer():
+def test_the_build_script_builds_then_advances_the_pointer_then_prunes():
     rendered = provision.build_script(
         _options(
             workdir=Path("/opt/cairn"),
@@ -584,8 +584,13 @@ def test_the_build_script_builds_then_advances_the_pointer():
     )
 
     assert "build --manifest" in rendered
-    assert "retag test --latest --yes" in rendered
-    assert rendered.index("build --manifest") < rendered.index("retag test")
+    assert "assign-tag test --latest --yes" in rendered
+    assert "prune --keep 1 --yes" in rendered
+    assert (
+        rendered.index("build --manifest")
+        < rendered.index("assign-tag test")
+        < rendered.index("prune --keep")
+    )
 
 
 def test_a_manifest_path_with_spaces_is_quoted_in_the_script():

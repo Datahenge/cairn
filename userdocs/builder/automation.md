@@ -19,47 +19,28 @@ cairn-build.timer is enabled but NOT started — run the first build by hand fir
 then `systemctl start cairn-build.timer`
 ```
 
+Nothing further is required before starting it, even for an environment you've never used
+before — see below.
+
 ## What it actually runs
 
 `setup-timer` writes a small script — `build-and-advance.sh`, next to the manifest — and a
-systemd service + timer that runs it. The script does two things, in order:
+systemd service + timer that runs it. The script does three things, in order:
 
 ```bash
 cairn-build build --manifest /srv/cairn/acmecorp/cairn.toml --push
-cairn-build retag production --latest --yes --manifest /srv/cairn/acmecorp/cairn.toml
+cairn-build assign-tag production --latest --yes --manifest /srv/cairn/acmecorp/cairn.toml
+cairn-build prune --keep 1 --yes
 ```
 
 `build --push` is already an idempotent change detector: with no new commits, it resolves refs,
 sees the input hash is already built, and exits without building or pushing again — so the timer
-firing every 15 minutes costs almost nothing when there's nothing new. `retag` only runs, and
-only moves the pointer, when a new image was actually built.
-
-## Before you start the timer: point the environment once by hand
-
-`retag` refuses to run against an environment whose registry pointer has never been created —
-that's deliberate (see the [manifest reference](../reference/manifest.md#cairnenvironments)).
-Which means: the *first* time this timer fires against a brand-new environment, `retag` fails,
-because nothing has pointed at it yet. Before running `systemctl start cairn-build.timer` for an
-environment you haven't used before, create its pointer once by hand:
-
-```bash
-cairn-build new-tag production --latest
-```
-
-After that, every scheduled run is an ordinary `retag`, and there's nothing further to do by
-hand.
-
-## It doesn't clean up local disk yet
-
-`setup-timer` only wires the build/retag pair above — it does not run `cairn-build prune`.
-Superseded local images accumulate on the build machine until you remove them yourself:
-
-```bash
-cairn-build prune --dry-run   # see what would go
-cairn-build prune
-```
-
-Run this by hand periodically, or as your own cron/timer, until build automation covers it.
+firing every 15 minutes costs almost nothing when there's nothing new. `assign-tag` only runs,
+and only moves or creates the pointer, when a new image was actually built; on the very first
+scheduled run against a brand-new environment, it creates the pointer instead of failing — there
+is no separate manual step to run before starting the timer, even the first time. `prune` then
+removes anything the build just superseded on this machine's own local disk, so the timer also
+keeps disk use bounded without a second, separate job.
 
 ## Verify it's actually running
 

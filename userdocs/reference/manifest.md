@@ -35,7 +35,7 @@ python_version = "3.14.2"
 node_version = "24.13.0"
 install_chromium = true
 
-[cairn.environments]
+[cairn.declared_environments]
 production = "production"
 staging    = "staging"
 ```
@@ -96,20 +96,19 @@ Every knob left unset falls back to the Containerfile's own `ARG` default, which
 actually gets recorded as the build's effective, provenance-bearing input — not a value
 cairn invents.
 
-## `[cairn.environments]`
+## `[cairn.declared_environments]`
 
 Optional, and **not a build input at all** — declaring a row here doesn't build, push, or
 point anything; no environment name ever reaches the image, and nothing happens to the
 registry until you separately run a pointer command. It's the control-side declared
 *list* of which environment names are legal: a table mapping environment name → registry
-tag, e.g. `production = "production"`. It's what `cairn-build`'s pointer commands
-(`new-tag`, `retag`, `retire`) check against — you can only move a pointer for an
-environment named here — and it's the half of the deploy model that `cairn-adopt
-reconcile` matches against a target's own descriptor, by tag name.
+tag, e.g. `production = "production"`. It's what `cairn-build assign-tag`/`retire` check
+against — you can only point an environment named here — and it's the half of the deploy
+model that `cairn-adopt reconcile` matches against a target's own descriptor, by tag name.
 
 Two environments may not point at the same tag: the tag *is* the pointer, so sharing one
-would make retagging either one silently redeploy both. Absent or empty, **no
-environment exists** — the pointer commands report that rather than creating one on your
+would make an `assign-tag` of either one silently redeploy both. Absent or empty, **no
+environment exists** — the pointer command reports that rather than creating one on your
 behalf.
 
 **Why this exists — build once, promote many.** An image is deliberately
@@ -118,12 +117,12 @@ environment-agnostic: the same artifact is meant to run under `dev`, then `stagi
 registry tag, and that's the entire point of this table — it names which pointers are
 allowed to exist, so a build machine can never accidentally overwrite one it wasn't told
 about, and `production` in particular always requires deliberate confirmation before its
-pointer moves.
+pointer changes, whether that's the first time it's pointed at anything or the fiftieth.
 
 A worked example, given:
 
 ```toml
-[cairn.environments]
+[cairn.declared_environments]
 staging    = "staging"
 production = "production"
 ```
@@ -132,14 +131,14 @@ production = "production"
 # Build once.
 cairn-build build --manifest cairn.toml --push
 
-# First time staging is declared, its pointer doesn't exist yet:
-cairn-build new-tag staging --latest
+# First time staging is declared, its pointer doesn't exist yet — assign-tag creates it:
+cairn-build assign-tag staging --latest
 
 # Tried it out, looks good — promote the *same* image to production (no rebuild):
-cairn-build retag production --from staging --yes
+cairn-build assign-tag production --from staging --yes
 
 # A later build turns out bad — roll production back to what it ran before:
-cairn-build retag production --previous
+cairn-build assign-tag production --previous
 ```
 
 Every step above only moves a tag in the registry — `cairn-adopt reconcile` on the actual

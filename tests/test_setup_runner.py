@@ -392,6 +392,25 @@ def test_a_dry_run_of_a_whole_setup_reports_and_exits_zero():
     assert code == 0
 
 
+def test_the_header_names_setup_by_default(capsys):
+    """The header must not claim 'setup' while a setup-timer run is what's underway."""
+    runner = setup_runner.Runner(dry_run=True, force=False)
+
+    setup_runner.execute(runner, _options(), {}, (), None, program="cairn-build")
+
+    assert "cairn-build setup (dry run)" in capsys.readouterr().err
+
+
+def test_the_header_names_setup_timer_when_told_to(capsys):
+    runner = setup_runner.Runner(dry_run=True, force=False)
+
+    setup_runner.execute(
+        runner, _options(), {}, (), None, program="cairn-build", verb="setup-timer"
+    )
+
+    assert "cairn-build setup-timer (dry run)" in capsys.readouterr().err
+
+
 def test_the_manifest_defaults_beside_the_workdir():
     options = setup_runner.SetupOptions(workdir=Path("/opt/cairn"))
 

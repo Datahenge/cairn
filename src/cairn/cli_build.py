@@ -482,10 +482,9 @@ def _registry_repository(
     return registry.parse_ref(f"{base}:latest")
 
 
-def _pointer_move(
+def _assign_tag(
     name: str,
     *,
-    creating: bool,
     latest: bool,
     previous: bool,
     identifier: str | None,
@@ -494,10 +493,12 @@ def _pointer_move(
     dry_run: bool,
     assume_yes: bool,
 ) -> int:
-    """Create or move an environment pointer — the shared body of ``new-tag`` and ``retag``.
+    """Create or move an environment pointer — the body of ``assign-tag`` (`ADR-050`).
 
-    One function because deploy, promote, and rollback are one operation (`BR-DEPLOY-004`);
-    the only difference between the two commands is which pre-existing state is an error.
+    Deploy, promote, and rollback are one operation (`BR-DEPLOY-004`); whether this
+    particular call creates the pointer for the first time or moves an existing one is
+    decided by registry state, not by which command the operator typed, and is reported
+    rather than gated on.
     """
     selector, source_name = _selector(latest, previous, identifier, from_env)
 
@@ -533,7 +534,7 @@ def _pointer_move(
         source_environment=source_environment,
         candidates=candidates,
     )
-    environments.assert_creating(move) if creating else environments.assert_moving(move)
+    action = environments.action(move)  # "created" or "moved" — reported, never refused on.
 
     typer.echo(move.render())
     if dry_run:
@@ -544,18 +545,23 @@ def _pointer_move(
         return 0
 
     # The production gate (BR-CLI-010). Asked after the move is fully decided, so the digest
-    # in the prompt is the digest that will be deployed.
+    # in the prompt is the digest that will be deployed. Applies whether this creates
+    # production's pointer for the first time or moves it — both are equally consequential.
+    verb = "Create" if action == "created" else "Move"
     if (
         environment.is_production
         and not assume_yes
-        and not typer.confirm(f"Move '{environment.name}' to this image?", default=False)
+        and not typer.confirm(f"{verb} '{environment.name}' to this image?", default=False)
     ):
         note("The pointer was not moved.")
         return 0
 
     step(f"Pointing {environment.ref} at {move.source.digest}…")
     digest = environments.apply(move)
-    done(f"{environment.name} now points at {digest}")
+    if action == "created":
+        done(f"{environment.name} did not exist — created it, now pointing at {digest}")
+    else:
+        done(f"{environment.name} moved to {digest}")
     step("  The target converges on its next poll; nothing was pulled or rebuilt.")
     return 0
 
@@ -585,13 +591,13 @@ def _selector(
 
 
 @app.command(
-    "new-tag",
+    "assign-tag",
     help=(
-        "Create an environment's registry pointer for the first time. Nothing is rebuilt "
-        "or pulled."
+        "Point an environment at an image — creates its pointer if this is the first time, "
+        "moves it otherwise. Nothing is rebuilt or pulled; production asks first."
     ),
 )
-def new_tag_command(
+def assign_tag_command(
     environment: Annotated[str, typer.Argument(help="The declared environment to point.")],
     latest: Annotated[bool, typer.Option("--latest", help="The newest image cairn built.")] = False,
     previous: Annotated[
@@ -612,55 +618,11 @@ def new_tag_command(
     ] = False,
     assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
 ) -> None:
-    """Create an environment's pointer (BR-CLI-004, BR-CLI-009, BR-DEPLOY-004)."""
+    """Create or move an environment's pointer (BR-CLI-004, BR-CLI-009, BR-CLI-010,
+    BR-DEPLOY-004, ADR-050)."""
     run(
-        lambda: _pointer_move(
+        lambda: _assign_tag(
             environment,
-            creating=True,
-            latest=latest,
-            previous=previous,
-            identifier=identifier,
-            from_env=from_env,
-            manifest_path=manifest_path,
-            dry_run=dry_run,
-            assume_yes=assume_yes,
-        )
-    )
-
-
-@app.command(
-    "retag",
-    help=(
-        "Move an environment's pointer to another image. Nothing is rebuilt or pulled; "
-        "moving production asks first."
-    ),
-)
-def retag_command(
-    environment: Annotated[str, typer.Argument(help="The declared environment to move.")],
-    latest: Annotated[bool, typer.Option("--latest", help="The newest image cairn built.")] = False,
-    previous: Annotated[
-        bool, typer.Option("--previous", help="The image before the one running now.")
-    ] = False,
-    identifier: Annotated[
-        str | None, typer.Option("--id", help="A specific tag already in the registry.")
-    ] = None,
-    from_env: Annotated[
-        str | None, typer.Option("--from", help="Whatever another environment runs now.")
-    ] = None,
-    manifest_path: Annotated[
-        Path | None,
-        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
-    ] = None,
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Show the move, and make none.")
-    ] = False,
-    assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
-) -> None:
-    """Move an environment's pointer (BR-CLI-004, BR-CLI-010, BR-DEPLOY-004)."""
-    run(
-        lambda: _pointer_move(
-            environment,
-            creating=False,
             latest=latest,
             previous=previous,
             identifier=identifier,
@@ -695,7 +657,7 @@ def retire_command(
             "\n".join(
                 [
                     f"Retire '{retiring.name}' by removing this line from {found}:",
-                    f'  [cairn.environments]  {retiring.name} = "{retiring.tag}"',
+                    f'  [cairn.declared_environments]  {retiring.name} = "{retiring.tag}"',
                 ]
             )
         )
@@ -833,7 +795,15 @@ def setup_timer_command(
     )
     runner = Runner(dry_run=dry_run, force=force)
     raise typer.Exit(
-        execute(runner, options, BUILD_TIMER_STAGE_FUNCS, TIMER_STAGES, None, program="cairn-build")
+        execute(
+            runner,
+            options,
+            BUILD_TIMER_STAGE_FUNCS,
+            TIMER_STAGES,
+            None,
+            program="cairn-build",
+            verb="setup-timer",
+        )
     )
 
 

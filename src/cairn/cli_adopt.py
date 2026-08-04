@@ -286,7 +286,13 @@ def setup_timer_command(
     runner = Runner(dry_run=dry_run, force=force)
     raise typer.Exit(
         execute(
-            runner, options, ADOPT_TIMER_STAGE_FUNCS, TIMER_STAGES, None, program="cairn-adopt"
+            runner,
+            options,
+            ADOPT_TIMER_STAGE_FUNCS,
+            TIMER_STAGES,
+            None,
+            program="cairn-adopt",
+            verb="setup-timer",
         )
     )
 

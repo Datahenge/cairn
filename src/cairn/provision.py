@@ -148,7 +148,7 @@ python_version = "3.14.2"
 node_version = "24.13.0"
 install_chromium = true
 
-[cairn.environments]
+[cairn.declared_environments]
 production = "production"
 staging    = "staging"
 """
@@ -328,21 +328,29 @@ def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
 
 
 def build_script(options: SetupOptions, cairn_build: Path) -> str:
-    """Build, then advance the environment pointer.
+    """Build, advance the environment pointer, then prune superseded local images.
 
     `cairn-build build --push` is already an idempotent change detector — it resolves refs,
     computes the input hash, and short-circuits when that hash is already built. So a timer is
     the whole of the trigger; no watcher is needed and a no-op poll costs three `git ls-remote`
     calls.
+
+    `assign-tag` (`ADR-050`) replaces the old `new-tag`/`retag` split here specifically because
+    of this script: the first scheduled run against a brand-new environment has no pre-existing
+    pointer to move, and the merged command creates one instead of failing. `prune` (`ADR-051`)
+    rides the same script rather than a separate timer, since local cruft only ever exists
+    because this machine's own build just ran — there is no independent cadence for a separate
+    timer to hook that this script doesn't already know about.
     """
     return f"""\
 #!/bin/bash -e
-# Written by `cairn-build setup`. `cairn-build build --push` is idempotent: with no new
+# Written by `cairn-build setup-timer`. `cairn-build build --push` is idempotent: with no new
 # commits it resolves refs, sees the input hash is already built, and exits without building.
 cd {options.workdir}
 MANIFEST={shlex.quote(str(options.manifest))}
 {cairn_build} build --manifest "$MANIFEST" --push
-{cairn_build} retag {shlex.quote(options.environment)} --latest --yes --manifest "$MANIFEST"
+{cairn_build} assign-tag {shlex.quote(options.environment)} --latest --yes --manifest "$MANIFEST"
+{cairn_build} prune --keep 1 --yes
 """
 
 

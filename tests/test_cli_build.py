@@ -186,7 +186,7 @@ def _manifest_with_environments(**environments):
         frappe=base.frappe,
         apps=base.apps,
         build=base.build,
-        environments=environments or {"production": "production", "staging": "staging"},
+        declared_environments=environments or {"production": "production", "staging": "staging"},
     )
 
 
@@ -664,20 +664,22 @@ def test_a_failed_removal_exits_nonzero_without_aborting_the_rest(prunable):
     assert "Could not remove bbb000000000" in result.stderr
 
 
-# --- pointer verbs (BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-DEPLOY-004) -----
+# --- assign-tag (BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-DEPLOY-004, ADR-050) -----
 
 
-def test_new_tag_creates_the_pointer(pointers):
-    result = runner.invoke(cli_build.app, ["new-tag", "staging", "--latest"])
+def test_assign_tag_creates_the_pointer_when_absent(pointers):
+    """The first run against a brand-new environment creates its pointer — no separate
+    'new-tag' step, and no refusal."""
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"] == ("ghcr.io/datahenge/erpnext-btu-v16:v16", "staging")
-    assert "staging now points at" in result.stdout
+    assert "did not exist — created it" in result.stdout
 
 
-def test_new_tag_refuses_an_undeclared_environment(pointers):
+def test_assign_tag_refuses_an_undeclared_environment(pointers):
     """No auto-vivification: a typo must not quietly create an environment."""
-    result = runner.invoke(cli_build.app, ["new-tag", "stagng", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "stagng", "--latest"])
 
     assert result.exit_code == 2
     assert "No such environment 'stagng'" in result.stderr
@@ -685,39 +687,20 @@ def test_new_tag_refuses_an_undeclared_environment(pointers):
     assert "retag" not in pointers.seen
 
 
-def test_new_tag_refuses_a_pointer_that_already_exists(pointers):
-    """Creating over a live pointer would be a deploy wearing the word 'new'."""
+def test_assign_tag_moves_an_existing_pointer(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["new-tag", "staging", "--latest"])
-
-    assert result.exit_code == 2
-    assert "already exists" in result.stderr
-    assert "retag" not in pointers.seen
-
-
-def test_retag_refuses_a_pointer_that_does_not_exist(pointers):
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
-
-    assert result.exit_code == 2
-    assert "does not exist" in result.stderr
-    assert "new-tag" in result.stderr
-    assert "retag" not in pointers.seen
-
-
-def test_retag_moves_an_existing_pointer(pointers):
-    pointers.current = "sha256:" + "9" * 64
-
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "staging"
+    assert "moved to" in result.stdout
 
 
 def test_dry_run_moves_nothing(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest", "--dry-run"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest", "--dry-run"])
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
@@ -725,11 +708,11 @@ def test_dry_run_moves_nothing(pointers):
 
 
 def test_a_pointer_already_on_the_image_is_reported_not_rewritten(pointers):
-    """A retag that changes nothing still writes a manifest; saying so beats a cheerful
-    success message that hides it."""
+    """An assign-tag that changes nothing still writes a manifest; saying so beats a
+    cheerful success message that hides it."""
     pointers.current = pointers.catalog[0].digest
 
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert "already points at" in result.stdout
@@ -740,17 +723,27 @@ def test_production_asks_before_moving(pointers):
     """BR-CLI-010: the production gate, and the default answer is no."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "production", "--latest"], input="n\n")
+    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest"], input="n\n")
 
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
     assert "The pointer was not moved." in result.stderr
 
 
+def test_production_gate_applies_to_creation_too(pointers):
+    """Creating production's pointer for the first time is at least as consequential as
+    moving it, so the gate must not be conditioned on which of the two this is."""
+    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest"], input="n\n")
+
+    assert result.exit_code == 0
+    assert "retag" not in pointers.seen
+    assert "Create 'production'" in result.stdout
+
+
 def test_production_moves_when_confirmed(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "production", "--latest"], input="y\n")
+    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest"], input="y\n")
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "production"
@@ -759,7 +752,7 @@ def test_production_moves_when_confirmed(pointers):
 def test_yes_skips_the_production_gate_for_automation(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "production", "--latest", "--yes"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "production", "--latest", "--yes"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][1] == "production"
@@ -770,21 +763,21 @@ def test_non_production_is_not_gated(pointers):
     of confirming without reading."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest"])
 
     assert result.exit_code == 0
     assert "retag" in pointers.seen
 
 
 def test_a_selector_is_required(pointers):
-    result = runner.invoke(cli_build.app, ["retag", "staging"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging"])
 
     assert result.exit_code == 2
     assert "--latest" in result.stderr
 
 
 def test_selectors_are_mutually_exclusive(pointers):
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--latest", "--previous"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--latest", "--previous"])
 
     assert result.exit_code == 2
     assert "only one of" in result.stderr.lower()
@@ -794,7 +787,7 @@ def test_from_promotes_whatever_another_environment_runs(pointers):
     """Promotion reads the *source* environment's pointer, not the newest image."""
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--from", "production"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--from", "production"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][0] == "ghcr.io/datahenge/erpnext-btu-v16:production"
@@ -803,7 +796,7 @@ def test_from_promotes_whatever_another_environment_runs(pointers):
 def test_id_points_at_a_named_tag(pointers):
     pointers.current = "sha256:" + "9" * 64
 
-    result = runner.invoke(cli_build.app, ["retag", "staging", "--id", "v16.0.1-aaa111"])
+    result = runner.invoke(cli_build.app, ["assign-tag", "staging", "--id", "v16.0.1-aaa111"])
 
     assert result.exit_code == 0
     assert pointers.seen["retag"][0].endswith(":v16.0.1-aaa111")
@@ -815,6 +808,7 @@ def test_retire_touches_nothing_and_warns_the_tag_persists(pointers):
     assert result.exit_code == 0
     assert "retag" not in pointers.seen
     assert 'staging = "staging"' in result.stdout
+    assert "[cairn.declared_environments]" in result.stdout
     assert "will still exist" in result.stderr
 
 

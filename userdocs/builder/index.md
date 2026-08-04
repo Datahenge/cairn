@@ -176,13 +176,14 @@ terminal output has scrolled away.
   registry keys](../reference/builder-config.md).
 - **Point an environment at it.** An *environment* (`production`, `staging`, …) is just a
   named, moving registry tag that a target machine watches — declared in the manifest's
-  [`[cairn.environments]`](../reference/manifest.md#cairnenvironments), which has a full
-  worked example of what this buys you (build once, promote the same image through
-  several environments, roll back by repointing). In short: `cairn-build new-tag <env>
-  --latest` the first time an environment is declared; `cairn-build retag <env> --latest`
-  from then on — the same command also promotes (`--from <env>`) and rolls back
-  (`--previous`). Nothing is rebuilt or pulled either way; moving `production` asks for
-  confirmation first.
+  [`[cairn.declared_environments]`](../reference/manifest.md#cairndeclared_environments),
+  which has a full worked example of what this buys you (build once, promote the same image
+  through several environments, roll back by repointing). In short: `cairn-build assign-tag
+  <env> --latest` — creates the environment's pointer the first time, moves it every time
+  after, and always says which of the two it did. The same command also promotes (`--from
+  <env>`) and rolls back (`--previous`). Nothing is rebuilt or pulled either way; moving
+  `production` asks for confirmation first — whether that move creates the pointer or moves
+  it.
 - **Adopt it.** `cairn-adopt` is the target-side binary — it polls the environment's tag
   and converges on its own next poll once the pointer moves; nothing pushes into the
   target. The target-side walkthrough isn't written yet; see [Get

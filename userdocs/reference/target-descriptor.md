@@ -51,7 +51,7 @@ hand you something `reconcile` would go on to reject.
 
 | Key | Required | Meaning |
 | --- | --- | --- |
-| `environment` | yes | This host's environment name — matched against the manifest's `[cairn.environments]` by tag, not by this string directly. `"production"` (case-insensitively) gates the extra confirmation `reconcile` requires before moving that pointer. |
+| `environment` | yes | This host's environment name — matched against the manifest's `[cairn.declared_environments]` by tag, not by this string directly. `"production"` (case-insensitively) gates the extra confirmation `reconcile` requires before moving that pointer. |
 | `image` | yes | The image repository this host watches. |
 | `tag` | yes | The tag this host watches — the desired-state pointer. `image:tag` together is what `reconcile` pulls. |
 | `site` | yes | The one site this environment runs. Each environment is exactly one site; multi-site hosts are rejected — adopting one would silently drop every site but the first from the proxy configuration. |

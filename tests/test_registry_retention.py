@@ -102,7 +102,7 @@ def test_keep_last_below_one_is_rejected():
 
 
 def test_an_environment_tagged_digest_is_never_deleted_however_old():
-    """The core safety property: no `[cairn.environments]` was ever read to know this."""
+    """The core safety property: no `[cairn.declared_environments]` was ever read to know this."""
     items = [
         _candidate("a", ["v16-aaaaaaaaaaaa"], days_old=1),
         _candidate("b", ["v16-bbbbbbbbbbbb", "production"], days_old=400),

@@ -3,7 +3,7 @@
 Where `cairn.toml` describes *what image to build*, `builder.toml` describes *how and
 where this particular machine builds it* — the build engine, a default registry, where
 transcripts land. Genuinely machine-local facts, never shared or committed. Named for the
-**Builder** role: `build`, `push`, `images`, `prune`, `new-tag`/`retag`/`retire`, and
+**Builder** role: `build`, `push`, `images`, `prune`, `assign-tag`/`retire`, and
 `doctor` read it. No target-side command (`reconcile`, `adopt`) ever touches it — a
 target has its own separate descriptor, see [Target descriptor](target-descriptor.md).
 
