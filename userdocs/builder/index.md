@@ -1,9 +1,15 @@
 # Builder
 
-Building and pushing images with `cairn-build`. Assumes cairn is already installed — see
-[Get Started](../get-started/index.md) if it isn't yet — and that the registry decision is
-already made — see [Registry](../registry/index.md) if it isn't: pushing, `assign-tag`, and
-automation all assume it.
+Building and pushing images with `cairn-build`.
+
+- Assumes cairn is already installed — see [Get Started](../get-started/index.md) if it
+  isn't yet.
+- Assumes the registry decision is already made. `cairn-build push`, `assign-tag`, and every
+  build automation timer all assume it — and the target role has nothing to poll without it.
+    - **Self-hosting?** Provision it first — see [Registry](../registry/index.md).
+    - **Using a client- or cloud-hosted registry instead?** There's nothing to provision.
+      Just note its address in the manifest's [`[cairn.registry]`
+      table](../reference/manifest.md#cairnregistry) and continue below.
 
 ## Verify with `doctor`
 

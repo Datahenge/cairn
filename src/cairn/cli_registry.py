@@ -323,10 +323,6 @@ def setup_command(
             "--only", help=f"Run one stage: {', '.join(registry_provision.REGISTRY_STAGES)}."
         ),
     ] = None,
-    workdir: Annotated[
-        Path,
-        typer.Option("--workdir", help="Directory to record in reported paths."),
-    ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
     private_ip: Annotated[
         str | None,
         typer.Option("--private-ip", help="Also put this IP in the registry certificate."),
@@ -350,27 +346,38 @@ def setup_command(
     """Provision a registry host (BR-CLI-021, BR-REG-003, BR-DEPLOY-021).
 
     Root-gated: exits reporting the shortfall rather than attempting a partial run without
-    the privilege its actions require.
+    the privilege its actions require. No `--workdir`: unlike `cairn-build`/`cairn-adopt setup`,
+    none of this command's three stages read it — there is no manifest to resolve relative to it
+    (`BR-REG-001`) — so offering the flag would promise a relevance it doesn't have.
+
+    A real (non-dry-run) run that actually brought the registry up — the whole run, or
+    `--only registry` on its own — finishes by running `doctor` and adopting its exit code:
+    the installer's own `--- summary ---` is a log of actions taken, not a health verdict, and
+    `doctor` is the fuller one (certificate validity, disk headroom, not just "the container
+    started"). Skipped for `--dry-run` (nothing to check yet) and for `--only preflight`/
+    `--only admin-group` (the registry container was never touched by either).
     """
     options = SetupOptions(
         dry_run=dry_run,
         force=force,
-        workdir=workdir,
         private_ip=private_ip,
         skip_disk_free=skip_disk_free,
         admin_group=None if no_admin_group else admin_group,
     )
     runner = Runner(dry_run=dry_run, force=force)
-    raise typer.Exit(
-        execute(
-            runner,
-            options,
-            registry_provision.REGISTRY_STAGE_FUNCS,
-            registry_provision.REGISTRY_STAGES,
-            only,
-            program="cairn-registry",
-        )
+    code = execute(
+        runner,
+        options,
+        registry_provision.REGISTRY_STAGE_FUNCS,
+        registry_provision.REGISTRY_STAGES,
+        only,
+        program="cairn-registry",
+        show_workdir=False,
     )
+    if code == 0 and not dry_run and only in (None, "registry"):
+        step("setup complete — verifying with `cairn-registry doctor`:")
+        code = _run_doctor()
+    raise typer.Exit(code)
 
 
 @app.command(

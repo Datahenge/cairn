@@ -411,6 +411,26 @@ def test_the_header_names_setup_timer_when_told_to(capsys):
     assert "cairn-build setup-timer (dry run)" in capsys.readouterr().err
 
 
+def test_workdir_is_printed_by_default(capsys):
+    runner = setup_runner.Runner(dry_run=True, force=False)
+
+    setup_runner.execute(runner, _options(), {}, (), None, program="cairn-build")
+
+    assert "workdir" in capsys.readouterr().err
+
+
+def test_show_workdir_false_hides_the_line(capsys):
+    """`cairn-registry setup` passes this — its stages never read `options.workdir`
+    (`BR-REG-001`), so printing it would claim a relevance it doesn't have."""
+    runner = setup_runner.Runner(dry_run=True, force=False)
+
+    setup_runner.execute(
+        runner, _options(), {}, (), None, program="cairn-registry", show_workdir=False
+    )
+
+    assert "workdir" not in capsys.readouterr().err
+
+
 def test_the_manifest_defaults_beside_the_workdir():
     options = setup_runner.SetupOptions(workdir=Path("/opt/cairn"))
 

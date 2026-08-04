@@ -42,6 +42,8 @@ CAIRN_MANAGED_LABEL = "com.datahenge.cairn.managed"
 #: The compose project directory — fixed, unlike `data_dir` (`registry_config.py`), which is
 #: the operator-configurable bind mount for the registry's actual blobs. This directory only
 #: ever holds the compose file and is not where an operator would look for image storage.
+#: Split from `CERT_DIR` deliberately, not merely historically — `ADR-053`: config/secrets
+#: (low-churn, shared) vs. relocatable bulk data belong in different places.
 PROJECT_DIR = Path("/opt/cairn-registry")
 
 CERT_DIR = Path("/etc/cairn")
@@ -50,6 +52,10 @@ DOCKER_CERT_DIR = Path("/etc/docker/certs.d")
 
 #: How long the self-signed certificate lasts. 825 days is the longest most clients accept.
 CERT_DAYS = 825
+
+#: Group-writable, matching `provision.py`'s constant of the same name and value — duplicated,
+#: not imported, since this module must not import `provision.py` (`BR-REG-001`).
+SHARED_FILE_MODE = 0o664
 
 #: `cairn-registry setup`'s fixed stage list — no `--role` flag, this binary only ever
 #: provisions a registry host (`ADR-046`/`ADR-048`'s "binary invoked is the role signal").
@@ -127,19 +133,73 @@ services:
 """
 
 
+def default_config_toml() -> str:
+    """A fully-commented starter `/etc/cairn/registry.toml`, written once so an operator
+    discovers every configurable key without first having to find `BR-REG-002`.
+
+    Every value shown is `RegistryConfig`'s own default, read back from the dataclass rather
+    than duplicated as a second set of literals that could silently drift from it.
+    """
+    default = RegistryConfig()
+    return f"""\
+# Written once by `cairn-registry setup`. Edit this file freely for your own registry — cairn
+# never overwrites it again once it exists, not even with --force (that flag only ever applies
+# to files cairn itself generates and regenerates, like the certificate and compose file).
+# After editing, run `cairn-registry setup --force` to apply the change.
+
+[registry]
+port = {default.port}
+bind_address = "{default.bind_address}"
+data_dir = "{default.data_dir}"
+
+[registry.retention]
+enabled = {str(default.retention.enabled).lower()}
+keep_last = {default.retention.keep_last}
+max_age_days = {default.retention.max_age_days}
+
+[registry.gc]
+schedule = "{default.gc.schedule}"
+"""
+
+
+def _ensure_default_config(runner: Runner) -> None:
+    """Create `registry_config.CONFIG_PATH` with the documented defaults, once.
+
+    Mirrors `provision.py`'s starter-manifest stage: an existing file is never touched,
+    `--force` included — once this exists it is the operator's own config, not cairn's to
+    manage, and `setup` only ever creates it as a discoverability courtesy the first time
+    there is none (`BR-REG-002`).
+    """
+    path = registry_config.CONFIG_PATH
+    if path.exists():
+        runner.say(f"    {path} already exists — leaving it")
+        runner.report.skipped.append(f"{path} (already present, not modified)")
+        return
+
+    runner.say(f"    write {path} (default configuration)")
+    if runner.dry_run:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(default_config_toml(), encoding="utf-8")
+    os.chmod(path, SHARED_FILE_MODE)
+    runner.report.done.append(f"created default {path}")
+
+
 def stage_registry(runner: Runner, options: SetupOptions) -> None:
     """Run a local registry over self-signed TLS, trusted by both Python and Docker.
 
     TLS rather than plain HTTP so that **cairn needs no change**: its registry client speaks
     https, and both `urllib` and Docker read the system CA store.
     """
+    _ensure_default_config(runner)
     config = registry_config.load()
     host = config.host
     crt, key = CERT_DIR / "registry.crt", CERT_DIR / "registry.key"
 
     cert_renewed = not crt.exists() or options.force
     if cert_renewed:
-        CERT_DIR.mkdir(parents=True, exist_ok=True)
+        if not runner.dry_run:
+            CERT_DIR.mkdir(parents=True, exist_ok=True)
         runner.run(
             [
                 "openssl",
@@ -163,7 +223,7 @@ def stage_registry(runner: Runner, options: SetupOptions) -> None:
         )
         if not runner.dry_run:
             os.chmod(key, 0o600)  # rule 4: key material is owner-only
-        runner.report.done.append(f"generated {crt}")
+            runner.report.done.append(f"generated {crt}")
     else:
         runner.say(f"    {crt} already exists — reusing it")
         runner.report.skipped.append("registry certificate (already present)")
@@ -177,7 +237,8 @@ def stage_registry(runner: Runner, options: SetupOptions) -> None:
         runner.write(ca_copy, content, what=f"trusted the certificate system-wide ({ca_copy})")
         runner.write(docker_ca, content, what=f"trusted the certificate for Docker ({docker_ca})")
     else:
-        runner.say(f"    write {ca_copy} and {docker_ca} from {crt}")
+        runner.say(f"    trust {crt} system-wide as {ca_copy}")
+        runner.say(f"    trust {crt} for Docker as {docker_ca}")
     runner.run(["update-ca-certificates"], what="refreshing the system CA bundle")
 
     if runner.dry_run:

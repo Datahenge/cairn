@@ -6,11 +6,12 @@ purpose: BR-REG requirements — provisioning, lifecycle, retention, and garbage
 
 # BR-REG — Registry Lifecycle Requirements
 
-_Status: **approved** 2026-08-03 · Last updated: 2026-08-03_
+_Status: **approved** 2026-08-03 · Last updated: 2026-08-04_
 
 Requirements for `cairn-registry`, the third CLI role: provisioning and operating a
 self-hosted OCI registry, and keeping its disk use bounded. Conventions: see `/CLAUDE.md`.
-Decisions cited: `ADR-009`, `ADR-035`, `ADR-036`, `ADR-038`, `ADR-039`, `ADR-046`, `ADR-048`.
+Decisions cited: `ADR-009`, `ADR-035`, `ADR-036`, `ADR-038`, `ADR-039`, `ADR-046`, `ADR-048`,
+`ADR-053`.
 
 ---
 
@@ -52,6 +53,13 @@ schedule = "weekly"
 An unknown key MUST be rejected at parse time, naming the key, matching the strictness
 `config.py` already applies to every manifest table but `[cairn.build]`.
 
+**`BR-REG-002a`** *(discoverability)* — The first time this path has no file, `cairn-registry
+setup` MUST create one there, fully commented, containing exactly the built-in defaults above.
+This is a courtesy, not a requirement to hand-author one from nothing — an operator who never
+opens it gets the identical defaults either way. Like `cairn-build setup`'s starter manifest
+(`BR-CLI-022`), an existing file at this path MUST NOT be modified again by any later `setup`
+run, `--force` included: once it exists it is the operator's own config, not cairn's to manage.
+
 ## Provisioning
 
 **`BR-REG-003`** *(setup)* — `cairn-registry setup` provisions a self-signed TLS registry:
@@ -64,7 +72,17 @@ migrated wholesale and made config-driven; `cairn-build setup` no longer has a `
 stage. Same seven-point installer contract as every other `setup` (`BR-DEPLOY-021`):
 idempotent, `--dry-run` prints and writes nothing, never silently overwrites, handles no
 secrets, gates before acting, verifies what it claims, and is never the only path to the same
-result.
+result. Unlike `cairn-build`/`cairn-adopt setup`, it takes no `--workdir` — none of its three
+stages resolve a manifest relative to one (`BR-REG-001`), so the flag would promise a relevance
+it doesn't have.
+
+**`BR-REG-003a`** *(setup verifies itself with doctor)* — A real (non-`--dry-run`) run that
+actually brought the registry container up — the full stage set, or `--only registry` alone —
+MUST finish by running the same checks as `doctor` (`BR-REG-011`) and exit with its code. The
+installer's own summary is a log of actions taken, not a health verdict; `doctor` additionally
+checks certificate validity and disk headroom, neither of which `setup`'s own reachability
+check covers. Skipped for `--dry-run` (nothing was started to check) and for `--only
+preflight`/`--only admin-group` (the registry container was never touched by either).
 
 **`BR-REG-004`** *(lifecycle)* — `status`, `start`, `stop`, `restart` are thin `docker compose`
 wrappers over the compose project `setup` wrote (`ADR-024`'s "thin orchestration" precedent) —

@@ -15,8 +15,8 @@ approved and implemented, durable decisions are promoted into a numbered record 
 the original ID into the new file's `origin` field so a citation made while it was open still
 resolves.
 
-These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`) continue the same
-`ADR-NNN` sequence as `docs/adr/` — they were simply judged lightweight rather than
+These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`) continue
+the same `ADR-NNN` sequence as `docs/adr/` — they were simply judged lightweight rather than
 consequential, not a separate numbering track.
 
 ## Records
@@ -28,3 +28,4 @@ consequential, not a separate numbering track.
 | [041-the-machine-build-config-file-is-named-builder-toml-not-config.md](041-the-machine-build-config-file-is-named-builder-toml-not-config.md) | `archived` | `builder.toml` rename — superseded same day by `ADR-042` |
 | [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `archived` | `[cairn.environments]` renamed to `[cairn.declared_environments]` — superseded same day by `ADR-052` |
 | [051-cairn-build-prune-runs-inside-the-build-script-not-a-separate-timer.md](051-cairn-build-prune-runs-inside-the-build-script-not-a-separate-timer.md) | `authoritative` | `cairn-build prune` runs inside the build script, not a separate timer |
+| [053-registry-splits-etc-cairn-config-from-opt-cairn-registry-data.md](053-registry-splits-etc-cairn-config-from-opt-cairn-registry-data.md) | `authoritative` | The registry role splits `/etc/cairn` (config + secrets) from `/opt/cairn-registry` (compose project + relocatable data) |

@@ -68,6 +68,7 @@ def sandbox(tmp_path, monkeypatch):
     monkeypatch.setattr(registry_provision, "DOCKER_CERT_DIR", tmp_path / "etc/docker/certs.d")
     monkeypatch.setattr(registry_provision, "PROJECT_DIR", tmp_path / "opt/cairn-registry")
     monkeypatch.setattr(registry_provision, "SYSTEMD_DIR", tmp_path / "etc/systemd/system")
+    monkeypatch.setattr(registry_config, "CONFIG_PATH", tmp_path / "etc/cairn/registry.toml")
     monkeypatch.setattr(
         registry_config,
         "load",
@@ -138,6 +139,67 @@ def test_registry_preflight_demands_openssl(monkeypatch):
 
     registry_provision.stage_preflight_registry(runner, _options())  # openssl reports ok: no raise
     assert "openssl" in runner.output
+
+
+# --- the default config file (`BR-REG-002`) -----------------------------------
+
+
+def test_default_config_toml_matches_registry_configs_own_defaults():
+    """The rendered template is read back from `RegistryConfig()`'s own field defaults, not a
+    second, hand-typed set of literals that could drift from `BR-REG-002`."""
+    rendered = registry_provision.default_config_toml()
+    default = registry_config.RegistryConfig()
+
+    assert f"port = {default.port}" in rendered
+    assert f'bind_address = "{default.bind_address}"' in rendered
+    assert f'data_dir = "{default.data_dir}"' in rendered
+    assert "enabled = false" in rendered
+
+
+def test_default_config_toml_round_trips_through_load(tmp_path, monkeypatch):
+    """The generated file must actually parse — every key it writes is one `registry_config`
+    recognizes, and the values it reads back match `RegistryConfig()`'s own defaults."""
+    path = tmp_path / "registry.toml"
+    path.write_text(registry_provision.default_config_toml(), encoding="utf-8")
+
+    loaded = registry_config.load(path)
+
+    assert loaded == registry_config.RegistryConfig(path=path)
+
+
+def test_stage_registry_creates_a_default_config_when_none_exists(sandbox):
+    registry_provision.CERT_DIR.mkdir(parents=True)
+    (registry_provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
+    runner = Recorder(answers={"curl": "ok"})
+
+    registry_provision.stage_registry(runner, _options(workdir=sandbox))
+
+    assert registry_config.CONFIG_PATH.is_file()
+    assert "created default" in runner.report.done[0]
+
+
+def test_stage_registry_dry_run_creates_no_config_file(sandbox):
+    runner = Recorder(dry_run=True, answers={"curl": "ok"})
+
+    registry_provision.stage_registry(runner, _options(workdir=sandbox))
+
+    assert not registry_config.CONFIG_PATH.exists()
+
+
+def test_stage_registry_never_touches_an_existing_config_even_with_force(sandbox, monkeypatch):
+    """Rule 3, with no `--force` escape hatch at all: once this file exists it is the
+    operator's own config, exactly like `provision.py`'s starter manifest — `setup` must
+    never silently discard a hand-edited `port`/`retention` value, even deliberately forced."""
+    monkeypatch.setattr(registry_provision.os, "chmod", lambda path, mode: None)
+    registry_provision.CERT_DIR.mkdir(parents=True)
+    (registry_provision.CERT_DIR / "registry.crt").write_text("cert\n", encoding="utf-8")
+    registry_config.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    registry_config.CONFIG_PATH.write_text("[registry]\nport = 9999\n", encoding="utf-8")
+    runner = Recorder(answers={"curl": "ok"})
+
+    registry_provision.stage_registry(runner, _options(workdir=sandbox, force=True))
+
+    assert registry_config.CONFIG_PATH.read_text(encoding="utf-8") == "[registry]\nport = 9999\n"
 
 
 # --- the certificate ----------------------------------------------------------
@@ -246,6 +308,32 @@ def test_stage_registry_dry_run_creates_no_data_dir(sandbox, monkeypatch):
     registry_provision.stage_registry(runner, _options(workdir=sandbox))
 
     assert not stub_config.data_dir.exists()
+
+
+def test_stage_registry_dry_run_creates_no_cert_dir(sandbox, monkeypatch):
+    """Rule 2: `--dry-run` prints and writes nothing. With no certificate yet present,
+    generating one is the branch that used to `mkdir` `/etc/cairn` unconditionally, before
+    checking `runner.dry_run` — a real filesystem mutation a dry run must never make."""
+    stub_config = registry_config.RegistryConfig(data_dir=sandbox / "would-be-data")
+    monkeypatch.setattr(registry_config, "load", lambda path=None: stub_config)
+    runner = Recorder(dry_run=True, answers={"curl": "ok"})
+
+    registry_provision.stage_registry(runner, _options(workdir=sandbox))
+
+    assert not registry_provision.CERT_DIR.exists()
+
+
+def test_stage_registry_dry_run_summary_claims_nothing_was_generated(sandbox, monkeypatch):
+    """Rule 6: the summary is a record of what happened, not a claim. A dry run that never
+    ran `openssl` must not report `generated <crt>` under `did` — that used to happen
+    unconditionally, regardless of `runner.dry_run`."""
+    stub_config = registry_config.RegistryConfig(data_dir=sandbox / "would-be-data")
+    monkeypatch.setattr(registry_config, "load", lambda path=None: stub_config)
+    runner = Recorder(dry_run=True, answers={"curl": "ok"})
+
+    registry_provision.stage_registry(runner, _options(workdir=sandbox))
+
+    assert runner.report.done == []
 
 
 # --- the compose file ----------------------------------------------------------

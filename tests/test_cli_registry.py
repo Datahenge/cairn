@@ -351,6 +351,34 @@ def test_setup_only_runs_the_named_stage(tmp_path, monkeypatch):
     assert "[admin-group]" not in result.stderr
 
 
+def test_setup_has_no_workdir_option(tmp_path, monkeypatch):
+    """`setup`'s three stages (preflight, admin-group, registry) read no manifest and no
+    `options.workdir` (`BR-REG-001`) — unlike `cairn-build`/`cairn-adopt setup`, so the flag
+    isn't offered here and the banner doesn't print a `workdir` line that would claim it."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(
+        setup_runner, "check_command", lambda r, label, c: setup_runner.Check(label, True, "ok")
+    )
+    monkeypatch.setattr(
+        setup_runner, "check_memory", lambda: setup_runner.Check("memory", True, "ok")
+    )
+    monkeypatch.setattr(
+        setup_runner.shutil, "disk_usage", lambda path: type("U", (), {"free": 40_000_000_000})()
+    )
+
+    result = runner.invoke(
+        cli_registry.app, ["setup", "--only", "preflight", "--workdir", str(tmp_path), "--dry-run"]
+    )
+
+    assert result.exit_code != 0
+    assert "no such option" in result.stderr.lower()
+
+    result = runner.invoke(cli_registry.app, ["setup", "--only", "preflight", "--dry-run"])
+
+    assert "workdir" not in result.stderr
+
+
 def test_setup_passes_the_private_ip_through(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     seen = {}
@@ -366,6 +394,84 @@ def test_setup_passes_the_private_ip_through(tmp_path, monkeypatch):
     )
 
     assert seen["private_ip"] == "10.0.0.9"
+
+
+def _stub_all_stages(monkeypatch):
+    """Replace every real stage with a no-op, so a non-dry-run `setup` invocation touches
+    nothing on the test machine — used only by the doctor-after-setup tests below, which care
+    about *whether* `_run_doctor` was called, not what any one stage does."""
+    for name in list(registry_provision.REGISTRY_STAGE_FUNCS):
+        monkeypatch.setitem(registry_provision.REGISTRY_STAGE_FUNCS, name, lambda r, o: None)
+
+
+def test_setup_runs_doctor_after_a_real_full_run(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    _stub_all_stages(monkeypatch)
+    calls = []
+    monkeypatch.setattr(cli_registry, "_run_doctor", lambda: (calls.append(1), 0)[1])
+
+    result = runner.invoke(cli_registry.app, ["setup"])
+
+    assert calls == [1]
+    assert result.exit_code == 0
+
+
+def test_setup_exit_code_follows_doctor_when_it_fails(tmp_path, monkeypatch):
+    """The installer's own summary can be all green while the registry it just started is
+    unhealthy — `setup`'s exit code must reflect the fuller check, not just that every stage
+    ran without raising."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    _stub_all_stages(monkeypatch)
+    monkeypatch.setattr(cli_registry, "_run_doctor", lambda: 1)
+
+    result = runner.invoke(cli_registry.app, ["setup"])
+
+    assert result.exit_code == 1
+
+
+def test_setup_skips_doctor_on_dry_run(tmp_path, monkeypatch):
+    """Nothing was actually started, so there is nothing yet for `doctor` to meaningfully
+    check — running it here would just report pre-existing host state as if `setup` caused it."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    _stub_all_stages(monkeypatch)
+    calls = []
+    monkeypatch.setattr(cli_registry, "_run_doctor", lambda: (calls.append(1), 0)[1])
+
+    runner.invoke(cli_registry.app, ["setup", "--dry-run"])
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("only", ["preflight", "admin-group"])
+def test_setup_skips_doctor_for_a_partial_run_that_never_touched_the_registry(
+    tmp_path, monkeypatch, only
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    _stub_all_stages(monkeypatch)
+    calls = []
+    monkeypatch.setattr(cli_registry, "_run_doctor", lambda: (calls.append(1), 0)[1])
+
+    runner.invoke(cli_registry.app, ["setup", "--only", only])
+
+    assert calls == []
+
+
+def test_setup_only_registry_still_runs_doctor(tmp_path, monkeypatch):
+    """`--only registry` still brings the container up on its own — a meaningful moment to
+    verify, unlike `--only preflight`/`--only admin-group`."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    _stub_all_stages(monkeypatch)
+    calls = []
+    monkeypatch.setattr(cli_registry, "_run_doctor", lambda: (calls.append(1), 0)[1])
+
+    runner.invoke(cli_registry.app, ["setup", "--only", "registry"])
+
+    assert calls == [1]
 
 
 # --- setup-timer (BR-CLI-027, BR-REG-010) -------------------------------------

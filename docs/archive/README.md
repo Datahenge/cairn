@@ -30,3 +30,4 @@ needed.
 | File | Archived from | Covers |
 |---|---|---|
 | [CHANGELOG-2026-07.md](CHANGELOG-2026-07.md) | `docs/CHANGELOG.md` | Dated entries 2026-07-21 through 2026-07-27 |
+| [CHANGELOG-2026-08-03.md](CHANGELOG-2026-08-03.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-03 |
