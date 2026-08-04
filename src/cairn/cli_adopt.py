@@ -51,9 +51,8 @@ def _root(
 @app.command(
     "reconcile",
     help=(
-        "Converge this host to the image its environment's tag points at. Idempotent and "
-        "safe to run repeatedly: with nothing changed it does nothing. Reads "
-        "/etc/cairn/adopt.toml, and never rolls back on failure — it stops and reports."
+        "Converge this host to the image its environment's tag points at. Idempotent; "
+        "never rolls back on failure — it stops and reports."
     ),
 )
 def reconcile_command(
@@ -100,10 +99,8 @@ def reconcile_command(
 @app.command(
     "examine",
     help=(
-        "Read the frappe_docker deployment already running on this host and print an "
-        "environment descriptor for it. Writes nothing — review the output, then install it "
-        "(or run `setup`, which installs it for you). With --manifest, also checks that the "
-        "manifest's apps match the site's."
+        "Read the running deployment and print an environment descriptor for it. Writes "
+        "nothing; review it, then install it (or run `setup`)."
     ),
 )
 def examine_command(
@@ -158,11 +155,7 @@ def examine_command(
 
 @app.command(
     "systemd-units",
-    help=(
-        "Print a systemd service and timer that run `cairn-adopt reconcile` on this host. "
-        "cairn prints them and installs nothing on its own — review them, then install them "
-        "yourself, or run `setup`, which installs them for you."
-    ),
+    help="Print the systemd service and timer for `cairn-adopt reconcile`. Installs nothing.",
 )
 def systemd_units_command(
     interval: Annotated[
@@ -186,11 +179,7 @@ def systemd_units_command(
 
 @app.command(
     "doctor",
-    help=(
-        "Check that this machine can converge: Docker + Compose, the reconcile timer, and "
-        "that the descriptor's watched tag resolves in the registry. Reports every check, "
-        "then exits non-zero if any failed."
-    ),
+    help="Check that this machine can converge: Docker + Compose, reconcile timer, registry tag.",
 )
 def doctor_command() -> None:
     """Check that this machine can converge: descriptor, Docker + Compose, registry.
@@ -203,9 +192,8 @@ def doctor_command() -> None:
 @app.command(
     "setup",
     help=(
-        "Provision this machine to converge: checks prerequisites, backs up the site, "
-        "and derives and installs the environment descriptor. Must be run with sudo. "
-        "Reconcile automation is separate — see `setup-timer`."
+        "Provision this machine to converge. Must be run with sudo; see `setup-timer` for "
+        "reconcile automation."
     ),
 )
 def setup_command(
@@ -274,12 +262,7 @@ def setup_command(
 
 @app.command(
     "setup-timer",
-    help=(
-        "Install (but do not start) the systemd timer that reruns `cairn-adopt reconcile` "
-        "on a schedule. Run this only after a manual reconcile has succeeded — starting it "
-        "is a separate, explicit `systemctl start cairn-reconcile.timer`. Must be run with "
-        "sudo."
-    ),
+    help="Install (but do not start) the reconcile-automation timer. Must be run with sudo.",
 )
 def setup_timer_command(
     dry_run: Annotated[

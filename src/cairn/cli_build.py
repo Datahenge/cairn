@@ -97,10 +97,7 @@ def vendor_status(
 
 @vendor_app.command(
     "sync",
-    help=(
-        "Re-materialize the vendored frappe_docker tree from its pinned ref. Upgrading the "
-        "pin is a deliberate, reviewable act: bump the ref, sync, review, commit."
-    ),
+    help="Re-materialize the vendored frappe_docker tree from its pinned ref.",
 )
 def vendor_sync(
     source: Annotated[
@@ -114,9 +111,8 @@ def vendor_sync(
 @app.command(
     "build",
     help=(
-        "Build the custom ERPNext image declared by cairn.toml. Resolves every app ref to "
-        "a commit, tags the result immutably, and stamps provenance onto the image. "
-        "Build-only by default; --push also uploads."
+        "Build the ERPNext image declared by cairn.toml. Build-only by default; --push "
+        "also uploads."
     ),
 )
 def build_command(
@@ -284,9 +280,8 @@ def build_command(
 @app.command(
     "images",
     help=(
-        "Show images and what they were built from. With --local, reports this machine's "
-        "own images grouped by their build inputs, so superseded builds are visible rather "
-        "than nameless. Images cairn did not build are counted but never listed."
+        "Show images and what they were built from. Reads the registry by default; "
+        "--local reads this machine instead."
     ),
 )
 def images_command(
@@ -337,9 +332,8 @@ def images_command(
 @app.command(
     "prune",
     help=(
-        "Remove superseded images this machine built. Only cairn's own images are ever "
-        "considered, only untagged ones are removed, and the newest of each build is kept "
-        "— so build-cache layers, which make rebuilds fast, are never touched."
+        "Remove superseded images this machine built. Only untagged images are removed; "
+        "the newest of each build is kept."
     ),
 )
 def prune_command(
@@ -423,9 +417,7 @@ def _warn_moving_refs(plan: build.BuildPlan) -> None:
 @app.command(
     "push",
     help=(
-        "Upload a built image to the configured registry. Without --id, the manifest's "
-        "refs are re-resolved so the tags pushed are exactly those `cairn-build build` "
-        "would produce. Authentication is your container engine's: run `docker login` or "
+        "Upload a built image to the configured registry. Requires `docker login` or "
         "`podman login` first — cairn stores no credentials."
     ),
 )
@@ -595,10 +587,8 @@ def _selector(
 @app.command(
     "new-tag",
     help=(
-        "Create an environment's registry pointer for the first time. The environment must "
-        "already be declared in cairn.toml; cairn never invents one. Nothing is rebuilt or "
-        "pulled — the pointer is written in the registry and the target converges on its "
-        "next poll."
+        "Create an environment's registry pointer for the first time. Nothing is rebuilt "
+        "or pulled."
     ),
 )
 def new_tag_command(
@@ -641,9 +631,8 @@ def new_tag_command(
 @app.command(
     "retag",
     help=(
-        "Move an environment's pointer to another image. Deploy, promote, and rollback are "
-        "all this one command — nothing is rebuilt and nothing is pulled. Moving production "
-        "asks first."
+        "Move an environment's pointer to another image. Nothing is rebuilt or pulled; "
+        "moving production asks first."
     ),
 )
 def retag_command(
@@ -685,10 +674,7 @@ def retag_command(
 
 @app.command(
     "retire",
-    help=(
-        "Decommission an environment from cairn. No image is touched and no registry tag is "
-        "deleted — this reports what to remove from cairn.toml, and what will remain behind."
-    ),
+    help="Decommission an environment from cairn. Touches no image or registry tag.",
 )
 def retire_command(
     environment: Annotated[str, typer.Argument(help="The declared environment to retire.")],
@@ -729,11 +715,7 @@ def retire_command(
 
 @app.command(
     "doctor",
-    help=(
-        "Check that this machine can build: a usable container engine (Docker v23+ or "
-        "podman v4+), git, a sound vendored tree, and valid configuration. Reports every "
-        "check, then exits non-zero if any failed."
-    ),
+    help="Check that this machine can build: container engine, git, vendored tree, and config.",
 )
 def doctor_command(
     manifest_path: Annotated[
@@ -752,11 +734,8 @@ def doctor_command(
 @app.command(
     "setup",
     help=(
-        "Provision this machine to build: checks prerequisites, shares /etc/cairn with a "
-        "group, and provisions /srv/cairn/<client>/ (scaffolding a starter cairn.toml if it "
-        "has none). Must be run with sudo. Never touches a running deployment. Build "
-        "automation is separate — see `setup-timer`. A local registry is `cairn-registry "
-        "setup`'s job, not this command's."
+        "Provision this machine to build. Must be run with sudo; see `setup-timer` for "
+        "build automation."
     ),
 )
 def setup_command(
@@ -815,12 +794,7 @@ def setup_command(
 
 @app.command(
     "setup-timer",
-    help=(
-        "Install (but do not start) the systemd timer that reruns `cairn-build build "
-        "--push` on a schedule. Run this only after a manual build has succeeded — "
-        "starting it is a separate, explicit `systemctl start cairn-build.timer`. Must "
-        "be run with sudo."
-    ),
+    help="Install (but do not start) the build-automation timer. Must be run with sudo.",
 )
 def setup_timer_command(
     dry_run: Annotated[

@@ -139,9 +139,8 @@ def _repository_json(config: registry_config.RegistryConfig, name: str) -> dict:
 @app.command(
     "prune",
     help=(
-        "Report registry digests beyond the configured retention window, and delete them if "
-        "registry.toml's retention.enabled is set to true. Never a digest still carrying a "
-        "moving or environment tag."
+        "Report registry digests beyond the retention window; deletes them only if "
+        "retention.enabled is true."
     ),
 )
 def prune_command(
@@ -197,8 +196,7 @@ def prune_command(
     "gc",
     help=(
         "Reclaim blob storage for digests `prune` already deleted. Briefly makes the "
-        "registry read-only — pulls continue, pushes are refused. Requires --yes or "
-        "--dry-run."
+        "registry read-only; requires --yes or --dry-run."
     ),
 )
 def gc_command(
@@ -236,11 +234,7 @@ def gc_command(
 
 @app.command(
     "doctor",
-    help=(
-        "Check that this registry is reachable over HTTPS, its certificate is valid, and "
-        "its data directory has room. Reports every check, then exits non-zero on any "
-        "failure."
-    ),
+    help="Check that this registry is reachable, its certificate is valid, and it has disk room.",
 )
 def doctor_command() -> None:
     run(_run_doctor)
@@ -312,9 +306,8 @@ def _check_disk_headroom(config: registry_config.RegistryConfig) -> tuple[str, b
 @app.command(
     "setup",
     help=(
-        "Provision this machine as a registry host: checks prerequisites, shares /etc/cairn "
-        "with a group, and runs a local TLS-secured registry. Must be run with sudo. "
-        "Maintenance automation is separate — see `setup-timer`."
+        "Provision this machine as a registry host. Must be run with sudo; see "
+        "`setup-timer` for maintenance automation."
     ),
 )
 def setup_command(
@@ -382,11 +375,7 @@ def setup_command(
 
 @app.command(
     "setup-timer",
-    help=(
-        "Install (but do not start) the systemd timer that runs `prune` then `gc` on the "
-        "cadence set by registry.toml's gc.schedule. Run this only after a manual prune/gc "
-        "has succeeded. Must be run with sudo."
-    ),
+    help="Install (but do not start) the prune/gc maintenance timer. Must be run with sudo.",
 )
 def setup_timer_command(
     dry_run: Annotated[
