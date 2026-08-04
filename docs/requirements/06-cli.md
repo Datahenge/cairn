@@ -268,7 +268,7 @@ requires `--client <name>` (no default; omitting it fails) and provisions
 under `/srv` — only `/srv/cairn/` is its namespace.
 
 If `/srv/cairn/<name>/cairn.toml` is absent, `setup` scaffolds it from the canonical
-illustrative manifest (`README.md`/`CONFIGURATION.md`, `BR-BUILD-003`'s ordered-list comment
+illustrative manifest (`README.md`/`userdocs/reference/manifest.md`, `BR-BUILD-003`'s ordered-list comment
 included); an existing one MUST NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report
 manifests found under `/srv/cairn/*/cairn.toml`, informationally only, never for selection —
 `BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-021, ADR-043, ADR-047)*

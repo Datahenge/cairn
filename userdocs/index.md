@@ -12,11 +12,11 @@ data.
 !!! note "This site is a work in progress"
     [Get Started](get-started/index.md) and [Builder](builder/index.md) are verified against
     a real deployment as they're written. [Registry](registry/index.md) is written ahead of a
-    live run against a real registry host. Guides, Reference, and the target-role guide are
-    still placeholders — in the meantime, the most complete documentation for those topics
-    lives in the repository itself:
+    live run against a real registry host. [Reference](reference/index.md) now covers the
+    manifest, build config, and target descriptor in full. Guides and the target-role guide
+    are still placeholders — in the meantime, the most complete documentation for those
+    topics lives in the repository itself:
 
-    - [Configuration](https://github.com/Datahenge/cairn/blob/main/docs/technical/CONFIGURATION.md)
     - [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
     - [About GHCR](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_GHCR.md)
 

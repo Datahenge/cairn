@@ -67,7 +67,7 @@ account, so a client's npm packages and your container images draw from the same
 An image lives at a path with three parts:
 
 ```
-ghcr.io/datahenge/erpnext-btu-v16:production
+ghcr.io/datahenge/erpnext-v16:production
 └─┬───┘ └───┬────┘ └──────┬──────┘ └───┬────┘
 registry  owner        image name     tag
 ```
@@ -125,7 +125,7 @@ again. GitHub shows a token exactly once.
 This is the part that surprises people, so plainly:
 
 **A package is owned by an account, not by a repository.** When you push
-`ghcr.io/datahenge/erpnext-btu-v16`, GHCR creates a *package* belonging to the `datahenge`
+`ghcr.io/datahenge/erpnext-v16`, GHCR creates a *package* belonging to the `datahenge`
 organization. It exists whether or not any repository is involved. It did not come from a
 repo and it is not inside one.
 

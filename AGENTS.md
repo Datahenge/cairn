@@ -79,7 +79,7 @@ traceability.
 | `CURRENT_CONTEXT.md` | Session router; read first in a fresh session | — |
 | `docs/00-project-scope.md` | Purpose, pillars, what it is/isn't, principles | — |
 | `docs/requirements/` | Numbered requirement docs + ToC (`00-overview.md`, then per-area) | `BR-<AREA>-NNN` |
-| `docs/technical/` | Coding standards, doc conventions, lessons learned, implementation index, documentation-authority map, plus ad-hoc reference docs (`CONFIGURATION.md`, `ABOUT_GHCR.md`, `ABOUT_REGISTRIES.md`) | — |
+| `docs/technical/` | Coding standards, doc conventions, lessons learned, implementation index, documentation-authority map, plus ad-hoc reference docs (`ABOUT_GHCR.md`, `ABOUT_REGISTRIES.md`) | — |
 | `docs/adr/` | Consequential decisions, one file per `ADR-NNN` | `ADR-NNN` |
 | `decisions/` | Lightweight dated decisions, one file per `ADR-NNN` | `ADR-NNN` |
 | `docs/archive/` | Fully-retired ADRs/decisions, with a forwarding stub left at the original path | — |

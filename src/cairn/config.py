@@ -346,7 +346,7 @@ def _image_name(path: Path, root: dict) -> str:
     if not _IMAGE_NAME_RE.match(name):
         raise ManifestInvalidError(
             f"{path}: image_name '{name}' is not a valid image name — use lowercase "
-            f"letters, digits, and separators (-, _, .), e.g. 'erpnext-btu-v16'."
+            f"letters, digits, and separators (-, _, .), e.g. 'erpnext-v16'."
         )
     return name
 

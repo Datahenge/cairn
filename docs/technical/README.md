@@ -32,7 +32,6 @@ without renumbering.
 
 Also in this tree, but reference rather than the numbered core above:
 
-- [CONFIGURATION.md](CONFIGURATION.md) — full manifest and build-config reference
 - [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md) — choosing a container registry
 - [ABOUT_GHCR.md](ABOUT_GHCR.md) — GHCR specifically
 - [high-level-motivations-and-workflows.md](high-level-motivations-and-workflows.md) — the "why" document, no requirement numbers

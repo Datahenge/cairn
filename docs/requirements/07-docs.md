@@ -61,6 +61,8 @@ but pages are user-facing explanation, not a second copy of internal docs.
 ## Cross-references
 - `/CLAUDE.md` — the identifier-visibility rule this area exists to keep structurally
   enforced (`BR-DOCS-001`, `BR-DOCS-002`).
-- **Follow-up (later work):** migrating `README.md`/`docs/technical/CONFIGURATION.md`/
-  `docs/technical/ABOUT_GHCR.md`/`docs/technical/ABOUT_REGISTRIES.md` into `userdocs/`'s
-  nav, once the site itself exists (`BR-DOCS-006`).
+- **Follow-up (later work):** migrating `README.md`/`docs/technical/ABOUT_GHCR.md`/
+  `docs/technical/ABOUT_REGISTRIES.md` into `userdocs/`'s nav, once the site itself exists
+  (`BR-DOCS-006`). `docs/technical/CONFIGURATION.md` completed this migration on 2026-08-04 —
+  its content now lives at `userdocs/reference/manifest.md`, `builder-config.md`, and
+  `target-descriptor.md`, and the file itself was retired rather than left as a stub.

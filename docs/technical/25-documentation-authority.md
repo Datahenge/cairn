@@ -6,7 +6,7 @@ purpose: Maps which cairn documents own each topic and defines reading order.
 
 # Documentation Authority Map
 
-> Review date: 2026-08-03.
+> Review date: 2026-08-04.
 
 This document defines which project documents own which topics, to prevent duplicated rules,
 stale parallel summaries, and unnecessary context loading.
@@ -51,7 +51,7 @@ thin audience-specific summary.
 | Dorwin Analysis / Hardin Version compression technique | [02-dorwin-analysis-and-hardin-version.md](02-dorwin-analysis-and-hardin-version.md) |
 | Durable technical findings about tools cairn builds on | [04-lessons-learned.md](04-lessons-learned.md) |
 | Current implementation inventory | [05-implementation-index.md](05-implementation-index.md) |
-| Manifest / build-config full reference | [CONFIGURATION.md](CONFIGURATION.md) |
+| Manifest / build-config / target-descriptor full reference | [../../userdocs/reference/manifest.md](../../userdocs/reference/manifest.md), [../../userdocs/reference/builder-config.md](../../userdocs/reference/builder-config.md), [../../userdocs/reference/target-descriptor.md](../../userdocs/reference/target-descriptor.md) |
 | Registry choice tradeoffs | [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md), [ABOUT_GHCR.md](ABOUT_GHCR.md) |
 | Registry lifecycle: provisioning, retention, garbage collection (`cairn-registry`) | [../requirements/08-registry.md](../requirements/08-registry.md) |
 | Practice-level "why" narrative, no requirement numbers | [high-level-motivations-and-workflows.md](high-level-motivations-and-workflows.md) |

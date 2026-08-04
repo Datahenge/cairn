@@ -115,11 +115,12 @@ DESCRIPTOR_PATH = Path("/etc/cairn/adopt.toml")
 MANIFEST_ROOT = Path("/srv/cairn")
 
 #: The starter manifest `setup` scaffolds into a client directory that has none yet — the
-#: same illustrative example published in `README.md`/`CONFIGURATION.md`, `BR-BUILD-003`'s
-#: ordered-list comment included. One template, reused, not reinvented (`ADR-047`).
+#: same illustrative example published in `README.md`/`userdocs/reference/manifest.md`,
+#: `BR-BUILD-003`'s ordered-list comment included. One template, reused, not reinvented
+#: (`ADR-047`).
 MANIFEST_TEMPLATE = """\
 [cairn]
-image_name = "erpnext-btu-v16"
+image_name = "erpnext-v16"
 series = "v16"                      # the readable half of the image tag
 
 [cairn.frappe]
@@ -133,10 +134,11 @@ name = "erpnext"
 url = "https://github.com/frappe/erpnext"
 ref = "version-16"
 
-[[cairn.apps]]
-name = "your_custom_app"
-url = "https://github.com/your-org/your_custom_app"
-ref = "version-16"
+# Uncomment and edit to add another app, after the apps it depends on:
+# [[cairn.apps]]
+# name = "your_custom_app"
+# url = "https://github.com/your-org/your_custom_app"
+# ref = "version-16"
 
 [cairn.build]
 python_version = "3.14.2"

@@ -9,6 +9,14 @@ code changes live in git history.
 
 ---
 
+## 2026-08-04 — `CONFIGURATION.md` retired; reference migrated to `userdocs/`
+
+Retired, not rewritten — resolves `DOCS-01`. Content re-verified against source, split into
+`userdocs/reference/{manifest,builder-config,target-descriptor}.md`; inbound references
+repointed. Detail: `open/OPEN_WORK.md` `W-012`, `open/OPEN_DECISIONS.md` `DOCS-01`.
+
+---
+
 ## 2026-08-03 (later still — `cairn-registry`: retention/GC for the local registry)
 
 Raised ahead of `W-001`: the local registry's port/storage were hardcoded, and cairn had never

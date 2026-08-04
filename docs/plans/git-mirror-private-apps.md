@@ -132,9 +132,9 @@ circular import risk, same precedent already in the codebase.
   `docs/adr/` `authoritative` status (dropping the `open/OPEN_DECISIONS.md` row) or stays open
   with updated status is a call to make once the code lands and the `--network=host` assumption
   is confirmed.
-- `docs/technical/CONFIGURATION.md`: extend the "Private `github.com` apps" section (added for `BR-BUILD-016`)
-  with the `mirror = true` alternative and when to prefer it (client won't issue any token, but
-  already has/will make a deploy key).
+- `userdocs/reference/builder-config.md`: extend the "Private `github.com` apps" section (added
+  for `BR-BUILD-016`) with the `mirror = true` alternative and when to prefer it (client won't
+  issue any token, but already has/will make a deploy key).
 - `docs/CHANGELOG.md`: entry recording the same reasoning as this plan's Context section.
 
 ## Tests

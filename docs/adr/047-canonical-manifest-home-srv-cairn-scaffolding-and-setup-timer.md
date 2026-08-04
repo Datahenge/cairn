@@ -35,8 +35,9 @@ silently.
 `/srv/cairn/<name>/cairn.toml` exists, `setup` reports it present and does not touch it — the
 same "never silently overwrite" discipline `BR-DEPLOY-021` already requires of every file
 `setup` can write. If it does not exist, `setup` writes the existing illustrative example — the
-one already published in `README.md` and `CONFIGURATION.md`, `BR-BUILD-003`'s ordered-list
-comment included — verbatim. One template, reused; not a second one invented for this purpose.
+one already published in `README.md` and `userdocs/reference/manifest.md`, `BR-BUILD-003`'s
+ordered-list comment included — verbatim. One template, reused; not a second one invented for
+this purpose.
 
 This **strikes** `README.md`'s current "there's no scaffolding command either — you hand-write
 the manifest" line (tracked for the wider rewrite under `W-012`, not fixed piecemeal here). The
@@ -66,9 +67,11 @@ still requires an explicit `--manifest` or `$CAIRN_MANIFEST`.
   its own single-stage command rather than a value of `--only`.
 - `ADOPT_STAGES` loses `timers` the same way.
 - `cairn-build setup` gains a required `--client <name>` option with no default.
-- `README.md`/`CONFIGURATION.md` remain deliberately stale on this point too, per `W-012`,
-  until the wider rewrite folds it in alongside the rest of the `cairn-build`/`cairn-adopt`
-  split.
+- `README.md` remains deliberately stale on this point, per `W-012`, until the wider rewrite
+  folds it in alongside the rest of the `cairn-build`/`cairn-adopt` split.
+  `userdocs/reference/manifest.md` (2026-08-04) documents `setup`'s scaffolding correctly and
+  is not affected. `CONFIGURATION.md` itself was retired the same day, its content absorbed
+  into `userdocs/reference/`.
 
 *(BR-CLI-021, BR-CLI-022, BR-CLI-023, BR-DEPLOY-021, BR-BUILD-003, BR-CLI-014, ADR-043,
 ADR-046)*

@@ -57,7 +57,7 @@ would otherwise reuse a stale `bench init` layer. *(ADR-015)*
 **`BR-BUILD-008`** — cairn MUST tag the image with a **deterministic primary tag**
 `<legible>-<inputhash>` — `<inputhash>` a short hash of *all* resolved inputs (Frappe + app
 commits + effective build args) that alone guarantees uniqueness (e.g.
-`cairn/erpnext-btu-v16:v16-a1b2c3d4`). cairn MUST also apply a moving `latest` tag. The
+`cairn/erpnext-v16:v16-a1b2c3d4`). cairn MUST also apply a moving `latest` tag. The
 image base defaults to `cairn/<image_name>` and MUST be registry-agnostic.
 
 `<legible>` comes from the manifest's declared `[cairn] series` (`ADR-032`, resolved

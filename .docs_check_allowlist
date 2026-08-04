@@ -5,7 +5,10 @@
 # structural reorganization. See docs/technical/01-documentation-conventions.md for
 # the sprawl-control policy new documents should follow.
 
-docs/CHANGELOG.md = 14500
+docs/CHANGELOG.md = 14550
+# ^ bumped again 2026-08-04 for the CONFIGURATION.md-retirement entry, despite W-014's
+# preference against it — the real split (archive older dated sections) is still owed;
+# see open/OPEN_WORK.md W-014.
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
 docs/requirements/03-deploy.md = 2300

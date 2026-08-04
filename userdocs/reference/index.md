@@ -1,10 +1,18 @@
 # Reference
 
-Command surface and file-format reference material will land here.
+File-format reference material:
 
-Until it's written, run `cairn-build --help` / `cairn-adopt --help` / `cairn-registry --help`
-(or `<command> <subcommand> --help`) for the current command surface — it stays authoritative
-for the CLI's exact flags and behavior.
+- **[cairn.toml (manifest)](manifest.md)** — the image declaration: Frappe source, apps,
+  build knobs, environments, registry.
+- **[builder.toml (build config)](builder-config.md)** — machine-local build settings,
+  the private-`github.com`-app token, and shared `/etc/cairn` provisioning.
+- **[Target descriptor](target-descriptor.md)** — `/etc/cairn/adopt.toml`, what a target
+  host runs.
+
+Command surface reference will land here later. Until it's written, run
+`cairn-build --help` / `cairn-adopt --help` / `cairn-registry --help` (or `<command>
+<subcommand> --help`) for the current command surface — it stays authoritative for the
+CLI's exact flags and behavior.
 
 ## Contributing
 

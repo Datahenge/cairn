@@ -45,7 +45,7 @@ local build settings, if you need any, live separately and are never shared:
 ```toml
 # cairn.toml
 [cairn]
-image_name = "erpnext-btu-v16"
+image_name = "erpnext-v16"
 series = "v16"
 
 [cairn.frappe]
@@ -66,11 +66,15 @@ writes a starter manifest to `/srv/cairn/<name>/cairn.toml`, but only as one ste
 provisioning a whole build machine, and only if none exists there yet. Otherwise, hand-write
 one, starting from the example above.
 
-See **[docs/technical/CONFIGURATION.md](docs/technical/CONFIGURATION.md)** for the full manifest schema, the
-machine-local `/etc/cairn/builder.toml` layer and its `CAIRN_*` environment-variable
-overrides (what each key means, how they're created, and how precedence works), sharing
-`/etc/cairn` across several operators, and how a target's `/etc/cairn/adopt.toml`
-descriptor comes from `cairn-adopt examine` rather than being hand-authored.
+See the published reference for the full manifest schema
+([cairn.toml](https://datahenge.github.io/cairn/reference/manifest/)), the machine-local
+`/etc/cairn/builder.toml` layer and its `CAIRN_*` environment-variable overrides — what
+each key means, how they're created, and how precedence works — and sharing `/etc/cairn`
+across several operators
+([builder.toml](https://datahenge.github.io/cairn/reference/builder-config/)), and how a
+target's `/etc/cairn/adopt.toml` descriptor comes from `cairn-adopt examine` rather than
+being hand-authored
+([target descriptor](https://datahenge.github.io/cairn/reference/target-descriptor/)).
 
 ### Where images are pushed
 
