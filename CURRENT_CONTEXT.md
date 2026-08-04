@@ -10,11 +10,15 @@ Use this file as the first context checkpoint. Keep it short — point to detail
 
 ## Current Phase
 
-Phase 4 (modular code) is under way. The `cairn-build` / `cairn-adopt` two-binary split (`ADR-046`)
-just landed, replacing the unified `cairn` command and the separate `cairn-provision` installer
-(folded into each CLI's own `setup` subcommand). The docs tree itself is mid-migration onto the
-canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) — this file, `open/`, `scratch/`,
-`docs/technical/`, `docs/adr/`, `decisions/`, and `docs/discussions/` are new as of that migration.
+Phase 4 (modular code) is under way, on the three-binary split (`cairn-build` / `cairn-adopt` /
+`cairn-registry`, `ADR-046`/`ADR-048`) that replaced the unified `cairn` command and the
+separate `cairn-provision` installer. Most recently landed: `ADR-052` (manifest:environment is
+1:1; promotion is proof, found in the registry, not an assertion). Active work is `cairn-registry`
+(`W-015`) and the first live run against real infrastructure — everything in the deploy path is
+tested but unexercised on a real host or registry; see `open/OPEN_WORK.md`. The docs tree itself
+finished its migration onto the canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) —
+this file, `open/`, `scratch/`, `docs/technical/`, `docs/adr/`, `decisions/`, and
+`docs/discussions/` are the result.
 
 ## Read First
 

@@ -6,6 +6,13 @@ registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_RE
 for the tradeoffs against a client-owned cloud registry or GHCR. Assumes cairn is already
 installed — see [Get Started](../get-started/index.md) if it isn't yet.
 
+Read this before [Builder](../builder/index.md): `cairn-build push`, `assign-tag`, and every
+build automation timer assume the registry decision below is already made, and the target
+role has nothing to poll without it. If you're using a client- or cloud-hosted registry
+instead of self-hosting, there's nothing to provision here — just note the address for the
+manifest's [`[cairn.registry]` table](../reference/manifest.md#cairnregistry) and move on to
+Builder.
+
 `cairn-registry` is independent of the builder and target roles: it reads no manifest and no
 `[cairn] environment` — every decision comes from `/etc/cairn/registry.toml`
 (optional; sane defaults apply if it's absent) and the registry's own API.
@@ -60,7 +67,10 @@ list-timers --all | grep cairn` and `journalctl -u cairn-registry-maintenance.se
 -1d` — see [Build Automation](../builder/automation.md#verify-its-actually-running) for the
 same pattern applied to every cairn timer.
 
-## Next: verified against a real deployment
+## Next steps
+
+- **[Builder](../builder/index.md)** — now that the registry decision is made, build and push
+  images against it.
 
 *This page is written ahead of a live run — check back, or see
 [`docs/requirements/08-registry.md`](https://github.com/Datahenge/cairn/blob/main/docs/requirements/08-registry.md)

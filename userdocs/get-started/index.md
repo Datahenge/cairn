@@ -1,8 +1,12 @@
 # Get Started
 
-Installs cairn and gets it onto a machine — whether that machine will go on to **build**
-images, **adopt and run** an existing deployment, or **host a local registry**. The three
-roles diverge right after this page; see [Next steps](#next-steps) at the bottom.
+Installs cairn and gets it onto a machine — whether that machine will go on to **host a
+local registry**, **build** images, or **adopt and run** an existing deployment. The three
+roles diverge right after this page; see [Next steps](#next-steps) at the bottom, and read
+it in order — Registry first. `cairn-build push`, `assign-tag`, and every build automation
+timer assume the registry decision is already made, and the target role has nothing to poll
+without it. Deciding it upfront, even if the answer is "a client already runs one," avoids
+stopping mid-Builder-walkthrough to go make that decision.
 
 ## Prerequisites
 
@@ -34,22 +38,27 @@ sudo pipx install --global datahenge-cairn
 
 This single install gives you **three** commands, not one:
 
+- **`cairn-registry`** — the registry-host role, needed only if you choose to self-host:
+  `status`, `start`, `stop`, `restart`, `images`, `prune`, `gc`, `doctor`, `setup`,
+  `setup-timer`.
 - **`cairn-build`** — the builder role: `build`, `push`, `images`, `prune`, `assign-tag`,
   `retire`, `vendor`, `doctor`, `setup`, `setup-timer`.
 - **`cairn-adopt`** — the target role: `examine`, `reconcile`, `systemd-units`, `doctor`,
   `setup`, `setup-timer`.
-- **`cairn-registry`** — the registry-host role, needed only if you choose to self-host:
-  `status`, `start`, `stop`, `restart`, `images`, `prune`, `gc`, `doctor`, `setup`,
-  `setup-timer`.
 
 There is no unified `cairn` command. Which one(s) you need depends on what this machine does,
 not what's installed — the same package carries all three.
 
 ## Next steps
 
-- **[Builder](../builder/index.md)** — building and pushing images. Starts with
-  `cairn-build doctor`.
-- **Target** — adopting and running an existing deployment. Not yet written.
-- **[Registry](../registry/index.md)** — provisioning and operating a self-hosted registry.
-  Starts with `cairn-registry doctor`. Only needed if you chose that option — see
-  [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md).
+1. **[Registry](../registry/index.md)** — decide where images will live, and if that's a
+   self-hosted registry, provision it. Starts with `cairn-registry doctor`. If a client or
+   cloud provider already operates the registry you'll push to, there's nothing to provision
+   — just note its address for the [manifest's `[cairn.registry]`
+   table](../reference/manifest.md#cairnregistry) — but make that call now rather than after
+   a build is already sitting local-only. See [About container
+   registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
+   for the tradeoffs.
+2. **[Builder](../builder/index.md)** — building and pushing images. Starts with
+   `cairn-build doctor`.
+3. **Target** — adopting and running an existing deployment. Not yet written.

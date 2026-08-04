@@ -1,7 +1,9 @@
 # Builder
 
 Building and pushing images with `cairn-build`. Assumes cairn is already installed — see
-[Get Started](../get-started/index.md) if it isn't yet.
+[Get Started](../get-started/index.md) if it isn't yet — and that the registry decision is
+already made — see [Registry](../registry/index.md) if it isn't: pushing, `assign-tag`, and
+automation all assume it.
 
 ## Verify with `doctor`
 

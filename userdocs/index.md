@@ -10,12 +10,14 @@ boundary keeps cairn out of your databases and volumes entirely — it ships cod
 data.
 
 !!! note "This site is a work in progress"
-    [Get Started](get-started/index.md) and [Builder](builder/index.md) are verified against
-    a real deployment as they're written. [Registry](registry/index.md) is written ahead of a
-    live run against a real registry host. [Reference](reference/index.md) now covers the
-    manifest, build config, and target descriptor in full. Guides and the target-role guide
-    are still placeholders — in the meantime, the most complete documentation for those
-    topics lives in the repository itself:
+    [Get Started](get-started/index.md) is verified against a real deployment as it's written,
+    as is [Builder](builder/index.md). [Registry](registry/index.md) is written ahead of a
+    live run against a real registry host — decide that first anyway (see [Get
+    Started](get-started/index.md#next-steps)), since Builder's push/automation and the
+    target role both assume the registry decision is already made. [Reference](reference/index.md)
+    now covers the manifest, build config, and target descriptor in full. Guides and the
+    target-role guide are still placeholders — in the meantime, the most complete
+    documentation for those topics lives in the repository itself:
 
     - [About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
     - [About GHCR](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_GHCR.md)
@@ -23,7 +25,8 @@ data.
 ## Where to go next
 
 - **[Get Started](get-started/index.md)** — installing cairn, for any role.
+- **[Registry](registry/index.md)** — decide and, if self-hosting, provision a registry.
+  Do this before Builder — see why below.
 - **[Builder](builder/index.md)** — building and pushing images.
-- **[Registry](registry/index.md)** — provisioning and operating a self-hosted registry.
 - **[Guides](guides/index.md)** — configuration and day-to-day operation.
 - **[Reference](reference/index.md)** — command surface and file formats.

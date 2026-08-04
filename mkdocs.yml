@@ -61,10 +61,10 @@ extra:
 nav:
   - Home: index.md
   - Get Started: get-started/index.md
+  - Registry: registry/index.md
   - Builder:
       - Overview: builder/index.md
       - Build Automation: builder/automation.md
-  - Registry: registry/index.md
   - Guides: guides/index.md
   - Reference:
       - Overview: reference/index.md
