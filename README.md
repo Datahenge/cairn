@@ -30,56 +30,24 @@ than by what's installed:
 | Needs | Docker Engine v23+ or podman v4+, `git` | Docker Engine + `docker compose` | Docker Engine + `docker compose`, `openssl` |
 | Credential | push access to the registry | pull-only | none — reads no manifest, no `[cairn.declared_environments]` |
 
-The same `pip install datahenge-cairn` installs all three — a target simply never has a
-reason to run `cairn-build`'s commands, and its pull-only registry credential means it
-couldn't push or retag even if it did. `cairn-registry` is only needed at all if you choose
-the self-hosted local-registry option (see [Where your images live](#where-your-images-live))
-— it is independent of the other two roles and is sometimes colocated with a builder or
-target, sometimes not.
+One `pip install datahenge-cairn` installs all three — see [Get
+Started](https://datahenge.github.io/cairn/get-started/) for installing it, and note that a
+target simply never has a reason to run `cairn-build`'s commands, and its pull-only registry
+credential means it couldn't push or retag even if it did. `cairn-registry` is only needed at
+all if you choose the self-hosted local-registry option (see [Where your images
+live](#where-your-images-live)) — it is independent of the other two roles and is sometimes
+colocated with a builder or target, sometimes not.
 
 ## Configuration
 
-One manifest declares the image (`cairn.toml`, committed with the deployment); machine-
-local build settings, if you need any, live separately and are never shared:
-
-```toml
-# cairn.toml
-[cairn]
-image_name = "erpnext-v16"
-series = "v16"
-
-[cairn.frappe]
-url = "https://github.com/frappe/frappe"
-ref = "v16.25.0"
-
-[[cairn.apps]]
-name = "erpnext"
-url = "https://github.com/frappe/erpnext"
-ref = "v16.26.1"
-```
-
-`ref` takes a tag or a branch. A tag is reproducible — the same tag always resolves to the
-same commit. A branch such as `version-16` is a moving pointer: it always builds that
-branch's newest commit, which is convenient if what you actually want is "always the
-latest release," at the cost of two builds from the same manifest potentially producing
-different images. cairn warns, but does not refuse, when a manifest pins to a branch.
-
-Every command names its manifest explicitly — `--manifest <path>`, or `$CAIRN_MANIFEST` if
-you'd rather not repeat the flag. cairn never searches a directory for one: on a shared
-machine, "the nearest `cairn.toml`" is a silent way to act on the wrong deployment, not a
-convenience. There's no standalone scaffolding command — `cairn-build setup --client <name>`
-writes a starter manifest to `/srv/cairn/<name>/cairn.toml`, but only as one step of
-provisioning a whole build machine, and only if none exists there yet. Otherwise, hand-write
-one, starting from the example above.
-
-See the published reference for the full manifest schema
-([cairn.toml](https://datahenge.github.io/cairn/reference/manifest/)), the machine-local
-`/etc/cairn/builder.toml` layer and its `CAIRN_*` environment-variable overrides — what
-each key means, how they're created, and how precedence works — and sharing `/etc/cairn`
-across several operators
-([builder.toml](https://datahenge.github.io/cairn/reference/builder-config/)), and how a
-target's `/etc/cairn/adopt.toml` descriptor comes from `cairn-adopt examine` rather than
-being hand-authored
+One manifest declares the image (`cairn.toml`, committed with the deployment); machine-local
+build settings, if you need any, live separately and are never shared. See the [Builder
+walkthrough](https://datahenge.github.io/cairn/builder/) for provisioning one from scratch
+(`cairn-build setup --client <name>`), and the published reference for the full manifest
+schema ([cairn.toml](https://datahenge.github.io/cairn/reference/manifest/)), the
+machine-local `/etc/cairn/builder.toml` layer and its `CAIRN_*` environment-variable
+overrides ([builder.toml](https://datahenge.github.io/cairn/reference/builder-config/)), and
+a target's `/etc/cairn/adopt.toml` descriptor
 ([target descriptor](https://datahenge.github.io/cairn/reference/target-descriptor/)).
 
 ### Where images are pushed
@@ -93,32 +61,12 @@ login` before pushing.
 
 ## How to use
 
-The examples below assume `$CAIRN_MANIFEST` is already exported for the session (e.g.
-`export CAIRN_MANIFEST=/srv/acme/cairn.toml`) — add `--manifest <path>` to any of them
-instead if you'd rather not.
+**On a builder** — build, push, and manage environment pointers: see the [Builder
+walkthrough](https://datahenge.github.io/cairn/builder/) and [Build
+Automation](https://datahenge.github.io/cairn/builder/automation/).
 
-**On a builder:**
-
-```
-cairn-build doctor                 # confirm the machine can actually build
-cairn-build build                  # build the image declared by the manifest
-cairn-build build --push           # ...and upload it
-cairn-build images --local         # what's on this machine, and which builds are superseded
-cairn-build prune                  # remove superseded local images (keeps build-cache layers)
-```
-
-Moving an environment's pointer — which is how you deploy, promote, or roll back — never
-rebuilds or re-pulls anything; it just writes a tag in the registry:
-
-```
-cairn-build assign-tag staging --latest       # point staging at the newest build (creates
-                                               # the pointer the first time, moves it after)
-cairn-build assign-tag production --from staging --yes   # promote staging's image to production
-cairn-build assign-tag production --previous             # roll back production one image
-cairn-build images                                        # what the registry holds, and which tags point where
-```
-
-**On a target:**
+**On a target** (a full walkthrough isn't published yet — this is everything there is to
+know for now):
 
 ```
 cairn-adopt examine             # describe this host's running stack (one-time, or after a manual change)
@@ -132,14 +80,8 @@ nothing. It never rolls back on failure; it stops and reports, because a failed 
 migrate` is not something to silently reverse.
 
 **On a registry host** (only if you self-host — see [Where your images
-live](#where-your-images-live)):
-
-```
-cairn-registry doctor            # confirm the registry is reachable, its cert is valid, disk has room
-cairn-registry images            # what's in the registry, and which tags point where
-cairn-registry prune --dry-run   # what retention would delete, without deleting anything
-cairn-registry gc --dry-run      # what garbage collection would reclaim
-```
+live](#where-your-images-live)): see the [Registry
+guide](https://datahenge.github.io/cairn/registry/).
 
 ## Where your images live
 
