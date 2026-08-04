@@ -66,3 +66,8 @@ but pages are user-facing explanation, not a second copy of internal docs.
   (`BR-DOCS-006`). `docs/technical/CONFIGURATION.md` completed this migration on 2026-08-04 —
   its content now lives at `userdocs/reference/manifest.md`, `builder-config.md`, and
   `target-descriptor.md`, and the file itself was retired rather than left as a stub.
+  `docs/technical/ABOUT_GHCR.md` and `docs/technical/ABOUT_REGISTRIES.md` completed the same
+  migration on 2026-08-04 — content now lives at `userdocs/registry/choosing-a-registry.md`
+  and, per the approved topic split (`DOCS-01`), `userdocs/registry/ghcr-setup.md`,
+  `ghcr-ownership-and-cost.md`, and `ghcr-tags-and-troubleshooting.md`; both source files were
+  retired rather than left as stubs. `README.md` was swept of the content it duplicated.

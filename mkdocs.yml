@@ -62,7 +62,12 @@ nav:
   - Home: index.md
   - Get Started: get-started/index.md
   - Registry:
-      - Overview: registry/index.md
+      - Choosing a Registry: registry/choosing-a-registry.md
+      - GitHub Container Registry:
+          - Setup: registry/ghcr-setup.md
+          - Ownership & Cost: registry/ghcr-ownership-and-cost.md
+          - Tags & Troubleshooting: registry/ghcr-tags-and-troubleshooting.md
+      - Self-Hosted Registry: registry/index.md
       - Registry CLI: registry/cli.md
   - Builder:
       - Overview: builder/index.md

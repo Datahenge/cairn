@@ -9,6 +9,23 @@ code changes live in git history.
 
 ---
 
+## 2026-08-04 (latest — `ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; migrated to `userdocs/`)
+
+Resolves `DOCS-01` (promoted to `ADR-054`). Retired, not rewritten — same precedent as
+`CONFIGURATION.md`'s retirement earlier the same day. Content re-verified against source:
+
+- `docs/technical/ABOUT_REGISTRIES.md` → `userdocs/registry/choosing-a-registry.md`.
+- `docs/technical/ABOUT_GHCR.md` → `userdocs/registry/{ghcr-setup,ghcr-ownership-and-cost,
+  ghcr-tags-and-troubleshooting}.md`, per `DOCS-01`'s pre-approved topic split.
+
+Inbound references repointed rather than left as stubs (`mkdocs.yml`, the documentation
+authority map, `AGENTS.md`, requirements, ADRs, and every `userdocs/**` page that linked out to
+the old files). `README.md`'s two registry sections were also consolidated into one, since
+their content now duplicated the published pages (`BR-DOCS-007`). Detail: `open/OPEN_DECISIONS.md`
+(row removed), `decisions/054-ghcr-and-registry-choice-docs-migrated-to-userdocs.md`.
+
+---
+
 ## 2026-08-04 (later — `ADR-053` captures the registry's `/etc`/`/opt` split; archived 2026-08-03 to `docs/archive/`)
 
 Two housekeeping items, requested together:

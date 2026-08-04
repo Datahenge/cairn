@@ -27,5 +27,5 @@ otherwise give GHCR. `ADR-038` also surfaced that no registry decision to that p
 ever stated *whose account* the image lands in — a client-ownership question this ADR
 never asked. cairn now takes no position on the registry product; a client-owned cloud
 registry (ECR/Artifact Registry/ACR) is the default recommendation, with a client-owned
-GitHub org as a documented alternative. See `docs/technical/ABOUT_REGISTRIES.md` for the
-current guidance and `docs/technical/ABOUT_GHCR.md` for GHCR's mechanics specifically.
+GitHub org as a documented alternative. See `userdocs/registry/choosing-a-registry.md` for the
+current guidance and `userdocs/registry/ghcr-setup.md` for GHCR's mechanics specifically.

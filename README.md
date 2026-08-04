@@ -53,11 +53,9 @@ a target's `/etc/cairn/adopt.toml` descriptor
 ### Where images are pushed
 
 Which registry you use, and who owns the credential, is worth thinking about deliberately
-— especially when you're building images for a client. See
-**[docs/technical/ABOUT_REGISTRIES.md](docs/technical/ABOUT_REGISTRIES.md)** for the tradeoffs, and
-**[docs/technical/ABOUT_GHCR.md](docs/technical/ABOUT_GHCR.md)** for GitHub's registry specifically. cairn itself is
-registry-agnostic and stores no credentials — authenticate with `docker login` or `podman
-login` before pushing.
+— especially when you're building images for a client. See [Where your images
+live](#where-your-images-live) below. cairn itself is registry-agnostic and stores no
+credentials — authenticate with `docker login` or `podman login` before pushing.
 
 ## How to use
 
@@ -89,17 +87,19 @@ cairn builds an image and puts it in a container registry; your deployment targe
 there. cairn is registry-agnostic and assumes nothing — but **which** registry is not a neutral
 choice when you build software for clients:
 
-📦 **[docs/technical/ABOUT_REGISTRIES.md](docs/technical/ABOUT_REGISTRIES.md)** — start here. The image belongs in the account
-that owns the source; your credential should reach the engagement's images and nothing else; and
-what each option costs at ERPNext image sizes. Includes what to ask a client for.
+📦 **[Choosing a container registry](https://datahenge.github.io/cairn/registry/choosing-a-registry/)**
+— start here. The image belongs in the account that owns the source; your credential should
+reach the engagement's images and nothing else; and what each option costs at ERPNext image
+sizes. Includes what to ask a client for.
 
-🐙 **[docs/technical/ABOUT_GHCR.md](docs/technical/ABOUT_GHCR.md)** — GitHub's registry in detail: tokens, scopes, how narrow
-access can be, visibility, and the deletion rule that is genuinely surprising. One option among
-several, not the default.
+🐙 **[GitHub Container Registry](https://datahenge.github.io/cairn/registry/ghcr-setup/)** —
+GHCR in detail: tokens, scopes, how narrow access can be, visibility, and the deletion rule
+that is genuinely surprising. One option among several, not the default.
 
 If you choose to self-host — cost dominates and off-host rollback history is genuinely not
 needed — `cairn-registry` provisions and operates that registry: lifecycle, retention, and
-garbage collection, so disk use stays bounded. See `cairn-registry --help`.
+garbage collection, so disk use stays bounded. See the [Self-Hosted Registry
+guide](https://datahenge.github.io/cairn/registry/) or `cairn-registry --help`.
 
 > **You should never be the sole owner of a client's image.** If the relationship ends, they must
 > still be able to deploy and roll back software they own. cairn is built so the registry can be

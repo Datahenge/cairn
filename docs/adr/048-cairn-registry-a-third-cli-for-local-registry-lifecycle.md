@@ -11,7 +11,7 @@ purpose: ADR-048 — `cairn-registry`, a third CLI entry point for local-registr
 `ADR-036`, `ADR-038`, `ADR-039`.
 
 Raised ahead of the first live client deployment (`open/OPEN_WORK.md`'s `W-001`), which plans
-to use cairn's self-hosted local-registry option (`docs/technical/ABOUT_REGISTRIES.md`,
+to use cairn's self-hosted local-registry option (`userdocs/registry/choosing-a-registry.md`,
 "Registry on the client's own VPS"). Two problems surfaced together:
 
 1. The local registry (`stage_registry` in `src/cairn/provision.py`) is provisioned only as a
@@ -89,9 +89,9 @@ registry data on a specific disk.
 
 **The split-trigger question doesn't apply the same way here as it did to `ADR-018`/`ADR-046`.**
 Those decisions weighed splitting two roles that *could* run on the same machine forever. A
-registry host is different: `ABOUT_REGISTRIES.md` already documents it as one of several
-registry choices an operator picks per client, independent of where building or adopting
-happens. Giving it its own binary is not a bet on future multi-machine topology — it's already
+registry host is different: `userdocs/registry/choosing-a-registry.md` already documents it as
+one of several registry choices an operator picks per client, independent of where building or
+adopting happens. Giving it its own binary is not a bet on future multi-machine topology — it's already
 true today that "runs a registry" is a decision made per-deployment, separate from "builds
 images" or "is a deploy target."
 *(BR-CLI-024, BR-REG-001–BR-REG-0NN, BR-BUILD-008, BR-DEPLOY-006, ADR-018, ADR-036, ADR-038,

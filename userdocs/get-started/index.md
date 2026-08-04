@@ -51,14 +51,13 @@ not what's installed — the same package carries all three.
 
 ## Next steps
 
-1. **[Registry](../registry/index.md)** — decide where images will live, and if that's a
-   self-hosted registry, provision it. Starts with `cairn-registry doctor`. If a client or
-   cloud provider already operates the registry you'll push to, there's nothing to provision
-   — just note its address for the [manifest's `[cairn.registry]`
-   table](../reference/manifest.md#cairnregistry) — but make that call now rather than after
-   a build is already sitting local-only. See [About container
-   registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
-   for the tradeoffs.
+1. **[Choosing a container registry](../registry/choosing-a-registry.md)** — decide where
+   images will live before going further; see the tradeoffs there. If that's a self-hosted
+   registry, provision it with **[Self-Hosted Registry](../registry/index.md)**, starting with
+   `cairn-registry doctor`. If a client or cloud provider already operates the registry you'll
+   push to, there's nothing to provision — just note its address for the [manifest's
+   `[cairn.registry]` table](../reference/manifest.md#cairnregistry) — but make that call now
+   rather than after a build is already sitting local-only.
 2. **[Builder](../builder/index.md)** — building and pushing images. Starts with
    `cairn-build doctor`.
 3. **Target** — adopting and running an existing deployment. Not yet written.

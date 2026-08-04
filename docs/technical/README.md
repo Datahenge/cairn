@@ -32,8 +32,10 @@ without renumbering.
 
 Also in this tree, but reference rather than the numbered core above:
 
-- [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md) — choosing a container registry
-- [ABOUT_GHCR.md](ABOUT_GHCR.md) — GHCR specifically
 - [high-level-motivations-and-workflows.md](high-level-motivations-and-workflows.md) — the "why" document, no requirement numbers
+
+Choosing a container registry and GHCR specifically are user-facing topics — migrated to
+[`userdocs/registry/choosing-a-registry.md`](../../userdocs/registry/choosing-a-registry.md)
+and [`userdocs/registry/ghcr-setup.md`](../../userdocs/registry/ghcr-setup.md) (`DOCS-01`).
 
 Exploratory or informal write-ups belong in [../discussions/](../discussions/) instead of here.

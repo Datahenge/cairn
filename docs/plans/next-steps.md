@@ -117,7 +117,7 @@ and is not currently a requirement.
 The whole deploy path is written. What remains is running it, in this order, and the order is
 chosen so that each step is reversible until the last one.
 
-**Decide the registry first** (`docs/technical/ABOUT_REGISTRIES.md`). For Brian's own projects `ghcr.io/datahenge`
+**Decide the registry first** (`userdocs/registry/choosing-a-registry.md`). For Brian's own projects `ghcr.io/datahenge`
 is fine and already declared in the scratch manifest. For a client, the registry must be an account
 they own, with a push credential scoped to that one repository (`BR-CFG-013`).
 

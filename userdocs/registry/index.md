@@ -10,8 +10,8 @@ instead, there's nothing to provision here:
 
 - note the address in the manifest's [`[cairn.registry]`
   table](../reference/manifest.md#cairnregistry)
-- see [Choosing a container registry](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
-  for that decision, and why it isn't neutral for client work
+- see [Choosing a container registry](choosing-a-registry.md) for that decision, and why it
+  isn't neutral for client work
 - then go straight to [Builder](../builder/index.md)
 
 Assumes cairn is already installed — see [Get Started](../get-started/index.md) if it isn't

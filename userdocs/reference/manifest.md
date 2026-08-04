@@ -170,10 +170,9 @@ namespace = "acmecorp"
 ```
 
 `host` is required if the table is present; `namespace` is optional. cairn has no
-opinion on *which* registry — see
-[About container registries](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_REGISTRIES.md)
-and [About GHCR](https://github.com/Datahenge/cairn/blob/main/docs/technical/ABOUT_GHCR.md)
-for how to choose one and what it costs. Absent this table, images stay local
+opinion on *which* registry — see [Choosing a container
+registry](../registry/choosing-a-registry.md) and [GitHub Container Registry:
+Setup](../registry/ghcr-setup.md) for how to choose one and what it costs. Absent this table, images stay local
 (`cairn/<image_name>`) — nothing is inferred on your behalf. This table is read as part
 of [build config](builder-config.md), layered under any `CAIRN_REGISTRY`/`CAIRN_NAMESPACE`
 override.

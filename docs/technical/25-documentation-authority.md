@@ -52,7 +52,7 @@ thin audience-specific summary.
 | Durable technical findings about tools cairn builds on | [04-lessons-learned.md](04-lessons-learned.md) |
 | Current implementation inventory | [05-implementation-index.md](05-implementation-index.md) |
 | Manifest / build-config / target-descriptor full reference | [../../userdocs/reference/manifest.md](../../userdocs/reference/manifest.md), [../../userdocs/reference/builder-config.md](../../userdocs/reference/builder-config.md), [../../userdocs/reference/target-descriptor.md](../../userdocs/reference/target-descriptor.md) |
-| Registry choice tradeoffs | [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md), [ABOUT_GHCR.md](ABOUT_GHCR.md) |
+| Registry choice tradeoffs | [../../userdocs/registry/choosing-a-registry.md](../../userdocs/registry/choosing-a-registry.md), [../../userdocs/registry/ghcr-setup.md](../../userdocs/registry/ghcr-setup.md) |
 | Registry lifecycle: provisioning, retention, garbage collection (`cairn-registry`) | [../requirements/08-registry.md](../requirements/08-registry.md) |
 | Practice-level "why" narrative, no requirement numbers | [high-level-motivations-and-workflows.md](high-level-motivations-and-workflows.md) |
 

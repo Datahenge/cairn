@@ -130,7 +130,7 @@ the git remote, not the operator's other deployments.
 **Why this is a requirement and not a preference.** The registry that holds a client's image
 MUST be capable of being an account the client controls, so that revoking the operator's
 access leaves the client whole. Full rationale: `ADR-038`,
-`docs/technical/ABOUT_REGISTRIES.md`.
+[`userdocs/registry/choosing-a-registry.md`](../../userdocs/registry/choosing-a-registry.md).
 
 Three consequences that follow, and that cairn MUST NOT make awkward:
 - **One operator identity, many owners.** The operator MUST NOT need a separate login, account,

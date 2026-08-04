@@ -139,7 +139,8 @@ convenience.
 
 cairn is built so both rules are satisfiable: the registry coordinates live in the deployment's
 own manifest, committed, so a client can take a deployment over without needing anything from
-your laptop. Details and a per-option comparison are in **`ABOUT_REGISTRIES.md`**.
+your laptop. Details and a per-option comparison are in
+[`userdocs/registry/choosing-a-registry.md`](../../userdocs/registry/choosing-a-registry.md).
 
 ---
 
