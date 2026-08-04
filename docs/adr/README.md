@@ -42,7 +42,7 @@ unarchived.
 | [ADR-005](005-no-github-vps-ssh-access.md) | `authoritative` | No GitHub → VPS SSH access |
 | [ADR-006](006-deploy-trigger-model-idempotent-reconcile-pull-loop.md) | `authoritative` | Deploy trigger model: idempotent reconcile + pull loop |
 | [ADR-007](007-vendoring-via-ventwig-committed-drift-checked.md) | `authoritative` | Vendoring via `ventwig`, committed + drift-checked |
-| [ADR-009](009-container-registry-registry-agnostic-ghcr-recommended-default.md) | `authoritative` | Container registry: registry-agnostic; GHCR recommended default |
+| [ADR-009](009-container-registry-registry-agnostic-ghcr-recommended-default.md) | `authoritative` | Container registry: registry-agnostic; no default recommended (amended by `ADR-038`) |
 | [ADR-010](010-desired-state-pointer-the-environment-s-moving-registry-tag.md) | `authoritative` | Desired-state pointer = the environment's moving registry tag |
 | [ADR-012](012-rollback-does-not-restore-the-database.md) | `authoritative` | Rollback does NOT restore the database |
 | [ADR-013](013-backup-restore-db-movement-out-of-scope.md) | `authoritative` | Backup / restore / DB movement: OUT OF SCOPE |

@@ -55,7 +55,7 @@ BUILD_CONFIG_ENV_PREFIX = "CAIRN_"
 KNOWN_BUILD_KNOBS = ("python_version", "node_version", "install_chromium")
 
 #: Recognized build-config keys. Builder/cache settings land with the BUILD module.
-BUILD_CONFIG_KEYS = ("engine", "registry", "namespace", "image_base", "transcript_dir")
+BUILD_CONFIG_KEYS = ("engine", "registry", "namespace", "transcript_dir")
 
 #: Image names become OCI repository path components, which are lowercase-only.
 _IMAGE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
@@ -128,19 +128,15 @@ class BuildConfig:
     engine: str | None = None
     registry: str | None = None
     namespace: str | None = None
-    image_base: str | None = None
     transcript_dir: str | None = None
     sources: tuple[str, ...] = ()
 
     def resolve_image_base(self, image_name: str) -> str:
         """Return the image base for *image_name* (`BR-CFG-011`, `BR-BUILD-008`).
 
-        An explicit ``image_base`` wins. With a registry configured the base is
-        ``<registry>/<namespace>/<image_name>``; absent one the image stays local as
-        ``cairn/<image_name>``.
+        With a registry configured the base is ``<registry>/<namespace>/<image_name>``;
+        absent one the image stays local as ``cairn/<image_name>``.
         """
-        if self.image_base:
-            return self.image_base
         if self.registry:
             parts = [self.registry, *([self.namespace] if self.namespace else []), image_name]
             return "/".join(parts)
@@ -226,7 +222,7 @@ def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
        Committed with the deployment, because under `BR-CFG-013` that registry is usually
        the *client's*, and a coordinate known only to one machine is a coordinate the
        client cannot take over.
-    3. ``CAIRN_ENGINE`` / ``CAIRN_REGISTRY`` / ``CAIRN_NAMESPACE`` / ``CAIRN_IMAGE_BASE`` /
+    3. ``CAIRN_ENGINE`` / ``CAIRN_REGISTRY`` / ``CAIRN_NAMESPACE`` /
        ``CAIRN_TRANSCRIPT_DIR`` — the deliberate override, for experiments and for
        publishing a client's deployment somewhere else temporarily. Replaces what used to
        be a ``cairn.local.toml`` file (`ADR-042`): the same one-invocation-or-session
@@ -260,7 +256,6 @@ def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
         engine=merged.get("engine"),
         registry=merged.get("registry"),
         namespace=merged.get("namespace"),
-        image_base=merged.get("image_base"),
         transcript_dir=merged.get("transcript_dir"),
         sources=tuple(sources),
     )
@@ -287,9 +282,8 @@ def _manifest_registry(manifest_path: Path) -> dict[str, str]:
     config does not depend on full manifest validation — a manifest with a bad app list
     should still let ``cairn doctor`` report the engine it would use.
 
-    Only ``host`` and ``namespace`` live here. ``engine``, ``image_base`` and
-    ``transcript_dir`` stay machine-local, because they describe *this machine*, not the
-    deployment (`BR-CFG-008`).
+    Only ``host`` and ``namespace`` live here. ``engine`` and ``transcript_dir`` stay
+    machine-local, because they describe *this machine*, not the deployment (`BR-CFG-008`).
     """
     data = _load_toml(manifest_path, ManifestInvalidError)
     root = data.get("cairn")

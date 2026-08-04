@@ -477,7 +477,7 @@ def _registry_repository(
         )
     manifest = config.load_manifest(manifest_path)
     base = build_config.resolve_image_base(manifest.image_name)
-    if not build_config.registry and not build_config.image_base:
+    if not build_config.registry:
         raise CairnError(
             "No registry is configured, so images stay local and there is no registry to "
             "read. Set `registry` (and usually `namespace`) in /etc/cairn/builder.toml, "

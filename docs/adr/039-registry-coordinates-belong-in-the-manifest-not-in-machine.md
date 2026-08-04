@@ -36,7 +36,15 @@ silently publish a client's image into the operator's account, which is precisel
 hatch: publish a client's deployment somewhere else for a test without editing, and committing,
 their file.
 
-**What stays machine-local:** `engine`, `image_base`, `transcript_dir`. These describe the
-machine, not the deployment. `[cairn.registry]` accepts only `host` and `namespace`, and rejects
-anything else as an unknown key, so the boundary cannot erode by accident.
+**What stays machine-local:** `engine`, `transcript_dir`. These describe the machine, not the
+deployment. `[cairn.registry]` accepts only `host` and `namespace`, and rejects anything else as
+an unknown key, so the boundary cannot erode by accident.
 *(BR-CFG-014, BR-CFG-008, BR-CFG-012, BR-CFG-013, ADR-029, ADR-038)*
+
+**Amended 2026-08-03 — `image_base` removed.** It originally stayed machine-local alongside
+`engine` and `transcript_dir` as a full override of the composed `<registry>/<namespace>/
+<image_name>` string, for a registry path the standard composition couldn't produce. No
+concrete case for it ever surfaced in practice, and Brian judged it unjustified complexity
+sitting next to the exact composition `BR-CFG-011` already defines. Dropped from
+`BUILD_CONFIG_KEYS`, `BuildConfig`, and `CAIRN_IMAGE_BASE`; `resolve_image_base()` now always
+composes from `registry`/`namespace`, with no override path.

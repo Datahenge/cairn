@@ -108,10 +108,6 @@ MANIFEST_TEMPLATE = """\
 image_name = "erpnext-btu-v16"
 series = "v16"                      # the readable half of the image tag
 
-[cairn.registry]
-host      = "ghcr.io"
-namespace = "your-org"
-
 [cairn.frappe]
 url = "https://github.com/frappe/frappe"
 ref = "version-16"

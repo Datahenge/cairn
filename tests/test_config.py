@@ -292,7 +292,6 @@ def test_empty_env_var_is_treated_as_absent(monkeypatch, tmp_path):
         (config.BuildConfig(), "cairn/erpnext-btu-v16"),
         (config.BuildConfig(registry="ghcr.io", namespace="acme"), "ghcr.io/acme/erpnext-btu-v16"),
         (config.BuildConfig(registry="ghcr.io"), "ghcr.io/erpnext-btu-v16"),
-        (config.BuildConfig(image_base="explicit/base"), "explicit/base"),
     ],
 )
 def test_image_base_resolution(build_config, expected):

@@ -51,8 +51,9 @@ Two mechanisms this project already had turned out to be wrong for that shape of
    no-root, per-checkout override — is fully covered once every invocation already carries an
    explicit manifest reference: the same environment-variable mechanism extends trivially to the
    build-config keys themselves. One `CAIRN_<KEY>` variable per `BUILD_CONFIG_KEYS` entry
-   (`CAIRN_ENGINE`, `CAIRN_REGISTRY`, `CAIRN_NAMESPACE`, `CAIRN_IMAGE_BASE`,
-   `CAIRN_TRANSCRIPT_DIR`) replaces it, sitting at the same highest-precedence layer the file
+   (`CAIRN_ENGINE`, `CAIRN_REGISTRY`, `CAIRN_NAMESPACE`, `CAIRN_TRANSCRIPT_DIR` — `BUILD_CONFIG_KEYS`
+   also briefly included `image_base`, removed by `ADR-039`'s 2026-08-03 amendment) replaces it,
+   sitting at the same highest-precedence layer the file
    used to occupy. This is *more* Twelve-Factor than the file was (config that varies by
    instance belongs in the environment, not in a second config file beside the first), and it
    deletes a footgun along with the mechanism: a file whose entire purpose was "don't commit
@@ -64,7 +65,7 @@ Two mechanisms this project already had turned out to be wrong for that shape of
 - **Manifest:** `--manifest <path>` › `$CAIRN_MANIFEST`. No default.
 - **Build config**, three layers, key-by-key, lowest first: `/etc/cairn/builder.toml` ›
   the resolved manifest's `[cairn.registry]` › `CAIRN_ENGINE`/`CAIRN_REGISTRY`/
-  `CAIRN_NAMESPACE`/`CAIRN_IMAGE_BASE`/`CAIRN_TRANSCRIPT_DIR`.
+  `CAIRN_NAMESPACE`/`CAIRN_TRANSCRIPT_DIR`.
 
 **Considered and rejected:** keeping one non-cwd implicit fallback, such as a fixed
 `/etc/cairn/cairn.toml` default for "the one deployment this host has." Rejected because it

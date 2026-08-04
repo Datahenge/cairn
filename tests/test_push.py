@@ -29,11 +29,6 @@ def test_refuses_to_push_without_a_registry():
         push.assert_registry_configured(BuildConfig())
 
 
-def test_explicit_image_base_counts_as_configured():
-    """An explicit image_base is a deliberate destination, registry or not."""
-    push.assert_registry_configured(BuildConfig(image_base="registry.example.com/acme/erp"))
-
-
 def test_configured_registry_passes():
     push.assert_registry_configured(CONFIGURED)
 

@@ -17,18 +17,15 @@ reference.
 ## The manifest — `cairn.toml`
 
 One file declares one image: the Frappe source, the ordered list of apps, and build
-knobs. It's meant to be committed and shared — it carries no machine-specific settings,
-though it does carry the registry coordinates (below), because those describe the
-deployment rather than the machine building it.
+knobs. It's meant to be committed and shared — it carries no machine-specific settings.
+It *may* also carry the deployment's registry coordinates, in an optional
+`[cairn.registry]` table (see below), because those describe the deployment rather than
+the machine building it.
 
 ```toml
 [cairn]
 image_name = "erpnext-btu-v16"
 series = "v16"                      # the readable half of the image tag
-
-[cairn.registry]
-host      = "ghcr.io"
-namespace = "your-org"
 
 [cairn.frappe]
 url = "https://github.com/frappe/frappe"
@@ -80,6 +77,20 @@ Only `image_name`, `[cairn.frappe]` (`url`, `ref`), and `[[cairn.apps]]` are req
 optional — absent, the documented defaults apply (images stay local; apps build with
 their upstream default `Dockerfile` build-args).
 
+**Publishing to a registry.** Add `[cairn.registry]` — a required `host` and an optional
+`namespace` — once you've chosen where this deployment's images belong:
+
+```toml
+[cairn.registry]
+host      = "registry.example.com"
+namespace = "acme-corp"
+```
+
+cairn has no opinion on *which* registry, and no example here should read as a
+recommendation — see [ABOUT_REGISTRIES.md](ABOUT_REGISTRIES.md) for how to choose one for
+client work, and why that choice isn't neutral. Absent `[cairn.registry]`, the image
+stays local (`cairn/<image_name>`); nothing infers a registry on your behalf.
+
 ## Machine-local build config — `/etc/cairn/builder.toml`
 
 Named for the **Builder** role (the same Builder/Target split the README's install
@@ -120,9 +131,8 @@ wrapper** — every recognized key sits at the file's top level:
 ```toml
 # /etc/cairn/builder.toml
 engine         = "podman"
-registry       = "ghcr.io"
+registry       = "registry.example.com"
 namespace      = "your-personal-account"
-image_base     = "cairn/erpnext-btu-v16"
 transcript_dir = "/var/log/cairn/transcripts"
 ```
 
@@ -132,13 +142,12 @@ at parse time. What each does:
 | Key | Meaning |
 | --- | --- |
 | `engine` | `"docker"` or `"podman"`. Auto-detected if unset — docker preferred when both are present. |
-| `registry` | Registry hostname, e.g. `ghcr.io`. Normally set in the manifest instead (see below) — set it here only for a personal default that isn't a specific deployment's concern. |
+| `registry` | Registry hostname. Normally set in the manifest instead (see below) — set it here only for a personal default that isn't a specific deployment's concern. |
 | `namespace` | Registry account/org. Same caveat as `registry`. |
-| `image_base` | A full override of the built image's name, bypassing `registry`/`namespace` composition entirely. Rare — most setups don't need this. |
 | `transcript_dir` | Where build transcripts are written, if not the default. |
 
 **Overriding one key without a file at all:** set the matching environment variable —
-`CAIRN_ENGINE`, `CAIRN_REGISTRY`, `CAIRN_NAMESPACE`, `CAIRN_IMAGE_BASE`, or
+`CAIRN_ENGINE`, `CAIRN_REGISTRY`, `CAIRN_NAMESPACE`, or
 `CAIRN_TRANSCRIPT_DIR`. This is the *only* per-invocation or per-session override cairn
 has; there is no `cairn.local.toml` or equivalent second file — once every invocation
 already carries an explicit manifest reference, a stray env var covers the same need

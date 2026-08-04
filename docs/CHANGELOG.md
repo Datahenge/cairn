@@ -9,6 +9,47 @@ code changes live in git history.
 
 ---
 
+## 2026-08-03 (later yet again — GHCR-default cleanup and `image_base` removed)
+
+Two consistency fixes, raised by Brian while reviewing the `builder.toml` documentation.
+
+**GHCR was still the de facto default in practice, though not in stated policy.** `ADR-038`/
+`ADR-039` (2026-07-25) had already downgraded GHCR from "recommended default" to "one option,
+weakest on cost," and `ABOUT_REGISTRIES.md`/`ABOUT_GHCR.md` already said so — but the reversal
+was never reflected back into `ADR-009`, whose title and body still said "GHCR recommended
+default," and the scaffolded starter manifest (`provision.MANIFEST_TEMPLATE`, written by
+`cairn-build setup`) still pre-filled `[cairn.registry] host = "ghcr.io"`. A new deployment
+therefore got GHCR by default in practice — the path of least resistance — despite the
+documented policy saying otherwise.
+
+- **Amended `ADR-009` in place**: added a 2026-07-25-dated amendment noting the reversal and
+  pointing to `ADR-038`/`ADR-039`/`ABOUT_REGISTRIES.md`; index summary in `docs/adr/README.md`
+  updated to match (precedent: `ADR-034`).
+- **`provision.MANIFEST_TEMPLATE` no longer includes `[cairn.registry]`.** It's optional
+  (`BR-CFG-011`/`BR-CFG-014`) and absence already means local-only, which is the correct
+  default — no registry should be pre-selected for a client that hasn't chosen one.
+- **`CONFIGURATION.md`/`README.md`** manifest examples dropped the same block; `CONFIGURATION.md`
+  gained a separate `[cairn.registry]` example (host `registry.example.com`, a neutral
+  placeholder) shown only once the deployment has actually chosen a registry, pointing to
+  `ABOUT_REGISTRIES.md` for how. The `builder.toml` example's `registry` value was also swapped
+  from `ghcr.io` to the same neutral placeholder, so no doc anywhere implies a default registry.
+
+**`image_base` removed** (`BuildConfig.image_base`, `CAIRN_IMAGE_BASE`, the `image_base` entry
+in `BUILD_CONFIG_KEYS`). Brian: "I just cannot think of a reason it would be useful." It was a
+full override of the composed `<registry>/<namespace>/<image_name>` string, kept machine-local
+by `ADR-039`; no concrete scenario for it was ever documented beyond "rare," and it duplicated
+what `BR-CFG-011`'s composition already answers definitively from `cairn.toml` + `[cairn.registry]`.
+
+- **Amended `ADR-039` in place**, recording the removal and its (thin) original rationale.
+- **Updated** `docs/requirements/05-config.md` (`BR-CFG-012`'s env-var list), `ADR-042` (same),
+  `docs/technical/CONFIGURATION.md` (dropped the key's row and example, and the `CAIRN_IMAGE_BASE`
+  mention).
+- **Code:** `config.py` (`BUILD_CONFIG_KEYS`, `BuildConfig`, `resolve_image_base`), `push.py`
+  and `cli_build.py` (dropped the `image_base` half of the "is a registry configured" check).
+  `build.BuildPlan.image_base` — the unrelated *computed* image-base name used for tagging — is
+  untouched; only the machine-local override key is gone. Tests updated in `test_config.py`
+  and `test_push.py`; full suite green.
+
 ## 2026-08-03 (yet later still — `BR-CLI-022`/`BR-CLI-023` implemented, `v0.2.0`)
 
 Implemented `W-013`: `cairn-build setup --client <name>` provisioning `/srv/cairn/<name>/`

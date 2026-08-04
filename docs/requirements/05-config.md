@@ -106,9 +106,8 @@ confirmed as a deliberate reversal, and superseding `ADR-029`'s directory walk):
      (`BR-CFG-008`);
   2. the manifest's `[cairn.registry]` — where *this deployment's* images belong
      (`BR-CFG-014`);
-  3. `CAIRN_ENGINE` / `CAIRN_REGISTRY` / `CAIRN_NAMESPACE` / `CAIRN_IMAGE_BASE` /
-     `CAIRN_TRANSCRIPT_DIR` — the deliberate override, one environment variable per
-     `BUILD_CONFIG_KEYS` entry (`ADR-042`).
+  3. `CAIRN_ENGINE` / `CAIRN_REGISTRY` / `CAIRN_NAMESPACE` / `CAIRN_TRANSCRIPT_DIR` — the
+     deliberate override, one environment variable per `BUILD_CONFIG_KEYS` entry (`ADR-042`).
 
   No other override path exists: layer 1 is not itself overridable by a same-named file in
   the working directory (the sole per-checkout override, `cairn.local.toml`, is removed
