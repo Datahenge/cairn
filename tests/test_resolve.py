@@ -217,6 +217,58 @@ def test_a_failed_authenticated_lookup_does_not_leak_the_token(monkeypatch):
     assert "ghp_secret" not in str(excinfo.value)
 
 
+def test_a_missing_token_is_named_on_a_failed_github_lookup(monkeypatch):
+    """BR-BUILD-016 point 5: git's own wording (`could not read Username`, `terminal prompts
+    disabled`) names the symptom, not the fix — cairn must also name the env var."""
+    monkeypatch.delenv(github_auth.GITHUB_TOKEN_ENV_VAR, raising=False)
+    monkeypatch.setattr(resolve, "_run", resolve._run)  # use the real wrapper
+    monkeypatch.setattr(
+        resolve.subprocess,
+        "run",
+        lambda *a, **k: _completed(
+            returncode=128,
+            stderr="fatal: could not read Username for 'https://github.com': "
+            "terminal prompts disabled\n",
+        ),
+    )
+
+    with pytest.raises(RefResolutionError, match=github_auth.GITHUB_TOKEN_ENV_VAR):
+        resolve.resolve_ref("btu", "https://github.com/clientorg/btu", "main")
+
+
+def test_no_token_hint_for_a_non_github_host(monkeypatch):
+    """The hint only makes sense where a token could ever have helped."""
+    monkeypatch.delenv(github_auth.GITHUB_TOKEN_ENV_VAR, raising=False)
+    monkeypatch.setattr(resolve, "_run", resolve._run)  # use the real wrapper
+    monkeypatch.setattr(
+        resolve.subprocess,
+        "run",
+        lambda *a, **k: _completed(returncode=128, stderr="fatal: repository not found\n"),
+    )
+
+    with pytest.raises(RefResolutionError) as excinfo:
+        resolve.resolve_ref("btu", "https://example.com/btu", "main")
+
+    assert github_auth.GITHUB_TOKEN_ENV_VAR not in str(excinfo.value)
+
+
+def test_no_token_hint_when_a_token_is_already_configured(monkeypatch):
+    """A configured-but-wrong token is a different problem; don't tell the operator to set
+    something they already set."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    monkeypatch.setattr(resolve, "_run", resolve._run)  # use the real wrapper
+    monkeypatch.setattr(
+        resolve.subprocess,
+        "run",
+        lambda *a, **k: _completed(returncode=128, stderr="fatal: Authentication failed\n"),
+    )
+
+    with pytest.raises(RefResolutionError) as excinfo:
+        resolve.resolve_ref("btu", "https://github.com/clientorg/btu", "main")
+
+    assert github_auth.GITHUB_TOKEN_ENV_VAR not in str(excinfo.value)
+
+
 # --- whole-manifest resolution ----------------------------------------------
 
 

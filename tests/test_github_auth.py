@@ -67,3 +67,19 @@ def test_redacted_is_a_no_op_without_a_token():
     text = "fatal: repository not found"
 
     assert github_auth.redacted(text, None) == text
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://github.com/clientorg/theirrepo.git", True),
+        ("https://github.com:443/clientorg/theirrepo.git", True),
+        ("https://gitlab.com/clientorg/theirrepo.git", False),
+        ("https://github.com.evil.example/clientorg/theirrepo.git", False),
+        ("git@github.com:clientorg/theirrepo.git", False),
+        ("ssh://git@github.com/clientorg/theirrepo.git", False),
+    ],
+    ids=["https", "https-with-port", "unrelated-host", "lookalike-host", "scp-style-ssh", "explicit-ssh"],
+)
+def test_targets_github(url, expected):
+    assert github_auth.targets_github(url) is expected

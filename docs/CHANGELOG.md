@@ -9,7 +9,25 @@ code changes live in git history.
 
 ---
 
-## 2026-08-04 (latest — `ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; migrated to `userdocs/`)
+## 2026-08-04 (latest — `BR-BUILD-016` extended: missing-token hint on a failed private-app lookup)
+
+Brian hit a failed `cairn-build build` against a private `github.com` app and, reading only
+git's own `ls-remote` failure ("could not read Username for 'https://github.com'"), suspected a
+URL-construction bug. Root cause was operator error — the wrong environment variable was set —
+but git's wording names the symptom, not the fix, and led straight to a wrong diagnosis.
+
+- **`BR-BUILD-016` gained a 5th point.** When a `github.com` `ls-remote` fails and no
+  `$CAIRN_GITHUB_TOKEN` is configured, cairn's error now also names the missing variable as a
+  candidate fix, alongside git's own failure line. Scoped to exactly the same host/scheme
+  `authenticated()` already uses (`github_auth.targets_github`, factored out of
+  `authenticated()` for this).
+- No change to the URL-construction itself (`token@host`, no separate username) — verified
+  correct and already the documented/tested form; the earlier `terminal prompts disabled` error
+  was simply the token never reaching `authenticated()` because the wrong env var was set.
+
+---
+
+## 2026-08-04 (`ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; migrated to `userdocs/`)
 
 Resolves `DOCS-01` (promoted to `ADR-054`). Retired, not rewritten — same precedent as
 `CONFIGURATION.md`'s retirement earlier the same day. Content re-verified against source:

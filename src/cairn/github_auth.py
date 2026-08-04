@@ -38,6 +38,17 @@ def github_token() -> str | None:
     return os.environ.get(GITHUB_TOKEN_ENV_VAR) or None
 
 
+def targets_github(url: str) -> bool:
+    """Whether *url* is a host/scheme a token could ever be injected for.
+
+    Same scoping as :func:`authenticated` — exact `github.com`, over `http`/`https` only —
+    factored out so a caller can tell *why* an unauthenticated request failed (wrong host
+    for a token to help, vs. a token that should have been configured).
+    """
+    parts = urlsplit(url)
+    return parts.scheme in _AUTHENTICATABLE_SCHEMES and parts.hostname == _GITHUB_HOST
+
+
 def authenticated(url: str, token: str | None) -> str:
     """Return *url* with *token* embedded as credentials, if it targets `github.com`.
 
@@ -45,13 +56,10 @@ def authenticated(url: str, token: str | None) -> str:
     MUST be the only place a token ever touches a URL, so every caller stays a single,
     auditable seam.
     """
-    if not token:
+    if not token or not targets_github(url):
         return url
 
     parts = urlsplit(url)
-    if parts.scheme not in _AUTHENTICATABLE_SCHEMES or parts.hostname != _GITHUB_HOST:
-        return url
-
     netloc = f"{token}@{parts.hostname}"
     if parts.port:
         netloc += f":{parts.port}"

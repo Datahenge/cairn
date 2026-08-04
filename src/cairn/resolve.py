@@ -235,9 +235,15 @@ def _run(command: list[str], name: str, url: str) -> subprocess.CompletedProcess
     if result.returncode != 0:
         raw = github_auth.redacted(result.stderr or result.stdout, token)
         detail = raw.strip().splitlines()
-        raise RefResolutionError(
+        message = (
             f"{name}: cannot read {url} — {detail[-1] if detail else 'git ls-remote failed'}. "
             f"Check the URL, and that the repository is public or your git credentials "
             f"are configured."
         )
+        if token is None and github_auth.targets_github(url):
+            message += (
+                f" No ${github_auth.GITHUB_TOKEN_ENV_VAR} is set — if this is a private "
+                f"repository, set it and retry."
+            )
+        raise RefResolutionError(message)
     return result

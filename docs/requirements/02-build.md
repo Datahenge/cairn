@@ -207,6 +207,10 @@ secret (`BR-BUILD-006`). Four things are load-bearing:
    message is raised.
 4. **One token.** A single token covers every private `github.com` app for this phase; per-app
    or per-org credentials are an explicit non-goal, deferred until a concrete need arises.
+5. **A missing token is named as a candidate.** When `ls-remote` fails against a `github.com`
+   URL and no token is configured, cairn's error MUST point at `$CAIRN_GITHUB_TOKEN` as a
+   possible fix, in addition to git's own failure line — git's own wording (e.g. "could not
+   read Username", "terminal prompts disabled") names the symptom, not the missing token.
 
 Frappe itself is out of scope: it is supplied via the `FRAPPE_PATH` build-arg
 (`BR-BUILD-004`), which is permanently readable via image history (`BR-BUILD-006`'s own
