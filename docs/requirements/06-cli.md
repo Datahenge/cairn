@@ -35,20 +35,19 @@ provenance labels). **Default is build-only**; `--push` also uploads. *(BR-BUILD
 **`BR-CLI-003`** *(push)* — `cairn-build push [--id <tag>]` — upload a built image to the
 registry (default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*
 
-**`BR-CLI-004`** *(pointer verbs — create / move / retire)* —
-- `cairn-build new-tag <env> <selector>` — **create** a new environment pointer.
-- `cairn-build retag <env> <selector>` — **move** an existing pointer (server-side retag, no
-  rebuild).
+**`BR-CLI-004`** *(pointer verbs — assign / retire, `ADR-050`)* —
+- `cairn-build assign-tag <env> <selector>` — **create** the environment's pointer if it does
+  not exist yet, or **move** it (server-side retag, no rebuild) if it does. The command reports
+  which of the two happened.
 - `cairn-build retire <env>` — **decommission** an environment from cairn (see `BR-CLI-009`).
 
-Selectors for `new-tag`/`retag`: `--latest | --previous | --id <ident> | --from <env>`
-(`--from` points at whatever another env currently runs → cross-env promotion). Exactly one
-selector MUST be given; two or more is an error naming the conflict, since each selects a
-different image.
+Selector for `assign-tag`: `--latest | --previous | --id <ident> | --from <env>` (`--from`
+points at whatever another env currently runs → cross-env promotion). Exactly one selector MUST
+be given; two or more is an error naming the conflict, since each selects a different image.
 
-An earlier draft added an opt-in `--install-app <apps>` to both verbs. It was **struck**
-2026-07-25 (`ADR-037`, `BR-DEPLOY-003a`): installing a Frappe App is the operator's act, and a
-pointer move is not the event that should carry it. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023)*
+An earlier draft added an opt-in `--install-app <apps>` here (predating the `ADR-050` merge). It
+was **struck** 2026-07-25 (`ADR-037`, `BR-DEPLOY-003a`): installing a Frappe App is the
+operator's act, not a pointer move's. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023)*
 
 **`BR-CLI-005`** *(introspection)* — `cairn-build images [--tags] [--local] [--json]`.
 
@@ -69,19 +68,21 @@ mistaken for a complete inventory. *(BR-DEPLOY-005, BR-BUILD-011, BR-BUILD-014, 
 **`BR-CLI-006`** *(vendor)* — `cairn-build vendor status | sync` — thin ventwig wrappers.
 *(BR-VEND-*)*
 
-**`BR-CLI-009`** *(existence guards; no auto-vivification)* — Environment existence is
-determined by cairn's **declared environment list** (control-side, `BR-DEPLOY-009`).
-- `new-tag <env>` MUST **error if `<env>` already exists**.
-- `retag <env>` / `retire <env>` MUST **error if `<env>` does not exist**
-  (`No such environment '<env>'`).
+**`BR-CLI-009`** *(existence guards; no auto-vivification, `ADR-050`)* — Environment existence
+as a **name** is set by cairn's **declared environment list** (control-side, `BR-DEPLOY-009`):
+`assign-tag <env>` and `retire <env>` MUST **error if `<env>` is not declared**
+(`No such environment '<env>'`), regardless of whether its registry pointer exists yet.
+
+Whether the pointer itself already exists is separate, and `assign-tag` MUST **report, not
+refuse on it**: create if absent, move if present, stating which occurred.
 
 `retire <env>` removes `<env>` from the declared list, touches **no images**, and MUST warn
 that the **registry tag name persists** (GHCR has no per-tag delete — see `03-deploy.md`).
 *(BR-DEPLOY-009)*
 
-**`BR-CLI-010`** *(prod gate)* — Any command that moves or retires a **`:production`**
-pointer MUST require **explicit confirmation** — interactive prompt by default, `--yes` to
-skip for automation. *(BR-DEPLOY-015)*
+**`BR-CLI-010`** *(prod gate)* — Any command that creates, moves, or retires a
+**`:production`** pointer MUST require **explicit confirmation** — interactive prompt by
+default, `--yes` to skip for automation. *(BR-DEPLOY-015)*
 
 **`BR-CLI-016`** *(build transcript — attended CLI only)* — cairn recognises **three
 execution contexts** (`ADR-031`), and writes a transcript in exactly one of them:
@@ -278,14 +279,16 @@ manifests found under `/srv/cairn/*/cairn.toml`, informationally only, never for
 separate from `setup`, installing only the build/reconcile systemd timer — enabled, not
 started, unchanged in substance from `ADR-046`'s `setup --only timers`. Split out for
 discoverability in `--help`, where a first-time reader would otherwise miss the flag before
-their first manual build or reconcile. *(ADR-046, ADR-047)*
+their first manual build or reconcile. `cairn-build`'s script runs `build --push`,
+`assign-tag --latest --yes`, then `prune --keep 1 --yes` — disk cleanup rides the same
+script rather than a separate timer (`ADR-051`). *(ADR-046, ADR-047, ADR-050, ADR-051)*
 
 ## E. Shared conventions (all three CLIs)
 
 **`BR-CLI-011`** *(least surprise)* — Nothing consequential is silent: no auto-rollback
 (`ADR-025`), no auto-install (`ADR-023`), no data/volume/DB writes of cairn's own
 (`ADR-022`). Consequential/destructive actions confirm; `--dry-run` is available on
-`cairn-build build`/`push`/`new-tag`/`retag` and on `cairn-adopt reconcile`.
+`cairn-build build`/`push`/`assign-tag` and on `cairn-adopt reconcile`.
 
 **Silence cuts both ways.** A command MUST NOT appear to do nothing: any operation that
 takes more than a moment (ref resolution, image build, push) MUST report what it is doing

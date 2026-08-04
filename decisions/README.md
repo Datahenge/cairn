@@ -15,9 +15,9 @@ approved and implemented, durable decisions are promoted into a numbered record 
 the original ID into the new file's `origin` field so a citation made while it was open still
 resolves.
 
-These three ID numbers (`ADR-008`, `ADR-011`, `ADR-041`) continue the same `ADR-NNN` sequence
-as `docs/adr/` — they were simply judged lightweight rather than consequential, not a separate
-numbering track.
+These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`) continue the same
+`ADR-NNN` sequence as `docs/adr/` — they were simply judged lightweight rather than
+consequential, not a separate numbering track.
 
 ## Records
 
@@ -26,3 +26,5 @@ numbering track.
 | [008-cairn-is-itself-a-git-repository.md](008-cairn-is-itself-a-git-repository.md) | `authoritative` | `cairn` is itself a git repository |
 | [011-image-tagging-scheme-settled-by-br-build-008.md](011-image-tagging-scheme-settled-by-br-build-008.md) | `authoritative` | Image tagging scheme (settled by `BR-BUILD-008`) |
 | [041-the-machine-build-config-file-is-named-builder-toml-not-config.md](041-the-machine-build-config-file-is-named-builder-toml-not-config.md) | `archived` | `builder.toml` rename — superseded same day by `ADR-042` |
+| [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `authoritative` | `[cairn.environments]` renamed to `[cairn.declared_environments]` (amends `ADR-033`) |
+| [051-cairn-build-prune-runs-inside-the-build-script-not-a-separate-timer.md](051-cairn-build-prune-runs-inside-the-build-script-not-a-separate-timer.md) | `authoritative` | `cairn-build prune` runs inside the build script, not a separate timer |

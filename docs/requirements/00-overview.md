@@ -45,7 +45,7 @@ cairn runs in one of three roles, and — since `ADR-046`/`ADR-048` — the role
   (`reconcile`); never builds. Covered by `DEPLOY` and `DATA` below.
 - **`cairn-registry`** (registry host) — provisions and operates a self-hosted OCI
   registry: lifecycle, introspection, retention, and garbage collection. Independent of
-  the other two roles — reads no manifest and no `[cairn.environments]` — and is
+  the other two roles — reads no manifest and no `[cairn.declared_environments]` — and is
   sometimes colocated with a builder or target, sometimes not. Covered by `REG` below.
 
 All three remain **one package, one repo** (`ADR-046`/`ADR-048`, superseding `ADR-018`'s

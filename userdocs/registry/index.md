@@ -55,6 +55,11 @@ sudo cairn-registry setup-timer --dry-run
 sudo cairn-registry setup-timer
 ```
 
+To confirm it's actually firing on schedule, rather than trusting that it is: `systemctl
+list-timers --all | grep cairn` and `journalctl -u cairn-registry-maintenance.service --since
+-1d` — see [Build Automation](../builder/automation.md#verify-its-actually-running) for the
+same pattern applied to every cairn timer.
+
 ## Next: verified against a real deployment
 
 *This page is written ahead of a live run — check back, or see

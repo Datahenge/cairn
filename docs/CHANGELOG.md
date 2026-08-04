@@ -9,6 +9,49 @@ code changes live in git history.
 
 ---
 
+## 2026-08-04 (`cairn-build prune` gains automation, via the build script not a new timer)
+
+Same discussion as the env-tag rename (next entry): `cairn-build prune` (local build-machine
+image cleanup) has no automation, unlike `cairn-registry`'s prune+gc timer. Decided against a
+parallel timer (`ADR-051`) — local cruft only ever exists because this machine's own build
+script just ran, so there's no independent cadence for a separate timer to hook. `prune --keep 1
+--yes` becomes a fourth step in the same generated script `setup-timer` writes. `BR-CLI-023`
+updated to name it. Tracked as `W-018`, alongside `W-017` since both touch the same script.
+
+---
+
+## 2026-08-04 (env-tag rename and `new-tag`/`retag` merge)
+
+Raised while reviewing the Builder user docs' "Next steps" section for clarity: Brian found
+`[cairn.environments]` and the `new-tag`/`retag` split both confusing, and asked for a rename
+and a possible command merge rather than just clearer prose around the existing names.
+
+Checked both against the actual implementation before deciding, per the working agreement's
+"ask, don't guess" rule for anything code-shaped:
+
+- **`[cairn.environments]` → `[cairn.declared_environments]`** (`ADR-049`, amends `ADR-033`).
+  The table only declares which environment names are legal — nothing happens automatically
+  when a row is added — and the old name read as if it did. `declared_environments` reuses
+  vocabulary the requirements already use everywhere for this table. Declined Brian's own
+  alternative, `[cairn.allowable_environment_tag_names]`: accurate, but undersells that each row
+  is a `name = "tag"` mapping, not just a list of tag names, and is long to hand-type.
+- **`new-tag` + `retag` → `assign-tag`** (`ADR-050`). Tracing `_pointer_move` in `cli_build.py`
+  showed the two verbs differ on exactly one axis — whether the registry pointer already exists
+  — while the axis Brian's stated rationale described (declared-name legality) is already
+  enforced identically by both. Found a concrete cost of the split while tracing this:
+  `setup-timer`'s script calls `retag --yes` on every run, which fails on the first automated
+  run against a brand-new environment because the pointer doesn't exist yet — an undocumented
+  manual `new-tag` was required first. `assign-tag` creates or moves, reports which, and keeps
+  the `:production` confirmation gate for both (tightening `BR-CLI-010`, which previously said
+  only "moves or retires" though the code already gated creation too).
+
+`BR-CLI-004/009/010`, `BR-DEPLOY-009/009a`, `BR-BUILD-002`, and `BR-REG-001` updated to match.
+Requirements and decision records only — `environments.py`, `cli_build.py`, tests, `README.md`,
+and `userdocs/` still describe the current, shipped surface and update in a separate, code-paired
+pass (`open/OPEN_WORK.md`).
+
+---
+
 ## 2026-08-04 (later still — `cairn-build doctor` gains a free-disk/memory check)
 
 `userdocs/builder/index.md` claimed `cairn-build doctor` already named the local image

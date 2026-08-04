@@ -174,10 +174,19 @@ terminal output has scrolled away.
   configured there's nothing to push to yet — see [the manifest's
   `[cairn.registry]`](../reference/manifest.md#cairnregistry) or [`builder.toml`'s
   registry keys](../reference/builder-config.md).
-- **Point an environment at it.** `cairn-build new-tag <env> --latest` the first time an
-  environment is declared; `cairn-build retag <env> --latest` from then on — the same
-  command also promotes (`--from <env>`) and rolls back (`--previous`). Nothing is
-  rebuilt or pulled either way; moving `production` asks for confirmation first.
-- **Deploy it.** The target machine converges on its own next poll once the pointer
-  moves — the target-side (`cairn-adopt`) walkthrough isn't written yet; see [Get
+- **Point an environment at it.** An *environment* (`production`, `staging`, …) is just a
+  named, moving registry tag that a target machine watches — declared in the manifest's
+  [`[cairn.environments]`](../reference/manifest.md#cairnenvironments), which has a full
+  worked example of what this buys you (build once, promote the same image through
+  several environments, roll back by repointing). In short: `cairn-build new-tag <env>
+  --latest` the first time an environment is declared; `cairn-build retag <env> --latest`
+  from then on — the same command also promotes (`--from <env>`) and rolls back
+  (`--previous`). Nothing is rebuilt or pulled either way; moving `production` asks for
+  confirmation first.
+- **Adopt it.** `cairn-adopt` is the target-side binary — it polls the environment's tag
+  and converges on its own next poll once the pointer moves; nothing pushes into the
+  target. The target-side walkthrough isn't written yet; see [Get
   Started](../get-started/index.md#next-steps) for what exists in the meantime.
+- **Automate it.** Once a manual build, push, and pointer move all work, `cairn-build
+  setup-timer` installs a systemd timer that repeats the same sequence on a schedule
+  unattended — see [Build Automation](automation.md).

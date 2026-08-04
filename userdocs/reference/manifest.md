@@ -98,18 +98,52 @@ cairn invents.
 
 ## `[cairn.environments]`
 
-Optional, and **not a build input at all** — no environment name ever reaches the
-image. It's the control-side declared list of which environments exist: a table mapping
-environment name → registry tag, e.g. `production = "production"`. It's what
-`cairn-build`'s pointer commands (`new-tag`, `retag`, `retire`) check against — you can
-only move a pointer for an environment named here — and it's the half of the deploy
-model that `cairn-adopt reconcile` matches against a target's own descriptor, by tag
-name.
+Optional, and **not a build input at all** — declaring a row here doesn't build, push, or
+point anything; no environment name ever reaches the image, and nothing happens to the
+registry until you separately run a pointer command. It's the control-side declared
+*list* of which environment names are legal: a table mapping environment name → registry
+tag, e.g. `production = "production"`. It's what `cairn-build`'s pointer commands
+(`new-tag`, `retag`, `retire`) check against — you can only move a pointer for an
+environment named here — and it's the half of the deploy model that `cairn-adopt
+reconcile` matches against a target's own descriptor, by tag name.
 
 Two environments may not point at the same tag: the tag *is* the pointer, so sharing one
 would make retagging either one silently redeploy both. Absent or empty, **no
 environment exists** — the pointer commands report that rather than creating one on your
 behalf.
+
+**Why this exists — build once, promote many.** An image is deliberately
+environment-agnostic: the same artifact is meant to run under `dev`, then `staging`, then
+`production`, without ever being rebuilt. What moves between environments is only a
+registry tag, and that's the entire point of this table — it names which pointers are
+allowed to exist, so a build machine can never accidentally overwrite one it wasn't told
+about, and `production` in particular always requires deliberate confirmation before its
+pointer moves.
+
+A worked example, given:
+
+```toml
+[cairn.environments]
+staging    = "staging"
+production = "production"
+```
+
+```bash
+# Build once.
+cairn-build build --manifest cairn.toml --push
+
+# First time staging is declared, its pointer doesn't exist yet:
+cairn-build new-tag staging --latest
+
+# Tried it out, looks good — promote the *same* image to production (no rebuild):
+cairn-build retag production --from staging --yes
+
+# A later build turns out bad — roll production back to what it ran before:
+cairn-build retag production --previous
+```
+
+Every step above only moves a tag in the registry — `cairn-adopt reconcile` on the actual
+target is what notices the pointer moved and converges to it on its next poll.
 
 ## `[cairn.registry]`
 

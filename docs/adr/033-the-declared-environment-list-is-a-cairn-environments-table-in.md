@@ -42,3 +42,8 @@ unknown-key rejection must admit it. The table is optional — a manifest that o
 declares no environments, and the pointer verbs then report that none exist rather than
 inventing one (`BR-CLI-009`, no auto-vivification).
 *(BR-DEPLOY-009, BR-CLI-004, BR-CLI-009, BR-BUILD-001, BR-CFG-008, ADR-010, ADR-015)*
+
+**Amended 2026-08-04 (`ADR-049`):** the table itself is renamed `[cairn.declared_environments]`
+— the worked example above shows the name as originally decided here and is left as the
+historical record, not rewritten. Everything else on this page — putting the list in the
+manifest, as a table, keyed by environment name → registry tag — is unchanged.

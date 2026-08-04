@@ -24,7 +24,7 @@ section (`url`, `ref`) driving `FRAPPE_PATH`/`FRAPPE_BRANCH`; an **ordered** `[[
 list (`name`, `url`, `ref`) for ERPNext + custom apps; and `[cairn.build]` knobs
 (`python_version`, `node_version`, `install_chromium`) with an optional passthrough for the
 long tail (`debian_base`, `wkhtmltopdf_*`). It MAY provide an optional
-`[cairn.environments]` table — the declared environment list of `BR-DEPLOY-009`
+`[cairn.declared_environments]` table — the declared environment list of `BR-DEPLOY-009`
 (`ADR-033`), which no build reads — and an optional `[cairn] series` naming the legible half
 of the image tag (`BR-BUILD-008`, `ADR-032`). *(ADR-015, ADR-032, ADR-033)*
 

@@ -17,9 +17,10 @@ Decisions cited: `ADR-009`, `ADR-035`, `ADR-036`, `ADR-038`, `ADR-039`, `ADR-046
 ## Role and scope
 
 **`BR-REG-001`** — `cairn-registry` is a third role, independent of `cairn-build` and
-`cairn-adopt` (`ADR-048`). It MUST NOT read a manifest (`cairn.toml`), `[cairn.environments]`,
-or any build-config file — every decision it makes is derived from the registry's own state
-(its config file and the registry's own tag/manifest API) or from operator-supplied flags.
+`cairn-adopt` (`ADR-048`). It MUST NOT read a manifest (`cairn.toml`),
+`[cairn.declared_environments]`, or any build-config file — every decision it makes is derived
+from the registry's own state (its config file and the registry's own tag/manifest API) or from
+operator-supplied flags.
 This is what keeps a registry host provisionable independently of which machines build or
 adopt, and is verified in code by `registry_config.py`/`registry_provision.py`/
 `registry_retention.py` importing neither `config.py` nor `environments.py`.
@@ -85,7 +86,7 @@ the digest each resolves to, reading the registry's own API remotely — no pull
    content-hash shape, `^<series>-[0-9a-f]{12}$` (`BR-BUILD-008`). A digest carrying a moving
    series tag or a declared-environment tag — either a plain, non-hash-shaped name — is
    categorically protected. This is sufficient to guarantee `cairn-registry` never deletes an
-   image an environment still points at, without reading `[cairn.environments]`: an
+   image an environment still points at, without reading `[cairn.declared_environments]`: an
    environment tag is created by `retag()`'s server-side copy onto the same digest a
    content-hash tag already names (`registry.py`), so it always shows up in this same map.
 3. Rank eligible digests by the `org.opencontainers.image.created` label already stamped on
