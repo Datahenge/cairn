@@ -76,8 +76,107 @@ workdir /home/brian
 `setup` is idempotent — re-running it later won't overwrite an edited `cairn.toml`, and steps
 that already exist (like the group above) are reported as skipped, not redone.
 
-## Next: edit the manifest, and run your first build
+## Edit the manifest
 
 Edit the scaffolded `cairn.toml` for your deployment — see [the manifest
-reference](../reference/manifest.md) for every field. Running the first build itself is
-*coming once verified end-to-end.*
+reference](../reference/manifest.md) for every field.
+
+## Run the build
+
+Preview first — nothing is built, pushed, or touched:
+
+```bash
+cairn-build build --manifest /srv/cairn/acmecorp/cairn.toml --dry-run
+```
+
+This resolves every ref (contacting each app's remote), computes the tags, and prints the
+exact command a real build would run. Once it looks right, drop `--dry-run`:
+
+```bash
+cairn-build build --manifest /srv/cairn/acmecorp/cairn.toml
+```
+
+Progress prints as it works — resolving refs, building, verifying the image landed,
+naming the reusable build-cache layer — and, at a terminal, the whole run is also saved to
+a transcript file, since nothing else is keeping it. It finishes with a per-phase timing
+report, worth a glance every time: it's the fastest way to notice a build that's started
+thrashing the layer cache instead of reusing it.
+
+```
+Timing
+  checks + ref resolution  4.2s
+  image build              4m 52s
+  verify image              0.6s
+  name build cache          0.3s
+  started  2026-08-04 15:03:09 -0700
+  finished 2026-08-04 15:08:24 -0700
+  total    5m 15s
+```
+
+As a real-world data point: a clean build of `erpnext-v16` (Frappe + ERPNext only, no
+custom apps) took **5 minutes 15 seconds** end-to-end against a typical VPS. Expect
+something in that range for a similar image; a much longer first run is usually the layer
+cache warming up rather than anything wrong.
+
+## Where the image goes
+
+By default a build stays **local** — tagged `cairn/<image_name>` in the build machine's own
+Docker/Podman image store, nowhere else. It only leaves the machine once you configure a
+registry (the manifest's `[cairn.registry]`, or `/etc/cairn/builder.toml`) and explicitly
+push — building never pushes on its own unless you pass `--push`. See [Machine-local build
+config](../reference/builder-config.md#resolution-order) for how the image base is chosen.
+
+That local image store lives on disk somewhere cairn deliberately doesn't assume —
+`cairn-build doctor`/`setup` already name it, as part of their disk-space check:
+
+```
+OK   free disk    199 GB free on /var/lib/docker
+```
+
+The path after "free on" is the engine's own data root, read with `docker info --format
+'{{.DockerRootDir}}'` (or `podman info --format '{{.Store.GraphRoot}}'`) rather than
+assumed — a separate mount for it is common on a build machine, and that's exactly the
+case a hardcoded `/var/lib/docker` would get wrong. Whatever a system admin needs to
+monitor for disk headroom, this is the path.
+
+To know for certain what a build machine is actually holding, ask cairn rather than reading
+a raw `docker images` — cairn groups by what was actually built, distinguishing a current
+build from one it has since superseded:
+
+```bash
+cairn-build images --local
+```
+
+```
+cairn/erpnext-v16:v16-d47f139c6ffe  (input hash d47f139c6ffe)
+  frappe       v16.25.0         9a8daf34
+  erpnext      v16.26.1         fd00cebb
+  built with vendored base v3.2.1
+    a1b2c3d4e5f6    1.79 GB       2m  cairn/erpnext-v16:v16-d47f139c6ffe, cairn/erpnext-v16:latest
+
+1 image(s) built by cairn across 1 input hash(es); 0 superseded, holding 0 B.
+```
+
+Leads with the tag you'd actually recognize, not the input hash — the hash is still there,
+parenthetically, and is usually visible again in the tag's own suffix
+(`<series>-<hash>`). `frappe_docker` is cairn's own vendored fork of `frappe_docker`
+(`ADR-001`) — its version is part of what produced this image, since it supplies the
+Containerfile itself, so two images from an identical `cairn.toml` can still differ if it
+moved between builds. Every image cairn builds carries its full provenance as OCI labels —
+resolved commits, the effective build args, that same vendored pin — so `docker inspect`
+(or the listing above) can always answer "what exactly is this" later, long after the
+terminal output has scrolled away.
+
+## Next steps
+
+- **Push it**, if this deployment uses a registry: `cairn-build push`. With no registry
+  configured there's nothing to push to yet — see [the manifest's
+  `[cairn.registry]`](../reference/manifest.md#cairnregistry) or [`builder.toml`'s
+  registry keys](../reference/builder-config.md).
+- **Point an environment at it.** `cairn-build new-tag <env> --latest` the first time an
+  environment is declared; `cairn-build retag <env> --latest` from then on — the same
+  command also promotes (`--from <env>`) and rolls back (`--previous`). Nothing is
+  rebuilt or pulled either way; moving `production` asks for confirmation first.
+- **Deploy it.** The target machine converges on its own next poll once the pointer
+  moves — the target-side (`cairn-adopt`) walkthrough isn't written yet; see [Get
+  Started](../get-started/index.md#next-steps) for what exists in the meantime.

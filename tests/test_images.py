@@ -126,10 +126,11 @@ def test_report_names_the_inputs_and_marks_supersession(monkeypatch):
     )
     rendered = images.render(images.group(found), others)
 
+    assert "ghcr.io/x/y:v16-1bf0adf3823f" in rendered
     assert "input hash 1bf0adf3823f" in rendered
     assert "erpnext" in rendered and "a5de60c3" in rendered
     assert "btu" in rendered and "5d66f6d4" in rendered
-    assert "frappe_docker v3.2.1" in rendered
+    assert "built with vendored base v3.2.1" in rendered
     assert "superseded" in rendered
 
 

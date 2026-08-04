@@ -30,6 +30,7 @@ from typing import Any
 from . import registry
 from .build import LABEL_NAMESPACE
 from .errors import ImageQueryError, RegistryError
+from .tagging import MOVING_TAG
 
 #: The label that marks an image as cairn's, and names the inputs it was built from.
 INPUT_HASH_LABEL = f"{LABEL_NAMESPACE}.input-hash"
@@ -185,6 +186,23 @@ def group(images: list[LocalImage]) -> list[ImageGroup]:
     ]
 
 
+def _group_header(tags: tuple[str, ...], input_hash: str) -> str:
+    """Return the line identifying one input-hash group (`BR-CLI-005`).
+
+    Leads with a tag — the deterministic primary one if present, since that is what an
+    operator recognizes, not a hash — and folds the input hash in parenthetically rather
+    than repeating it as the whole line: it is usually already visible as the tag's own
+    suffix (`<series>-<hash>`), so restating it up front said little on its own.
+    """
+    # Local tags are full "repo:tag" refs; registry tags are bare. `rpartition` reads the
+    # tag half of either uniformly, so the moving tag is recognized in both.
+    primary = next((tag for tag in tags if tag.rpartition(":")[2] != MOVING_TAG), None)
+    label = primary or (tags[0] if tags else None)
+    if label is None:
+        return f"(no current tag — input hash {input_hash})"
+    return f"{label}  (input hash {input_hash})"
+
+
 def render(groups: list[ImageGroup], others: int) -> str:
     """Return the human report: one block per input hash, superseded members marked."""
     if not groups:
@@ -193,7 +211,7 @@ def render(groups: list[ImageGroup], others: int) -> str:
     lines: list[str] = []
     for image_group in groups:
         newest = image_group.newest
-        lines.append(f"input hash {image_group.input_hash}")
+        lines.append(_group_header(newest.tags, image_group.input_hash))
         lines.append(
             f"  frappe       {newest.frappe_ref or '?':<16} "
             f"{newest.frappe_commit[:SHORT_COMMIT] or '?'}"
@@ -204,7 +222,7 @@ def render(groups: list[ImageGroup], others: int) -> str:
                 f"{str(app.get('commit', ''))[:SHORT_COMMIT] or '?'}"
             )
         if newest.vendor_pin:
-            lines.append(f"  frappe_docker {newest.vendor_pin}")
+            lines.append(f"  built with vendored base {newest.vendor_pin}")
 
         for image in image_group.images:
             names = ", ".join(image.tags) if image.tags else "no tags — superseded"
@@ -330,7 +348,7 @@ def render_registry(base: registry.ImageRef, groups, others: int) -> str:
     lines: list[str] = []
     for input_hash, members in groups:
         newest = members[0]
-        lines.append(f"input hash {input_hash}")
+        lines.append(_group_header(newest.tags, input_hash))
         lines.append(
             f"  frappe       {newest.frappe_ref or '?':<16} "
             f"{newest.frappe_commit[:SHORT_COMMIT] or '?'}"
@@ -341,7 +359,7 @@ def render_registry(base: registry.ImageRef, groups, others: int) -> str:
                 f"{str(app.get('commit', ''))[:SHORT_COMMIT] or '?'}"
             )
         if newest.vendor_pin:
-            lines.append(f"  frappe_docker {newest.vendor_pin}")
+            lines.append(f"  built with vendored base {newest.vendor_pin}")
 
         for image in members:
             lines.append(

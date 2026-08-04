@@ -20,6 +20,22 @@ dropped back down to match. `W-014` closed.
 
 ---
 
+## 2026-08-04 (later still — Builder walkthrough finished; first real build verified)
+
+A real build succeeded end-to-end against a client VPS: `doctor` (9/9), `--dry-run`, then
+`cairn-build build` (5m15s, build-only). `userdocs/builder/index.md`'s walkthrough — which
+had ended at *"running the first build itself is coming once verified end-to-end"* — now
+covers running the build, reading its timing report, where the image lands (local by
+default, `cairn/<image_name>`, unless a registry is configured), verifying that with
+`cairn-build images --local`, and next steps (push, `new-tag`/`retag`, deploy).
+
+Updated `open/OPEN_WORK.md` `W-013` to `in_progress` and
+`docs/technical/05-implementation-index.md`'s manifest-scaffolding row with the completion
+judgment — no requirement changed, this is verification catching up to already-implemented
+behavior. Client identity kept out of both files; this repo is public.
+
+---
+
 ## 2026-08-04 (later — scaffolded manifest defaults to tags, not `version-16`)
 
 Surfaced doing a real first build: `cairn-build build --dry-run` correctly warned that
