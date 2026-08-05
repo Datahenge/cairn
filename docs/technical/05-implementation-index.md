@@ -15,7 +15,7 @@ moment one is reached — through testing, review, or discussion — even in a s
 code change. Do not re-derive it from scratch in a later session; update this index instead.
 
 > **Seeding caveat (2026-08-03):** this initial version is transcribed from
-> `docs/plans/next-steps.md`'s already-written status notes (as of 2026-07-25) and updated only
+> `docs/archive/next-steps.md`'s already-written status notes (as of 2026-07-25) and updated only
 > for the `cairn-build`/`cairn-adopt` binary split (`ADR-046`) and the `cairn-provision` →
 > `setup` retirement. It is **not** a fresh audit of `src/cairn/` against current requirements.
 > Treat the "Completion Judgment" column as provisional until re-verified in a follow-up

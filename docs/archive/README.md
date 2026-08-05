@@ -25,6 +25,10 @@ needed.
 | [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `ADR-049` (in `decisions/`) | `ADR-052` |
 | [050-new-tag-and-retag-merge-into-assign-tag.md](050-new-tag-and-retag-merge-into-assign-tag.md) | `ADR-050` | `ADR-052` |
 | [057-target-descriptor-splits-registry-host-from-image.md](057-target-descriptor-splits-registry-host-from-image.md) | `ADR-057` (in `decisions/`) | `ADR-058` |
+| [001-wrap-frappe-docker-never-modify-it.md](001-wrap-frappe-docker-never-modify-it.md) | `ADR-001` | `ADR-059` |
+| [007-vendoring-via-ventwig-committed-drift-checked.md](007-vendoring-via-ventwig-committed-drift-checked.md) | `ADR-007` | `ADR-059` |
+| [020-strengthen-upstream-pin-immutability-ventwig-enhancement.md](020-strengthen-upstream-pin-immutability-ventwig-enhancement.md) | `ADR-020` | `ADR-059` (moot) |
+| [021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md](021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md) | `ADR-021` | `ADR-059` |
 
 ## Index — archived-for-size
 
@@ -39,3 +43,9 @@ needed.
 | File | Archived from | Covers |
 |---|---|---|
 | [OPEN_WORK-done.md](OPEN_WORK-done.md) | `open/OPEN_WORK.md` | `done` rows swept out once their completion judgment was recorded in `docs/technical/05-implementation-index.md` |
+
+## Index — archived plans
+
+| File | Archived from | Covers |
+|---|---|---|
+| [next-steps.md](next-steps.md) | `docs/plans/next-steps.md` | Session-resumption plan, `status: archived` since 2026-08-03 — its live-backlog role was absorbed into `open/OPEN_WORK.md`; moved here 2026-08-05 purely to stop it loading for ordinary "what's done, what remains" questions, which `docs/technical/05-implementation-index.md` + `open/OPEN_WORK.md` already answer |

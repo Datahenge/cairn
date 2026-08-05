@@ -31,7 +31,7 @@ this file, `open/`, `scratch/`, `docs/technical/`, `docs/adr/`, `decisions/`, an
 | General project work | `docs/requirements/00-overview.md`, `AGENTS.md` |
 | Writing or changing code | `docs/technical/00-coding-standards.md` |
 | Requirements or scope work | `docs/requirements/00-overview.md`, `open/OPEN_QUESTIONS.md` |
-| "What's done, what remains?" / implementation status | `docs/technical/05-implementation-index.md`, `open/OPEN_WORK.md`, `docs/plans/next-steps.md` |
+| "What's done, what remains?" / implementation status | `docs/technical/05-implementation-index.md`, `open/OPEN_WORK.md` |
 | Architecture rationale | `docs/adr/README.md`, `decisions/README.md` |
 | Pending decisions needing sign-off | `open/OPEN_DECISIONS.md` |
 | Outstanding implementation or cleanup work | `open/OPEN_WORK.md` |
