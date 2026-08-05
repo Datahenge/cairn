@@ -8,9 +8,7 @@ Adopting an existing `frappe_docker` deployment, and converging it with `cairn-a
   host, with exactly one site. `cairn-adopt` never creates a site, volume, or database — that
   stays the operator's job here exactly as it already was without cairn.
 - Assumes the registry side is already decided and an environment's tag already points at an
-  image — see [Builder: point an environment at
-  it](../builder/index.md#next-steps). `reconcile` polls that tag; there's nothing to converge
-  to without it.
+  image — see [Builder: point an environment at  it](../builder/index.md#next-steps).
 
 ## Verify with `doctor`
 
@@ -43,6 +41,13 @@ already is worth confirming before going further, since every later step depends
 You don't hand-write `/etc/cairn/adopt.toml`. Run `examine` against the deployment already
 running on this host — it reads the live stack and **prints** a draft descriptor; it writes
 nothing:
+
+`--environment` is a label you choose, not something `examine` detects or validates against
+the host. Choose a name this environment means to you (probably the same as you chose on the Build side in the  manifest, `[cairn]
+environment` — `production`, `staging`, `test`, ...).  This value only fills in the descriptor's `environment` field
+ — it does not choose which registry tag gets watched;
+
+see the note on `tag` below.
 
 ```bash
 cairn-adopt examine --environment production

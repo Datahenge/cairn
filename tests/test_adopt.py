@@ -122,6 +122,23 @@ def test_the_env_file_is_found_only_when_it_exists(monkeypatch, tmp_path):
     assert adopt.survey().env_file == tmp_path / ".env"
 
 
+def test_an_unreadable_env_file_is_a_finding_not_a_crash(monkeypatch, tmp_path):
+    """`Path.is_file()` re-raises a permission error rather than swallowing it like a missing
+    path — hit for real adopting an existing deployment whose `.env` was root-only. Surveying a
+    running stack is read-only; a probe like this one should report a gap, never crash it."""
+    _install(monkeypatch, _routes(tmp_path))
+
+    def _boom(self):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "is_file", _boom)
+
+    found = adopt.survey()
+
+    assert found.env_file is None
+    assert any(f.subject == "env file" for f in found.findings)
+
+
 def test_sites_and_apps_come_from_bench(monkeypatch, tmp_path):
     """From the site, which is the only authority — compose's SITES says what the proxy serves,
     not what exists."""

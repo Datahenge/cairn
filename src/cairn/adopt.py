@@ -309,7 +309,20 @@ def _survey_project(found: Survey, wanted: str | None) -> None:
         if (match := _OVERRIDE_RE.search(path.strip())) is not None
     )
     env_file = found.directory / ".env"
-    if env_file.is_file():
+    try:
+        env_file_present = env_file.is_file()
+    except OSError as exc:
+        # `Path.is_file()` swallows a missing path but re-raises a permission error
+        # (`EACCES` is not in pathlib's ignored-error set) — expected here, since this is the
+        # one path `examine` probes that cairn did not create and does not own: an existing
+        # deployment's `.env` is routinely root-only. `env_file` is optional in the descriptor
+        # (`BR-DEPLOY-010`), so this is a gap to report, not a reason to crash a read-only
+        # survey.
+        found.findings.append(
+            Finding("env file", f"{env_file} could not be checked — {exc.strerror or exc}")
+        )
+        env_file_present = False
+    if env_file_present:
         found.env_file = env_file
 
 

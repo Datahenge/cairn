@@ -9,7 +9,35 @@ code changes live in git history.
 
 ---
 
-## 2026-08-04 (latest — `userdocs/target/`: the third CLI's user docs, previously unwritten)
+## 2026-08-04 (latest — `examine` crashed on an unreadable `.env`; two doc corrections)
+
+Brian ran `cairn-adopt examine` live against an existing deployment on a client VPS and hit
+`PermissionError: [Errno 13] Permission denied: '/opt/vps-setup/gitops/.env'` — a crash, not a
+report.
+
+- **Root cause**: `adopt._survey_project`'s `env_file.is_file()` check. `pathlib.Path.is_file()`
+  swallows a *missing* path (`ENOENT`) but **re-raises a permission error** (`EACCES` is not in
+  its ignored-error set) — confirmed by reproduction. `.env` is the one path `examine` probes
+  that cairn did not create and does not own — an existing deployment's is routinely root-only —
+  so this was reachable on the very first real adopt, not an edge case.
+- **Fix**: wrapped the check in `try`/`except OSError`, recording a `Finding("env file", ...)`
+  instead of crashing — consistent with `adopt.py`'s own stated discipline ("gaps are reported,
+  never filled"), which this one call site violated. `env_file` is optional in the descriptor
+  (`BR-DEPLOY-010`), so a gap here was never fatal to begin with.
+  `tests/test_adopt.py::test_an_unreadable_env_file_is_a_finding_not_a_crash` covers it.
+- **Two `userdocs/` corrections**, prompted by a question about how to choose `examine
+  --environment`'s value: (1) `target/index.md` now explains, before the command, that
+  `--environment` is an operator-chosen label matched to the build-side manifest's `[cairn]
+  environment` — not detected or validated against the host, and not what selects the watched
+  tag. (2) `reference/target-descriptor.md` had claimed `"production"` gates an extra
+  `reconcile` confirmation; checked the code — `Descriptor.is_production` exists and is
+  unit-tested but has no call site in `reconcile.py`/`cli_adopt.py`, and `reconcile` runs
+  unattended with no interactive gate of any kind. Corrected to say so; the real `:production`
+  gate is build-side only, at `assign-tag`/`retire` (`BR-CLI-010`).
+
+---
+
+## 2026-08-04 (`userdocs/target/`: the third CLI's user docs, previously unwritten)
 
 Brian: build and push were already exercised live on a client VPS; adopt/reconcile is next.
 Wrote the target-role walkthrough `userdocs/index.md` had flagged as still a placeholder.
