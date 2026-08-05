@@ -85,6 +85,53 @@ defect — but it is strictly weaker than commit-pinning, and the gap is upstrea
 **3. Upstream changes the recipe in a way that breaks us and won't take a patch.**
 *Not yet encountered.* Recorded here so it is looked for rather than rationalised.
 
+**4. Two incompatible compose shapes, no path between them, and nothing that warns you
+which one you're on.** *(2026-08-05, Brian — live on a client VPS, adopting a pre-existing
+deployment)*
+
+`cairn-adopt reconcile` ran clean against a real target — pulled the built image, brought the
+stack up, ran `bench migrate`, verified health, reported `Converged to sha256:...`. Confirmed
+directly afterward (`docker inspect erpnext-backend-1 --format '{{.Image}}'` against the
+built image's own digest) that nothing had actually changed: `backend`, and every other
+erpnext-app service, was still running the old public image. `reconcile`'s convergence
+check was fooled, not lying — see the mitigation below.
+
+Root cause, found by diffing the vendored tree against the client's compose file: frappe_docker
+ships **two structurally different compose files for the same site**, and nothing distinguishes
+which one a given deployment is running on short of reading it line by line.
+
+- `compose.yaml` — the production file cairn's own deploy model (`BR-DEPLOY-003`,
+  `CUSTOM_IMAGE`/`CUSTOM_TAG`) is built against — correctly parameterizes the image via a YAML
+  anchor merged into every relevant service: `x-customizable-image: &customizable_image` →
+  `image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-$ERPNEXT_VERSION}`.
+- `pwd.yml` — frappe_docker's **one-line quick-start**, the very first thing a new adopter
+  meets in its own docs — hardcodes `image: frappe/erpnext:<version>` literally, once per
+  service, roughly nine times, with no substitution mechanism of any kind.
+
+The client's site was deployed from something structurally identical to `pwd.yml`: the same
+count and shape of hardcoded `image:` lines, no anchors, no `${CUSTOM_IMAGE}` anywhere in the
+file. `compose.yaml`'s mechanism is the *correct* answer and cairn is built against it
+correctly — the gap is entirely upstream's: frappe_docker offers no detection, no conversion
+path, and no warning that the file most new adopters reach for first is a dead end for the
+exact custom-image migration `cairn-adopt` exists to perform. An operator — or a tool adopting
+their site — only discovers it by diffing two files by hand, as happened here.
+
+**Mitigation, cairn-side, partial:** `reconcile`'s own convergence check (`running_digest()`)
+verifies that a local image with the right tag+digest *exists*, not that any container is
+*running* it — the same gap that let this report success falsely. Comparing the `backend`
+container's actual running image ID against the desired digest post-convergence would turn
+this into a loud, immediate failure instead of a silent no-op that looks like success. That
+closes the "false convergence report," not the underlying compose incompatibility — the
+operator still has to hand-edit `pwd.yml`-shaped files before adopting them.
+
+**Why this counts, not just friction:** every adoption of a pre-existing, hand-deployed site —
+`cairn-adopt`'s primary scenario — carries this risk, silently, for any site whose compose file
+traces back to `pwd.yml` rather than `compose.yaml`. That is plausibly the common case, not the
+edge case, since `pwd.yml` is the fastest path to a working site and the one frappe_docker's
+own docs lead with. Asking every public `datahenge-cairn` user to hand-diff and patch whatever
+frappe_docker generated for them, before `cairn-adopt` can be trusted, is not a one-off cost —
+it recurs per adopter.
+
 **Countervailing evidence, recorded to keep the register honest.** On 2026-07-25 the
 vendored recipe was measured working exactly as designed: the `base` stage cached across
 builds, the `builder` stage reused in 0.762s, `CACHE_BUST` keying the cache in both

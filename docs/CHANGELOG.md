@@ -9,7 +9,34 @@ code changes live in git history.
 
 ---
 
-## 2026-08-04 (latest — `registry_host` made required; `"docker.io"` names Docker Hub, `ADR-058`)
+## 2026-08-05 (latest — first real target converged; fork-pressure register item 4; `W-001`/`W-002` closed)
+
+The client VPS adopt reached the finish line: `cairn-adopt reconcile` ran against a real target
+for the first time ever, and — after one genuine surprise — the site is now actually running the
+client's own build, not the pre-existing public image.
+
+- **The surprise:** `reconcile` reported `Converged`, but nothing had changed. The target's
+  existing compose file (deployed from something structurally identical to frappe_docker's
+  `pwd.yml` quick-start, not its `compose.yaml`) hardcoded the image on every service — no
+  `${CUSTOM_IMAGE}`/`${CUSTOM_TAG}` anywhere. `reconcile.running_digest()` only confirms a local
+  image exists under the desired tag, not that any container is running it, so the false
+  convergence went unnoticed until checked by hand (`docker inspect` vs. the pulled digest).
+  Recorded as fork-pressure register item 4 (`docs/adr/021-...md`) and as `W-022` (`reconcile`'s
+  own robustness gap, independent of the fork question).
+- **The fix, on the client's side:** the compose file's hardcoded `frappe/erpnext:v16.26.1`
+  replaced with `${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-v16.26.1}` per service (matching
+  frappe_docker's own `compose.yaml` convention); a one-time manual `compose up`/`migrate`
+  (bypassing `reconcile`'s now-satisfied short-circuit) brought `backend`'s actual running image
+  ID to match the desired digest — confirmed by `docker inspect`. A subsequent real
+  `cairn-adopt reconcile` correctly reported `Already running`.
+- **`W-001`/`W-002` closed** in `open/OPEN_WORK.md` — first live deployment sequence and
+  `cairn-adopt doctor`'s target-role checks both verified against real infrastructure.
+  `docs/technical/05-implementation-index.md`'s Reconcile/deploy, Examine, and Doctor rows
+  updated with completion judgments, including the caveat.
+
+---
+
+## 2026-08-04 (`registry_host` made required; `"docker.io"` names Docker Hub, `ADR-058`)
 
 Same thread, hours later: Brian asked whether `ADR-057`'s reasoning for making `registry_host`
 optional ("no value would exist for Docker Hub") was actually true. It wasn't — `registry.py`

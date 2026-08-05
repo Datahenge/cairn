@@ -56,6 +56,12 @@ Create a new document only when it has a distinct owner, audience, lifecycle, or
 Avoid: multiple documents owning the same rule, unlabeled drafts, long notes with mixed
 authority, loading archive material without a specific reason.
 
+`docs/CHANGELOG.md` specifically grows by same-day append and needs periodic archiving on its
+own, separate from this review cadence — run `tools/changelog_rotate.py` (`--dry-run` first)
+rather than hand-writing another `docs/archive/CHANGELOG-*.md`; it archives the oldest entries
+down to a comfortable margin under `.docs_check_allowlist`'s budget and keeps
+`docs/archive/README.md`'s index in sync mechanically.
+
 ## Documentation Review Sessions
 
 Documentation entropy is expected, not a sign of failure. Every requirement change, decision,
