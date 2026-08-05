@@ -6,7 +6,7 @@ purpose: BR-DEPLOY requirements — deploying images to environments and keeping
 
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-04_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-05_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
@@ -51,6 +51,18 @@ Three reasons, of which the first is structural:
    after **every** image enable precisely because it reconciles schema to code that *exists*;
    `install-app` would create schema for code that may vanish on the next pointer move.
 *(BR-DEPLOY-007, BR-DATA-005/006/008, ADR-022, ADR-023, ADR-037)*
+
+**`BR-DEPLOY-003b`** *(convergence is verified against the running container, not the local
+image store)* — After `compose up -d`, cairn MUST determine "converged" by reading the digest
+of the image the **running** `backend` container was actually started from, not merely
+whether an image with the desired digest exists somewhere in the local store. `docker compose
+up` only recreates a container when its rendered service definition changes; a compose file
+that hardcodes `image:` per service, rather than parameterizing it with
+`${CUSTOM_IMAGE}`/`${CUSTOM_TAG}`, never reacts to those variables at all — the desired image
+can be pulled and sitting in the local store while the running container stays untouched. A
+mismatch here MUST be treated the same as any other convergence failure (`BR-DEPLOY-018`): a
+loud halt and report, never a false `Converged`. *(found live 2026-08-05, ADR-021 fork-pressure
+register item 4)*
 
 ## Pointer operations
 

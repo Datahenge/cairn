@@ -288,27 +288,58 @@ def test_a_second_pass_exits_rather_than_queueing(monkeypatch, tmp_path):
 # --- reading actual state ---------------------------------------------------
 
 
-def test_the_running_digest_comes_from_the_repo_digest(commands):
-    """RepoDigests is the registry's own name for the content — the only thing comparable
-    with what the registry reports."""
-    commands.captures = {
-        "image inspect": json.dumps(["ghcr.io/datahenge/erpnext-btu-v16@" + DESIRED])
-    }
+#: A minimal, valid capture set: a running container whose own image carries DESIRED.
+_RUNNING_DESIRED = {
+    "ps -q": "abc123containerid\n",
+    "docker inspect": "sha256:" + "f" * 64 + "\n",
+    "image inspect": json.dumps(["ghcr.io/datahenge/erpnext-btu-v16@" + DESIRED]),
+}
+
+
+def test_the_running_digest_comes_from_the_containers_own_image(commands):
+    """BR-DEPLOY-003b: convergence is read off the *running container's* image, not merely
+    whether a matching image exists somewhere in the local store — a compose file that
+    hardcodes `image:` per service never reacts to CUSTOM_IMAGE/CUSTOM_TAG, so a stale
+    container can keep running right next to a freshly pulled, unused image."""
+    commands.captures = dict(_RUNNING_DESIRED)
 
     assert reconcile.running_digest(_descriptor()) == DESIRED
 
 
-def test_an_unpulled_image_has_no_running_digest(commands):
+def test_no_running_container_has_no_running_digest(commands):
+    """The normal state before a first deploy — nothing to compare against."""
     commands.captures = {}
+
+    assert reconcile.running_digest(_descriptor()) is None
+
+
+def test_a_container_whose_image_id_cannot_be_read_has_no_running_digest(commands):
+    commands.captures = {"ps -q": "abc123containerid\n"}
 
     assert reconcile.running_digest(_descriptor()) is None
 
 
 def test_a_digest_for_another_repository_is_not_ours(commands):
     """A local image may carry digests from several repositories; only this one's counts."""
-    commands.captures = {"image inspect": json.dumps(["ghcr.io/someone/else@" + DESIRED])}
+    commands.captures = {
+        **_RUNNING_DESIRED,
+        "image inspect": json.dumps(["ghcr.io/someone/else@" + DESIRED]),
+    }
 
     assert reconcile.running_digest(_descriptor()) is None
+
+
+def test_a_stale_container_reports_its_own_older_digest_not_the_local_stores(commands):
+    """The exact bug found live 2026-08-05: the desired image can be pulled and sitting in
+    the local store while an untouched container keeps running an older one. The digest
+    reported must be the container's, not whatever else the store happens to hold."""
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "e" * 64 + "\n",
+        "image inspect": json.dumps(["ghcr.io/datahenge/erpnext-btu-v16@" + OTHER]),
+    }
+
+    assert reconcile.running_digest(_descriptor()) == OTHER
 
 
 def test_the_stack_is_up_only_when_the_bench_service_runs(commands):

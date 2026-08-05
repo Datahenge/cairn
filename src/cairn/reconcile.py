@@ -241,15 +241,30 @@ def await_health(
 
 
 def running_digest(descriptor: Descriptor) -> str | None:
-    """Return the registry digest of the image this host holds for the watched tag.
+    """Return the registry digest of the image the running `backend` container was actually
+    started from — not merely whether a matching image exists in the local store
+    (`BR-DEPLOY-003b`).
 
-    Read from the local image's ``RepoDigests``, which is the registry's own name for the
-    content — the only thing comparable with what the registry reports. ``None`` means the
-    image was never pulled, which is the normal state before a first deploy.
+    ``docker compose up`` only recreates a container when its *rendered* service definition
+    changes. A compose file that hardcodes ``image:`` per service, rather than
+    parameterizing it with ``${CUSTOM_IMAGE}``/``${CUSTOM_TAG}`` (frappe_docker's `pwd.yml`
+    quick-start shape, as opposed to its `compose.yaml`), never reacts to those variables at
+    all — the desired image can be pulled and sitting in the local store while the running
+    container stays completely untouched. Reading the digest off the *container's own* image
+    — not asking the store whether a matching image merely exists — is what turns that into a
+    loud mismatch instead of a silent false convergence (found live 2026-08-05, `ADR-021`
+    fork-pressure register item 4). ``None`` means there is no running container to ask,
+    which is the normal state before a first deploy.
     """
-    result = _capture(
-        ["docker", "image", "inspect", descriptor.reference, "--format", "{{json .RepoDigests}}"]
-    )
+    container_id = _first_line(_capture(_compose_command(descriptor, ["ps", "-q", BENCH_SERVICE])))
+    if container_id is None:
+        return None
+
+    image_id = _first_line(_capture(["docker", "inspect", container_id, "--format", "{{.Image}}"]))
+    if image_id is None:
+        return None
+
+    result = _capture(["docker", "image", "inspect", image_id, "--format", "{{json .RepoDigests}}"])
     if result is None:
         return None
     try:
@@ -262,6 +277,17 @@ def running_digest(descriptor: Descriptor) -> str | None:
     for entry in digests:
         if isinstance(entry, str) and entry.startswith(f"{descriptor.repository}@"):
             return entry.partition("@")[2]
+    return None
+
+
+def _first_line(output: str | None) -> str | None:
+    """Return *output*'s first non-blank line, stripped, or None if there isn't one."""
+    if output is None:
+        return None
+    for line in output.splitlines():
+        line = line.strip()
+        if line:
+            return line
     return None
 
 

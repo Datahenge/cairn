@@ -21,9 +21,10 @@ docs/archive/CHANGELOG-2026-08-04-early.md = 1200
 # invitation to keep adding to it.
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
-docs/requirements/03-deploy.md = 2450
+docs/requirements/03-deploy.md = 2600
 # ^ bumped 2026-08-04 for BR-DEPLOY-004/009/009a's promotion-is-proof-not-assertion rewrite
-# (ADR-052).
+# (ADR-052); bumped again 2026-08-05 for BR-DEPLOY-003b (convergence verified against the
+# running container, not the local image store — W-022).
 docs/requirements/06-cli.md = 4000
 # ^ recalibrated 2026-08-04 (ADR-055): default ceiling rose to 2200 and this entry set to
 # real headroom (current ~3130 words) instead of the last-few-dozen-words margin it had

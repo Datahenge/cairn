@@ -9,7 +9,31 @@ code changes live in git history.
 
 ---
 
-## 2026-08-05 (latest — `ADR-059` code migration: `W-023`..`W-031` landed)
+## 2026-08-05 (latest — `BR-DEPLOY-003b`: convergence verified against the running container, `W-022` closed)
+
+`W-022`, found live the same day (fork-pressure register item 4, `ADR-021`): a target whose
+compose file hardcoded `image:` per service, rather than parameterizing it with
+`${CUSTOM_IMAGE}`/`${CUSTOM_TAG}`, let `reconcile` report `Converged` while every
+erpnext-app container kept running the old image — `running_digest()` only asked the local
+image store whether a matching image existed, never what the running container was actually
+using.
+
+- **`docs/requirements/03-deploy.md`** — new `BR-DEPLOY-003b`: convergence MUST be
+  determined by reading the digest off the **running** `backend` container's own image, not
+  merely whether a matching image exists in the local store; a mismatch MUST be treated as
+  a convergence failure (`BR-DEPLOY-018`), not a silent `Converged`. Allowlist ceiling for
+  the file bumped 2450 → 2600 to fit it (`.docs_check_allowlist`).
+- **`src/cairn/reconcile.py`** — `running_digest()` rewritten: `compose ps -q backend` →
+  `docker inspect <container> --format {{.Image}}` → `docker image inspect <image>
+  --format {{json .RepoDigests}}`, instead of inspecting `descriptor.reference` directly
+  against the local store. `tests/test_reconcile.py` updated and extended, including a
+  regression test for the exact live failure (a stale container reporting its own older
+  digest, not whatever else the store holds).
+- **`open/OPEN_WORK.md`** — `W-022` swept to `docs/archive/OPEN_WORK-done.md`.
+  **`docs/technical/05-implementation-index.md`** — Reconcile/deploy row's status changed
+  from "Verified live (with a caveat)" to "Verified live."
+
+## 2026-08-05 (`ADR-059` code migration: `W-023`..`W-031` landed)
 
 The deferred code migration from the entry below landed same-day: `src/cairn/vendored/` is
 now `src/cairn/recipe/`, and every ventwig-era code path it depended on is gone.
