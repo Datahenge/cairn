@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import Manifest
-from .descriptor import Compose, Descriptor, Health
+from .descriptor import DEFAULT_COMPOSE_FILE, Compose, Descriptor, Health
 
 #: Ceiling on any probe. Every command here is informational; a slow answer is a broken one.
 PROBE_TIMEOUT_SECONDS = 120
@@ -79,6 +79,7 @@ class Survey:
 
     project: str | None = None
     directory: Path | None = None
+    compose_file: str | None = None
     overrides: tuple[str, ...] = ()
     env_file: Path | None = None
     sites: tuple[str, ...] = ()
@@ -134,6 +135,7 @@ def descriptor_for(found: Survey, environment: str) -> Descriptor:
             directory=found.directory,
             project=found.project,
             env_file=found.env_file,
+            file=found.compose_file or DEFAULT_COMPOSE_FILE,
         ),
         health=Health(),
     )
@@ -161,6 +163,9 @@ def render(found: Survey, environment: str) -> str:
     ]
     if compose.directory is not None:
         lines.append(f'directory = "{compose.directory}"')
+    # Read from the running project, not assumed — a hand-built deployment may not call it
+    # "compose.yaml".
+    lines.append(f'file      = "{compose.file}"')
     if compose.project:
         lines.append(f'project   = "{compose.project}"')
     if compose.env_file is not None:
@@ -184,9 +189,14 @@ def render(found: Survey, environment: str) -> str:
 
 def report(found: Survey, manifest: Manifest | None = None) -> list[str]:
     """Describe what was found, what was not, and what looks wrong (`BR-CLI-020`)."""
+    base_file = (
+        f"{found.directory}/{found.compose_file}"
+        if found.directory is not None and found.compose_file
+        else found.directory or "?"
+    )
     lines = [
         f"Compose project   {found.project or '?'}",
-        f"Compose files     {found.directory or '?'}"
+        f"Compose files     {base_file}"
         + (f" + {len(found.overrides)} override(s)" if found.overrides else ""),
         f"Sites             {', '.join(found.sites) or '?'}",
         f"Installed apps    {', '.join(found.apps) or '?'}",
@@ -302,7 +312,11 @@ def _survey_project(found: Survey, wanted: str | None) -> None:
         )
         return
 
-    found.directory = Path(files[0].strip()).parent
+    base = Path(files[0].strip())
+    found.directory = base.parent
+    # Not assumed to be `compose.yaml` — a hand-built deployment may name it anything, and
+    # `reconcile` needs the real name to find it (`BR-CLI-020`).
+    found.compose_file = base.name
     found.overrides = tuple(
         match.group("name")
         for path in files

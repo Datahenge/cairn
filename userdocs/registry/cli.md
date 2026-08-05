@@ -96,7 +96,20 @@ cairn-registry images --json
 ```
 
 Lists every repository, tag, and the digest it resolves to. Reads the registry's own API
-remotely — never pulls an image to find out.
+remotely — never pulls an image to find out. Grouped by digest, not one row per tag — a
+deterministic content-hash tag, `latest`, and any moving tag you assigned (an environment
+pointer, or anything else) can all name the same build, so every name for it shows up on one
+line rather than three repeated digests you'd otherwise have to cross-reference by eye:
+
+```
+Repository acmecorp/erpnext-v16
+  DIGEST         TAGS
+  a1b2c3d4e5f6   latest, production, v16-a1b2c3d4e5f6
+```
+
+This is usually the fastest way to find the exact tag to put into a target's
+[descriptor](../reference/target-descriptor.md#fields) — whatever's listed alongside the build
+you want *is* the tag to watch.
 
 ## doctor
 

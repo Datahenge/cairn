@@ -331,7 +331,7 @@ def _compose_command(descriptor: Descriptor, arguments: list[str]) -> list[str]:
 
     if directory is not None:
         command += ["--project-directory", str(directory)]
-        command += ["--file", str(directory / "compose.yaml")]
+        command += ["--file", str(directory / descriptor.compose.file)]
         for name in descriptor.compose.overrides:
             command += ["--file", str(directory / "overrides" / f"compose.{name}.yaml")]
 

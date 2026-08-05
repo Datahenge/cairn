@@ -113,22 +113,42 @@ def images_command(
             return 0
         for name in repositories:
             base = registry.ImageRef(config.host, name, "")
-            note(name)
-            for tag in sorted(registry.tags(base)):
-                digest = registry.digest_of(base.with_tag(tag))
-                note(f"  {tag:<40} {digest.removeprefix('sha256:')[:12]}")
+            note(f"Repository {name}")
+            note(f"  {'DIGEST':<14}TAGS")
+            for digest, tags in _grouped_tags(base):
+                short = digest.removeprefix("sha256:")[:12]
+                note(f"  {short:<14}{', '.join(tags)}")
         return 0
 
     run(_action)
+
+
+def _grouped_tags(base: registry.ImageRef) -> list[tuple[str, list[str]]]:
+    """Every tag in *base*'s repository, grouped by the full digest it resolves to.
+
+    One entry per unique digest, not per tag — the shape that actually answers "what is this
+    build called": a deterministic content-hash tag, `latest`, and any moving environment tag
+    an operator assigned all point at the same build and belong on the same line, not scattered
+    across three that each repeat the digest. This is what lets a reader pick the right `tag`
+    for a target descriptor at a glance, rather than cross-referencing digests by eye.
+
+    Returns the **full** ``sha256:...`` digest — callers needing the short display form
+    (`--json` needs the full one, for anything that acts on it) truncate at the point of
+    printing. Sorted by each group's own alphabetically-first tag, for a stable, readable order.
+    """
+    by_digest: dict[str, list[str]] = {}
+    for tag in sorted(registry.tags(base)):
+        digest = registry.digest_of(base.with_tag(tag))
+        by_digest.setdefault(digest, []).append(tag)
+    return sorted(by_digest.items(), key=lambda item: item[1][0])
 
 
 def _repository_json(config: registry_config.RegistryConfig, name: str) -> dict:
     base = registry.ImageRef(config.host, name, "")
     return {
         "name": name,
-        "tags": [
-            {"tag": tag, "digest": registry.digest_of(base.with_tag(tag))}
-            for tag in sorted(registry.tags(base))
+        "images": [
+            {"digest": digest, "tags": tags} for digest, tags in _grouped_tags(base)
         ],
     }
 

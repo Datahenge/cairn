@@ -38,6 +38,11 @@ DESCRIPTOR_PATH = Path("/etc/cairn/adopt.toml")
 #: Secret mechanisms cairn can wire. It handles no values either way (`BR-DEPLOY-013`).
 SECRET_MECHANISMS = ("docker-secrets", "env-file", "none")
 
+#: frappe_docker's own convention for the base compose file's name — the fallback for a
+#: descriptor that doesn't say otherwise, never an assumption `examine` relies on: it reads
+#: the real name off the running project instead of guessing it (`BR-CLI-020`).
+DEFAULT_COMPOSE_FILE = "compose.yaml"
+
 TOP_LEVEL_KEYS = {"environment", "image", "tag", "site", "compose", "secrets", "health"}
 
 
@@ -53,6 +58,10 @@ class Compose:
     project: str | None = None
     #: Extra environment file passed to compose, if the operator uses one.
     env_file: Path | None = None
+    #: The base compose file's own name, within `directory`. Not every deployment names it
+    #: `compose.yaml` — a hand-built stack may use anything — so this is read from the actual
+    #: project by `examine` rather than assumed by `reconcile`.
+    file: str = DEFAULT_COMPOSE_FILE
 
 
 @dataclass(frozen=True)
@@ -133,7 +142,10 @@ def _compose(path: Path, section: object) -> Compose:
     if not isinstance(section, dict):
         raise DescriptorError(f"{path}: [compose] must be a table.")
     _reject_unknown(
-        path, "[compose]", set(section), {"overrides", "directory", "project", "env_file"}
+        path,
+        "[compose]",
+        set(section),
+        {"overrides", "directory", "project", "env_file", "file"},
     )
 
     overrides = section.get("overrides", [])
@@ -143,11 +155,16 @@ def _compose(path: Path, section: object) -> Compose:
             f"they are layered, e.g. [\"mariadb\", \"redis\", \"https\"]."
         )
 
+    file = section.get("file", DEFAULT_COMPOSE_FILE)
+    if not isinstance(file, str) or not file.strip():
+        raise DescriptorError(f"{path}: [compose] file must be a non-empty string.")
+
     return Compose(
         overrides=tuple(overrides),
         directory=_optional_path(path, section, "directory"),
         project=_optional_string(path, "[compose]", section, "project"),
         env_file=_optional_path(path, section, "env_file"),
+        file=file,
     )
 
 

@@ -118,6 +118,26 @@ def test_an_unknown_compose_key_is_refused(tmp_path):
         descriptor.load(_write(tmp_path, MINIMAL + '[compose]\noverride = ["mariadb"]\n'))
 
 
+def test_the_compose_file_defaults_to_compose_yaml(tmp_path):
+    """Not every deployment is a fresh `examine` output — an older or hand-written descriptor
+    with no `file` key must still work the same way it always has."""
+    loaded = descriptor.load(_write(tmp_path, MINIMAL))
+
+    assert loaded.compose.file == descriptor.DEFAULT_COMPOSE_FILE == "compose.yaml"
+
+
+def test_a_non_default_compose_file_name_is_honored(tmp_path):
+    """A hand-built deployment may not call its compose file `compose.yaml` at all."""
+    loaded = descriptor.load(_write(tmp_path, MINIMAL + '[compose]\nfile = "erpnext.yaml"\n'))
+
+    assert loaded.compose.file == "erpnext.yaml"
+
+
+def test_an_empty_compose_file_name_is_refused(tmp_path):
+    with pytest.raises(DescriptorError, match="\\[compose\\] file must be a non-empty string"):
+        descriptor.load(_write(tmp_path, MINIMAL + '[compose]\nfile = ""\n'))
+
+
 # --- health (BR-DEPLOY-017) -------------------------------------------------
 
 

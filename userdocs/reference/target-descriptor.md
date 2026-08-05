@@ -19,7 +19,7 @@ image and tag currently deployed — and **prints** a descriptor; it writes noth
 review the output and install it yourself:
 
 ```bash
-cairn-adopt examine --environment production
+sudo cairn-adopt examine --environment production
 ```
 
 ```toml
@@ -33,6 +33,9 @@ site        = "erp.acmecorp.com"
 
 [compose]
 directory = "/opt/frappe_docker"
+# Read from the running project, not assumed — a hand-built deployment may not call it
+# "compose.yaml".
+file      = "compose.yaml"
 project   = "acmecorp"
 # Layered in this order — compose applies later files over earlier ones.
 overrides = ["mariadb", "redis", "https"]
@@ -62,6 +65,7 @@ hand you something `reconcile` would go on to reject.
 | --- | --- | --- |
 | `overrides` | no | Ordered list of `frappe_docker` override names (`mariadb`, `redis`, `https`, …) — later entries layer over earlier ones, same order `docker compose -f` would take them. |
 | `directory` | no | Where the `frappe_docker` compose tree lives on this host. |
+| `file` | no | The base compose file's name within `directory`. Defaults to `compose.yaml` — `frappe_docker`'s own convention — but `examine` always reads the real name off the running project and fills it in explicitly, since a hand-built deployment may call it anything. |
 | `project` | no | Compose project name, so multiple stacks on one host can't collide. |
 | `env_file` | no | An extra env file passed to compose, if you use one. |
 

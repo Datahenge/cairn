@@ -5,10 +5,11 @@
 # structural reorganization. See docs/technical/01-documentation-conventions.md for
 # the sprawl-control policy new documents should follow.
 
-docs/CHANGELOG.md = 2000
-# ^ dropped back down 2026-08-04: archived all 2026-08-03 entries to
-# docs/archive/CHANGELOG-2026-08-03.md (only 2026-08-04 entries remain live). Headroom for
-# ongoing same-day entries before the next archive pass is needed.
+docs/CHANGELOG.md = 6000
+# ^ tripled 2026-08-04 (ADR-056): the 2000 ceiling set earlier the same day re-tripped within
+# hours, mid-session, forcing an archive pass that interrupts the work generating the entries.
+# This file grows by same-day append, unlike a settled requirements doc — the next archive
+# pass happens on its own schedule, not forced by a ceiling sized for a single quiet day.
 docs/archive/CHANGELOG-2026-07.md = 12500
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.

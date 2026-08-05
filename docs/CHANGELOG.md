@@ -9,7 +9,63 @@ code changes live in git history.
 
 ---
 
-## 2026-08-04 (latest — `examine` crashed on an unreadable `.env`; two doc corrections)
+## 2026-08-04 (latest — `cairn-registry images` grouped by digest, not one row per tag; `.docs_check_allowlist` fix, `ADR-056`)
+
+Two unrelated items, same session.
+
+- **`BR-REG-005`**: Brian, still mid-adopt, reached for `cairn-registry images` to find the
+  right `image`/`tag` for the target descriptor and found the output unlabeled — a bare
+  repository name, unheaded tag/digest columns — and structured one row per tag, so three tags
+  sharing a build (a content-hash tag, `latest`, and any environment pointer) repeated the same
+  digest three times instead of appearing together. Restructured to group by digest: a
+  `Repository <name>` header, a `DIGEST`/`TAGS` column header, and one row per unique digest
+  listing every tag that names it. `--json`'s shape changed to match (`images: [{digest, tags}]`
+  replacing the flat `tags: [{tag, digest}]`) — the full, untruncated digest, since `--json` is
+  for scripting and needs precision the human-readable short digest doesn't. `_grouped_tags()`
+  is the new shared helper both output paths call. `BR-REG-005` updated to require the grouping.
+  `userdocs/registry/cli.md` and `userdocs/target/index.md` (the `image`/`tag` gotcha, now also
+  covering the "running a pre-cairn public image" case found earlier this session) updated and
+  cross-linked. New tests in `test_cli_registry.py`; full suite + lint pass.
+- **`.docs_check_allowlist`** (`ADR-056`): this file's own 2000-word override — dropped that
+  low the same day specifically to force frequent archiving — re-tripped within hours,
+  mid-session, forcing an archive pass that interrupts the work generating the entries. Tripled
+  to 6000 per Brian; no archiving performed, next pass happens on its own schedule.
+
+---
+
+## 2026-08-04 (`reconcile` no longer assumes the base compose file is named `compose.yaml`)
+
+Continuing the same live-VPS adopt: past the `.env` fix and the doc corrections, `cairn-adopt
+examine --environment test` (run with `sudo`) succeeded cleanly against
+`/opt/vps-setup/gitops/` — a hand-built deployment, one YAML file, no `overrides/` directory.
+That file is named `erpnext.yaml`, not `compose.yaml`. `reconcile.py:_compose_command` hard-coded
+`directory / "compose.yaml"`, so installing the printed descriptor as-is would have made the
+first real `reconcile` fail (file not found) — a failure `examine` could never have caught,
+since its own `docker compose ls`/`ps`/`exec` probes go through the daemon by **project name**
+and never needed the literal filename at all (`adopt.py`'s own stated rationale for that
+choice). Brian caught the gap before installing anything by asking `examine` to name it.
+
+- **`descriptor.py`**: `Compose` gained a `file` field, defaulting to the new
+  `DEFAULT_COMPOSE_FILE = "compose.yaml"` constant when a descriptor doesn't set it — existing
+  hand-written or previously-generated descriptors keep working unchanged. `[compose] file` is
+  now an accepted, validated key.
+- **`reconcile.py`**: `_compose_command` now passes `directory / descriptor.compose.file`
+  instead of the hard-coded literal.
+- **`adopt.py`**: `Survey` gained `compose_file`, captured in `_survey_project` from the same
+  `ConfigFiles` entry `directory` already comes from (`files[0]`'s basename, not just its
+  parent) — `examine` no longer discards the one fact that would have mattered here. `render()`
+  now always prints `file = "..."` explicitly (never silently defaulted, matching `BR-CLI-019`'s
+  "report the values assumed" precedent), and the plain-text `report()`'s "Compose files" line
+  now names the actual file instead of only the directory — the exact ambiguity that made this
+  investigation take three round trips to pin down.
+- Covered by new tests in `test_descriptor.py`, `test_adopt.py`, and `test_reconcile.py`,
+  including a round-trip test using `erpnext.yaml` specifically. Full suite (751) and lint pass.
+- `userdocs/reference/target-descriptor.md` and `userdocs/target/index.md` updated to document
+  and demonstrate the `file` key.
+
+---
+
+## 2026-08-04 (`examine` crashed on an unreadable `.env`; two doc corrections)
 
 Brian ran `cairn-adopt examine` live against an existing deployment on a client VPS and hit
 `PermissionError: [Errno 13] Permission denied: '/opt/vps-setup/gitops/.env'` — a crash, not a

@@ -23,9 +23,11 @@ PROJECT = "erp-acme"
 IMAGE = "localhost:5000/erpnext-acme"
 
 
-def _compose_ls(directory, overrides=("mariadb", "redis", "https"), name=PROJECT):
+def _compose_ls(
+    directory, overrides=("mariadb", "redis", "https"), name=PROJECT, filename="compose.yaml"
+):
     """Compose's project listing, whose ConfigFiles field is how we learn the file set."""
-    files = [f"{directory}/compose.yaml"]
+    files = [f"{directory}/{filename}"]
     files += [f"{directory}/overrides/compose.{name_}.yaml" for name_ in overrides]
     return json.dumps([{"Name": name, "Status": "running(6)", "ConfigFiles": ",".join(files)}])
 
@@ -97,7 +99,22 @@ def test_the_compose_project_and_its_file_set_are_discovered(monkeypatch, tmp_pa
 
     assert found.project == PROJECT
     assert found.directory == tmp_path
+    assert found.compose_file == "compose.yaml"
     assert found.overrides == ("mariadb", "redis", "https")
+
+
+def test_a_non_default_compose_file_name_is_discovered(monkeypatch, tmp_path):
+    """A hand-built deployment may not call its base compose file `compose.yaml` at all —
+    `examine` must read the real name off the project rather than assume it."""
+    _install(
+        monkeypatch,
+        _routes(tmp_path, **{"compose ls": _compose_ls(tmp_path, filename="erpnext.yaml")}),
+    )
+
+    found = adopt.survey()
+
+    assert found.compose_file == "erpnext.yaml"
+    assert found.directory == tmp_path
 
 
 def test_override_order_is_preserved(monkeypatch, tmp_path):
@@ -112,6 +129,19 @@ def test_a_stack_with_no_overrides_reports_none(monkeypatch, tmp_path):
     _install(monkeypatch, _routes(tmp_path, **{"compose ls": _compose_ls(tmp_path, ())}))
 
     assert adopt.survey().overrides == ()
+
+
+def test_the_report_names_the_actual_compose_file(monkeypatch, tmp_path):
+    """The directory alone isn't enough to know what `reconcile` will look for — this is the
+    exact ambiguity that made a real permission error look like a missing-file question."""
+    _install(
+        monkeypatch,
+        _routes(tmp_path, **{"compose ls": _compose_ls(tmp_path, filename="erpnext.yaml")}),
+    )
+
+    lines = adopt.report(adopt.survey())
+
+    assert any(line.startswith(f"Compose files     {tmp_path}/erpnext.yaml") for line in lines)
 
 
 def test_the_env_file_is_found_only_when_it_exists(monkeypatch, tmp_path):
@@ -460,7 +490,26 @@ def test_the_rendered_descriptor_round_trips(monkeypatch, tmp_path):
     assert loaded.site == "erp.acme.test"
     assert loaded.compose.overrides == ("mariadb", "redis", "https")
     assert loaded.compose.project == PROJECT
+    assert loaded.compose.file == "compose.yaml"
     assert loaded.reference == f"{IMAGE}:test"
+
+
+def test_a_non_default_compose_file_name_round_trips(monkeypatch, tmp_path):
+    """The exact gap that broke a real adopt: `examine` succeeded, but the printed descriptor
+    silently assumed `compose.yaml`, which `reconcile` would then have failed to find."""
+    _install(
+        monkeypatch,
+        _routes(tmp_path, **{"compose ls": _compose_ls(tmp_path, filename="erpnext.yaml")}),
+    )
+    found = adopt.survey()
+
+    rendered = adopt.render(found, "test")
+    adopt.validate(rendered)
+    assert 'file      = "erpnext.yaml"' in rendered
+
+    written = tmp_path / "adopt.toml"
+    written.write_text(rendered, encoding="utf-8")
+    assert descriptor.load(written).compose.file == "erpnext.yaml"
 
 
 def test_a_stack_with_no_overrides_round_trips_too(monkeypatch, tmp_path):

@@ -100,16 +100,31 @@ def test_images_lists_repositories_and_tags(local_registry, monkeypatch):
     result = runner.invoke(cli_registry.app, ["images"])
 
     assert result.exit_code == 0
-    assert "erpnext-btu-v16" in result.stderr
+    assert "Repository erpnext-btu-v16" in result.stderr
+    assert "DIGEST" in result.stderr and "TAGS" in result.stderr
     assert "v16-aaaaaaaaaaaa" in result.stderr
     assert "production" in result.stderr
+
+
+def test_images_groups_tags_sharing_a_digest_on_one_line(local_registry, monkeypatch):
+    """The whole point: a reader picking a `tag` for a target descriptor should see every name
+    for one build together, not have to cross-reference three repeated digests by eye."""
+    monkeypatch.setattr(registry, "catalog", lambda host: ["erpnext-btu-v16"])
+    monkeypatch.setattr(registry, "tags", lambda ref: ["latest", "production", "v16-aaaaaaaaaaaa"])
+    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "a" * 64)
+
+    result = runner.invoke(cli_registry.app, ["images"])
+
+    lines = [line for line in result.stderr.splitlines() if "a" * 12 in line]
+    assert len(lines) == 1
+    assert "latest" in lines[0] and "production" in lines[0] and "v16-aaaaaaaaaaaa" in lines[0]
 
 
 def test_images_json_is_valid_and_structured(local_registry, monkeypatch):
     import json
 
     monkeypatch.setattr(registry, "catalog", lambda host: ["erpnext-btu-v16"])
-    monkeypatch.setattr(registry, "tags", lambda ref: ["v16-aaaaaaaaaaaa"])
+    monkeypatch.setattr(registry, "tags", lambda ref: ["v16-aaaaaaaaaaaa", "production"])
     monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "a" * 64)
 
     result = runner.invoke(cli_registry.app, ["images", "--json"])
@@ -117,7 +132,9 @@ def test_images_json_is_valid_and_structured(local_registry, monkeypatch):
     payload = json.loads(result.stdout)
     assert payload["registry"] == local_registry.host
     assert payload["repositories"][0]["name"] == "erpnext-btu-v16"
-    assert payload["repositories"][0]["tags"][0]["tag"] == "v16-aaaaaaaaaaaa"
+    image = payload["repositories"][0]["images"][0]
+    assert image["digest"] == "sha256:" + "a" * 64  # full digest, not truncated
+    assert image["tags"] == ["production", "v16-aaaaaaaaaaaa"]
 
 
 def test_images_with_no_repositories_says_so(local_registry, monkeypatch):

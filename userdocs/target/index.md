@@ -43,19 +43,28 @@ running on this host — it reads the live stack and **prints** a draft descript
 nothing:
 
 `--environment` is a label you choose, not something `examine` detects or validates against
-the host. Choose a name this environment means to you (probably the same as you chose on the Build side in the  manifest, `[cairn]
-environment` — `production`, `staging`, `test`, ...).  This value only fills in the descriptor's `environment` field
- — it does not choose which registry tag gets watched;
-
+the host — nothing about the running deployment says what "environment" means. Use the same
+name this environment already has on the build side (that environment's manifest, `[cairn]
+environment` — `production`, `staging`, `test`, ...), so the descriptor, `doctor`, and
+`reconcile`'s own log lines read consistently with the rest of the deployment. It only fills
+in the descriptor's `environment` field — it does not choose which registry tag gets watched;
 see the note on `tag` below.
 
+**Run it with `sudo`.** `examine` itself doesn't require root, but a hand-built deployment's
+directory is outside cairn's control and commonly isn't world-readable — an existing
+deployment we adopted this way turned out to be owned so that only root could even list it.
+`setup` (below) and `reconcile`'s own systemd unit both run as root anyway, so surveying with
+the same privilege from the start means what `examine` reports is what `reconcile` will
+actually see later, rather than a partial picture with unreadable fields quietly reported as
+"could not be checked":
+
 ```bash
-cairn-adopt examine --environment production
+sudo cairn-adopt examine --environment production
 ```
 
 ```
 Compose project   acmecorp
-Compose files     /opt/frappe_docker + 3 override(s)
+Compose files     /opt/frappe_docker/compose.yaml + 3 override(s)
 Sites             erp.acmecorp.com
 Installed apps    erpnext
 Running image     ghcr.io/acmecorp/erpnext-v16:production
@@ -70,6 +79,9 @@ site        = "erp.acmecorp.com"
 
 [compose]
 directory = "/opt/frappe_docker"
+# Read from the running project, not assumed — a hand-built deployment may not call it
+# "compose.yaml".
+file      = "compose.yaml"
 project   = "acmecorp"
 overrides = ["mariadb", "redis", "https"]
 
@@ -80,15 +92,27 @@ interval_seconds = 5
 Review the above, then install it as /etc/cairn/adopt.toml.
 ```
 
-**The `tag` field is whatever tag is actually running right now — not automatically the
-environment name.** `examine` reads it straight off the live container, so if this host was
-brought up by hand against `production` (the moving environment tag `cairn-build assign-tag`
-already points), that's exactly what gets captured, and `reconcile` will correctly keep
-watching `production` from here on. If the host is instead running a pinned content-hash tag
-(for example, it was deployed by pulling one specific digest directly), `examine` captures
-that exact tag, and a descriptor installed as-is would watch a tag that never moves again —
-edit `tag` to the environment's moving tag before installing, if that's not already what's
-running.
+**`image`/`tag` are whatever is actually running right now — not automatically what cairn
+manages.** `examine` reads both straight off the live container. If this host was brought up
+by hand against `production` (the moving environment tag `cairn-build assign-tag` already
+points), that's exactly what gets captured, and `reconcile` will correctly keep watching
+`production` from here on. Two cases need a manual edit before installing:
+
+- **A pinned content-hash tag** (the host was deployed by pulling one specific digest
+  directly) — `examine` captures that exact tag, and a descriptor installed as-is would watch
+  a tag that never moves again. Edit `tag` to the environment's moving tag.
+- **A pre-cairn deployment** — the running image is something like the public
+  `frappe/erpnext:v16.26.1` from Docker Hub, not anything `cairn-build` ever produced. This is
+  the normal shape of a first adopt: the currently-running image is expected to be *replaced*
+  on the first real `reconcile`, not preserved. Both `image` and `tag` need to point at your
+  own registry instead — **[`cairn-registry images`](../registry/cli.md#images)** groups every
+  tag by the build it names, so whatever tag sits alongside the digest you want *is* the value
+  to put here.
+
+**`file` is read off the running project too, not assumed.** A hand-built deployment doesn't
+have to name its base compose file `compose.yaml` — `examine` reads whatever it's actually
+called and fills it in explicitly, so `reconcile` addresses the same file later rather than
+guessing frappe_docker's usual name and failing to find it.
 
 If anything couldn't be determined, `examine` says so by name rather than guessing — a
 transcription error here is a wrong deploy, not a typo:
@@ -103,7 +127,7 @@ you pass one — worth doing, since a mismatch is the likeliest way a first `rec
 (`bench migrate` running against code the site doesn't expect):
 
 ```bash
-cairn-adopt examine --environment production --manifest /srv/cairn/acmecorp/cairn_production.toml
+sudo cairn-adopt examine --environment production --manifest /srv/cairn/acmecorp/cairn_production.toml
 ```
 
 And if the host serves more than one site, `examine` stops rather than emitting a descriptor
@@ -202,10 +226,13 @@ deliberately what happens before that timer exists.
 
 ## Run `reconcile`
 
-Preview first — nothing is pulled, started, or migrated:
+Preview first — nothing is pulled, started, or migrated. Run it as whatever account the timer
+will later use (`root` by default, matching `systemd-units`/`setup-timer` below) — `reconcile`
+builds its `docker compose` invocation from the descriptor's `directory`/`file`, and needs the
+same real filesystem read access into that directory `examine` did:
 
 ```bash
-cairn-adopt reconcile --dry-run
+sudo cairn-adopt reconcile --dry-run
 ```
 
 ```
@@ -222,7 +249,7 @@ polling regularly.)
 Once it looks right, drop `--dry-run`:
 
 ```bash
-cairn-adopt reconcile
+sudo cairn-adopt reconcile
 ```
 
 ```

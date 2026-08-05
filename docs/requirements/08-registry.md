@@ -92,7 +92,13 @@ cairn does not reimplement container lifecycle management.
 
 **`BR-REG-005`** *(images)* — `cairn-registry images [--json]` lists repositories, tags, and
 the digest each resolves to, reading the registry's own API remotely — no pull, mirroring
-`BR-DEPLOY-005`'s existing no-pull introspection for the same reason.
+`BR-DEPLOY-005`'s existing no-pull introspection for the same reason. Output MUST be **grouped
+by digest**, not listed one row per tag: a deterministic content-hash tag, `latest`, and any
+moving tag an operator assigned (an environment pointer, or anything else) can all name the
+same build, and a reader — deciding, for instance, what to write into a target descriptor's
+`tag` — needs to see every name for one build together, not cross-reference repeated digests
+by eye. Labels are explicit throughout (a repository line reads as a repository, not a bare
+name; columns are headed) — nothing is left for the reader to infer.
 
 ## Retention
 

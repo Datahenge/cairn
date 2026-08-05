@@ -352,6 +352,22 @@ def test_overrides_are_layered_in_declared_order():
     ]
 
 
+def test_a_non_default_compose_file_name_is_used():
+    """A hand-built deployment `examine` adopted may not call its base file `compose.yaml` —
+    `reconcile` must address the same file `examine` actually found, not assume the name."""
+    command = reconcile._compose_command(
+        _descriptor(
+            compose=descriptor.Compose(
+                directory=reconcile.Path("/opt/vps-setup/gitops"), file="erpnext.yaml"
+            )
+        ),
+        ["up", "-d"],
+    )
+
+    files = [command[i + 1] for i, part in enumerate(command) if part == "--file"]
+    assert files == ["/opt/vps-setup/gitops/erpnext.yaml"]
+
+
 def test_the_project_name_is_passed_when_set():
     command = reconcile._compose_command(
         _descriptor(compose=descriptor.Compose(project="erp")), ["ps"]
