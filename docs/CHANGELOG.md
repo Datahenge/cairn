@@ -9,7 +9,24 @@ code changes live in git history.
 
 ---
 
-## 2026-08-05 (latest — `BR-DEPLOY-003b`: convergence verified against the running container, `W-022` closed)
+## 2026-08-05 (latest — correction: `cairn-registry setup` was already verified live 2026-08-04; `W-015` narrowed)
+
+`docs/technical/05-implementation-index.md`'s Registry row and `open/OPEN_WORK.md`'s `W-015`
+both understated progress already made: a real (non-`--dry-run`) `cairn-registry setup` had
+already completed cleanly against the client's test VPS on 2026-08-04, alongside that day's
+`--dry-run` pass that found and fixed the two dry-run-contract bugs — the index's own prose
+already described both, but its "Known Next Gap" cell and `W-015`'s own description still
+read as if the real run hadn't happened. Corrected per Brian, 2026-08-05.
+
+- **`docs/technical/05-implementation-index.md`** — Registry row's "Known Next Gap" narrowed
+  from "first real-host `setup` run past `--dry-run`, and first `prune`/`gc` run" to just the
+  `prune`/`gc` half.
+- **`open/OPEN_WORK.md`** — `W-015`'s description rewritten to state plainly that
+  implementation and live `setup` verification are both done; only `prune`/`gc` against a
+  real registry remain.
+- **`CURRENT_CONTEXT.md`** — "Active work" line updated to match.
+
+## 2026-08-05 (`BR-DEPLOY-003b`: convergence verified against the running container, `W-022` closed)
 
 `W-022`, found live the same day (fork-pressure register item 4, `ADR-021`): a target whose
 compose file hardcoded `image:` per service, rather than parameterizing it with

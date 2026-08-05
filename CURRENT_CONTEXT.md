@@ -13,9 +13,9 @@ Use this file as the first context checkpoint. Keep it short — point to detail
 Phase 4 (modular code) is under way, on the three-binary split (`cairn-build` / `cairn-adopt` /
 `cairn-registry`, `ADR-046`/`ADR-048`) that replaced the unified `cairn` command and the
 separate `cairn-provision` installer. Most recently landed: `ADR-052` (manifest:environment is
-1:1; promotion is proof, found in the registry, not an assertion). Active work is `cairn-registry`
-(`W-015`) and the first live run against real infrastructure — everything in the deploy path is
-tested but unexercised on a real host or registry; see `open/OPEN_WORK.md`. Newly decided:
+1:1; promotion is proof, found in the registry, not an assertion). `cairn-registry setup` was
+verified live on the client's test VPS 2026-08-04; active work narrowed to `prune`/`gc`
+against a real registry (`W-015`) — see `open/OPEN_WORK.md`. Newly decided:
 `ADR-059` retires `frappe_docker` vendoring in favor of cairn owning its Docker build recipe
 outright, superseding `ADR-001`/`ADR-007`; both the documentation cascade and the code
 migration (`src/cairn/vendored/` renamed to `src/cairn/recipe/`, the `ventwig`-backed `vendor`
