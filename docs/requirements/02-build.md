@@ -8,9 +8,9 @@ purpose: BR-BUILD requirements — building a custom ERPNext image from a manife
 
 _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-04_
 
-Requirements for building a custom ERPNext image from a manifest, using the vendored
-`frappe_docker` `custom/Containerfile`. Conventions: see `/CLAUDE.md`. Decisions cited:
-`ADR-004`, `ADR-007`, `ADR-009`, `ADR-011`, `ADR-015`, `ADR-052`.
+Requirements for building a custom ERPNext image from a manifest, using cairn's own owned
+`custom/Containerfile` recipe. Conventions: see `/CLAUDE.md`. Decisions cited:
+`ADR-004`, `ADR-009`, `ADR-011`, `ADR-015`, `ADR-052`, `ADR-059`.
 
 ---
 
@@ -88,10 +88,11 @@ of identity are in play and only the first is immutable:
 | **Deterministic name** | `v16-1bf0adf3823f` | derived from resolved inputs; **re-pointable** | cairn |
 | Moving pointer | `latest`, later `:production` | names a role, not content | cairn |
 
-Because the input hash covers **effective** build args (`BR-BUILD-010`), a deliberate
-`frappe_docker` pin bump that changes a Containerfile default changes the tag **even when
+Because the input hash covers **effective** build args (`BR-BUILD-010`), a deliberate change
+to the owned recipe (e.g. bumping a Containerfile default) changes the tag **even when
 `cairn.toml` is unchanged**. This is intended, not a defect: the image's inputs did change,
-and `BR-VEND-009` already makes pin bumps explicit and reviewable. *(ADR-011, ADR-009)*
+and any recipe edit is already an explicit, reviewable commit (`BR-VEND-002`). *(ADR-011,
+ADR-009)*
 
 **`BR-BUILD-014`** *(one image per input hash)* — When the primary tag already exists
 **locally**, cairn MUST NOT rebuild. It MUST report the existing image and its digest and
@@ -122,16 +123,16 @@ registry hit. *(ADR-052)*
 
 ## Build invocation
 
-**`BR-BUILD-009`** — cairn MUST build using the vendored `images/custom/Containerfile` with
-`frappe_docker/` as the build context, and MUST enforce the `VEND` preconditions first:
-`BR-VEND-005` (drift) and `BR-VEND-006` (completeness). *(ADR-004)*
+**`BR-BUILD-009`** — cairn MUST build using its own owned `images/custom/Containerfile` with
+`frappe_docker/` as the build context, and MUST enforce the `VEND` precondition first:
+`BR-VEND-003` (build-input completeness). *(ADR-004)*
 
 **`BR-BUILD-010`** — cairn MUST pass the `[cairn.build]` knobs as the matching build-args and
 MUST record the effective values (including Containerfile defaults where unset) in
 provenance. *(ADR-015)*
 
 **`BR-BUILD-015`** *(name the build-cache stage)* — On **podman**, after a build that
-actually ran, cairn SHOULD tag the vendored Containerfile's `builder` stage
+actually ran, cairn SHOULD tag the recipe's Containerfile's `builder` stage
 `cairn-cache/<image_name>:builder` (podman stores this as `localhost/…`). `--no-cache-tag`
 disables it.
 
@@ -163,11 +164,12 @@ Constraints, each load-bearing:
 
 **`BR-BUILD-011`** — On a successful build, cairn MUST stamp provenance onto the image as OCI
 labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; resolved Frappe + app commits
-with their source refs; effective build args; both tags; the `frappe_docker` pin (from
-`src/cairn/vendored/frappe_docker.pin.toml`, `BR-VEND-003`); the input-hash; and a timestamp.
-cairn MAY emit a sidecar marker into the deployment working directory, and MUST NOT write
-markers into its own installation or source tree. The concrete label schema is `ADR-030`.
-*(ADR-011, ADR-030)*
+with their source refs; effective build args; both tags; the owned recipe's own provenance
+(cairn's package version and the git commit covering `src/cairn/recipe/frappe_docker/` at
+build time — there is no separate upstream pin to record, `ADR-059`); the input-hash; and a
+timestamp. cairn MAY emit a sidecar marker into the deployment working directory, and MUST NOT
+write markers into its own installation or source tree. The concrete label schema is
+`ADR-030`. *(ADR-011, ADR-030, ADR-059)*
 
 **`BR-BUILD-012`** — cairn MUST offer a `--dry-run` that emits the resolved `apps.json`, the
 exact build command, the computed tags, and the intended provenance, without
@@ -177,7 +179,7 @@ building. *(BR-CLI)*
 
 **`BR-BUILD-013`** — cairn's guarantee is **input-deterministic** (same resolved inputs →
 same declared image), not bit-for-bit hermetic; this limit MUST be documented. *(ADR-004,
-ADR-007)*
+ADR-059)*
 
 ## Private `github.com` apps
 
@@ -221,5 +223,5 @@ BR-DEPLOY-022, ADR-017)*
 ---
 
 ## Cross-references
-- Preconditions `BR-VEND-005` / `BR-VEND-006` are enforced here.
+- Precondition `BR-VEND-003` is enforced here.
 - The `cairn-build build` command surface is specified under `BR-CLI`.

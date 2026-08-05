@@ -20,7 +20,7 @@ SSH deploy key Brian already has working host-side (`git clone --mirror`/`git fe
 outside the sandbox, no new credential type) — and serve that mirror to the build over an
 address the BuildKit sandbox can reach without any credential at all (`docker build
 --network=host`, or host-gateway addressing; either is a flag on the build invocation cairn
-already constructs, not a change to the vendored Containerfile). If it works, it doesn't
+already constructs, not a change to the recipe's Containerfile). If it works, it doesn't
 just avoid a second credential type — it eliminates `github_auth.py`'s entire reason to
 exist: no token, nothing to scope to `github.com`, nothing to redact.
 

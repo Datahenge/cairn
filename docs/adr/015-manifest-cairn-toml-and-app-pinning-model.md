@@ -21,9 +21,10 @@ supported** — refs must be a branch or tag. Therefore cairn **resolves every r
 commit at build time (`git ls-remote`) and records it** in provenance (driving
 `CACHE_BUST`, the image tag, and labels), but does **not** freeze commits into the build.
 The manifest SHOULD pin to **tags** for reproducibility; cairn SHOULD warn on a moving
-branch. True commit-pinning would require editing the vendored tree (forbidden,
-`ADR-001`) or Option C's build-time git-mirror machinery (rejected as too heavy); the
-sanctioned path if it ever becomes essential is a deliberate fork (`ADR-021`).
+branch. True commit-pinning would require editing the recipe's `bench init` step directly —
+previously forbidden while the recipe was vendored read-only (`ADR-001`, `ADR-021`); now
+straightforwardly achievable, since cairn owns the recipe outright (`ADR-059`). Not yet
+implemented; recorded here as newly available, not yet exercised.
 
 **Ordered list:** `[[cairn.apps]]` order is significant (install order); documented
 prominently in `README.md` and MUST appear inline in every shipped template

@@ -6,16 +6,18 @@ purpose: Project purpose, pillars, and what cairn is/isn't — read before requi
 
 # cairn — Project Scope
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-08-05_
 
 ## Purpose
 
-`cairn` wraps the upstream [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)
-tooling and bolts on the ergonomics it lacks, so that operating a custom ERPNext
-deployment (Frappe + ERPNext + one or more custom apps) on a single VPS is
-**frictionless, reproducible, and low-thought**.
+`cairn` owns its Docker build recipe (Containerfile) and compose configuration outright, and
+bolts on the ergonomics upstream [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)
+lacks, so that operating a custom ERPNext deployment (Frappe + ERPNext + one or more custom
+apps) on a single VPS is **frictionless, reproducible, and low-thought**.
 
-We never modify `frappe_docker`. We vendor it read-only and build *on top* of it.
+The recipe is cairn's own, maintained directly (`ADR-059`) — bootstrapped from frappe_docker
+and free to borrow from it again at any time, but not vendored, pinned, or drift-checked
+against it.
 
 ## Two pillars, and a strict boundary
 
@@ -47,14 +49,15 @@ over the tedious, error-prone parts.
 **Is:**
 - A Python package, **`datahenge-cairn`**, providing three role-specific CLIs —
   `cairn-build` (build/control), `cairn-adopt` (target), and `cairn-registry` (registry
-  host) — that orchestrate `docker`, `buildx`, `docker compose`, and `bench` against a
-  vendored, pinned copy of `frappe_docker` (`ADR-046`, `ADR-048`).
+  host) — that orchestrate `docker`, `buildx`, `docker compose`, and `bench` against cairn's
+  own owned Docker build recipe and compose configuration (`ADR-046`, `ADR-048`, `ADR-059`).
 - Opinionated toward one common case: a single Docker host, done well.
 - A place where the *connective tissue* upstream omits (ref↔image records,
   desired-state, drift detection) becomes first-class.
 
 **Is not:**
-- A fork or patch of `frappe_docker`. Upstream stays pristine and pinned.
+- An obligated tracker of every `frappe_docker` release. Cairn borrows from upstream at will,
+  on no fixed cadence — it owes no sync, and carries no warranty of continued parity.
 - A Kubernetes / Docker Swarm orchestrator. Explicitly out of scope.
 - A general-purpose multi-tenant PaaS.
 
@@ -68,8 +71,8 @@ over the tedious, error-prone parts.
 ## Guiding principles
 
 - **Immutable & reproducible.** Same inputs → same image, forever. No mutable base tags.
-- **Never own what we don't own.** `frappe_docker` is a pinned external dependency,
-  vendored and drift-checked, never edited.
+- **Own what we depend on.** The Docker build recipe and compose configuration are cairn's
+  own, maintained directly — not vendored, not pinned, not drift-checked (`ADR-059`).
 - **Idempotent, state-driven deploys.** One converging verb; triggers are pluggable.
 - **Pull, don't push.** The VPS reaches outward; nothing gets a key *into* the box.
 - **The Cairn metaphor.** Each build/deploy drops a durable marker (ref → resolved

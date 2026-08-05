@@ -38,7 +38,6 @@ longer applies.
 | `build`, `push` | `examine` |
 | `new-tag`, `retag`, `retire` | `reconcile` |
 | `images` | `systemd-units` |
-| `vendor status` / `sync` | |
 | `prune` | |
 | `doctor` (build/control checks only) | `doctor` (target checks only) |
 | `setup` (privileged) | `setup` (privileged) |

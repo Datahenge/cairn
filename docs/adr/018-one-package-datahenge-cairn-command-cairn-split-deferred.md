@@ -128,6 +128,11 @@ error of any kind.
 One consequence worth naming: the builder role no longer *requires* a checkout — a bare
 `pip install datahenge-cairn` now carries everything `cairn build` needs. The installer
 (`ADR-040`) still provisions a builder from a checkout by default, since that is also how an
-operator gets `ventwig`/`ruff`/`pytest` for local development — but that is now a choice, not
+operator gets `ruff`/`pytest` for local development — but that is now a choice, not
 a hard requirement imposed by packaging.
-*(BR-VEND-002/003/005, ADR-007, ADR-028, ADR-029, ADR-034, ADR-040)*
+
+**Note (2026-08-05):** the `ventwig`-specific reasoning above is superseded by `ADR-059` —
+vendoring, and `ventwig` with it, is retired; cairn owns its recipe directly, still packaged
+inside the wheel at (now) `src/cairn/recipe/frappe_docker/` for the same reason described
+here.
+*(BR-VEND-001/002/003, ADR-028, ADR-029, ADR-034, ADR-040, ADR-059)*

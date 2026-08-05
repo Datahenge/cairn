@@ -35,13 +35,13 @@ unarchived.
 
 | ADR | Status | Summary |
 |---|---|---|
-| [ADR-001](001-wrap-frappe-docker-never-modify-it.md) | `authoritative` | Wrap `frappe_docker`, never modify it |
+| [ADR-001](001-wrap-frappe-docker-never-modify-it.md) | `archived` | Wrap `frappe_docker`, never modify it (superseded by `ADR-059`) |
 | [ADR-002](002-target-single-host-vps-with-docker-compose.md) | `authoritative` | Target: single-host VPS with Docker Compose |
 | [ADR-003](003-cli-substrate-python-click-typer.md) | `authoritative` | CLI substrate: Python (Click/Typer) |
 | [ADR-004](004-image-build-strategy-custom-not-layered.md) | `authoritative` | Image build strategy: `custom`, not `layered` |
 | [ADR-005](005-no-github-vps-ssh-access.md) | `authoritative` | No GitHub → VPS SSH access |
 | [ADR-006](006-deploy-trigger-model-idempotent-reconcile-pull-loop.md) | `authoritative` | Deploy trigger model: idempotent reconcile + pull loop |
-| [ADR-007](007-vendoring-via-ventwig-committed-drift-checked.md) | `authoritative` | Vendoring via `ventwig`, committed + drift-checked |
+| [ADR-007](007-vendoring-via-ventwig-committed-drift-checked.md) | `archived` | Vendoring via `ventwig`, committed + drift-checked (superseded by `ADR-059`) |
 | [ADR-009](009-container-registry-registry-agnostic-ghcr-recommended-default.md) | `authoritative` | Container registry: registry-agnostic; no default recommended (amended by `ADR-038`) |
 | [ADR-010](010-desired-state-pointer-the-environment-s-moving-registry-tag.md) | `authoritative` | Desired-state pointer = the environment's moving registry tag |
 | [ADR-012](012-rollback-does-not-restore-the-database.md) | `authoritative` | Rollback does NOT restore the database |
@@ -52,8 +52,8 @@ unarchived.
 | [ADR-017](017-secrets-are-operator-provisioned-cairn-is-secret-agnostic.md) | `authoritative` | Secrets are operator-provisioned; cairn is secret-agnostic |
 | [ADR-018](018-one-package-datahenge-cairn-command-cairn-split-deferred.md) | `authoritative` | One package `datahenge-cairn`; command `cairn`; split deferred |
 | [ADR-019](019-cairn-and-cofferdam-are-mutually-unaware-strict-decoupling.md) | `authoritative` | cairn and cofferdam are mutually unaware (strict decoupling) |
-| [ADR-020](020-strengthen-upstream-pin-immutability-ventwig-enhancement.md) | `exploratory` | Strengthen upstream-pin immutability (ventwig enhancement) |
-| [ADR-021](021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md) | `exploratory` | Deliberate fork of frappe_docker as the sanctioned escape hatch |
+| [ADR-020](020-strengthen-upstream-pin-immutability-ventwig-enhancement.md) | `archived` | Strengthen upstream-pin immutability (ventwig enhancement) (moot, `ADR-059`) |
+| [ADR-021](021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md) | `archived` | Deliberate fork of frappe_docker as the sanctioned escape hatch (superseded by `ADR-059`) |
 | [ADR-022](022-cairn-operates-on-the-code-image-plane-the-data-plane-is-off.md) | `authoritative` | cairn operates on the code/image plane; the data plane is off-limits |
 | [ADR-023](023-opt-in-bench-install-app-never-automatic.md) | `archived` | Opt-in `bench install-app`; never automatic |
 | [ADR-024](024-reconcile-is-a-purpose-built-thin-orchestrator-not-watchtower.md) | `authoritative` | Reconcile is a purpose-built thin orchestrator (not Watchtower/Flux/Argo) |
@@ -82,6 +82,7 @@ unarchived.
 | [ADR-048](048-cairn-registry-a-third-cli-for-local-registry-lifecycle.md) | `authoritative` | `cairn-registry`, a third CLI entry point for local-registry provisioning, retention, and garbage collection |
 | [ADR-050](050-new-tag-and-retag-merge-into-assign-tag.md) | `archived` | `new-tag` and `retag` merge into one command, `assign-tag` |
 | [ADR-052](052-manifest-environment-1-1-proof-not-assertion-promotion.md) | `authoritative` | Manifest:environment is 1:1; promotion is proof, not assertion |
+| [ADR-059](059-cairn-owns-its-docker-build-recipe-frappe-docker-vendoring-retired.md) | `authoritative` | cairn owns its Docker build recipe; frappe_docker vendoring is retired |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../../decisions/](../../decisions/)
 instead, as lightweight decisions.

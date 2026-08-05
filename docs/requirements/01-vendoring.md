@@ -1,64 +1,47 @@
 ---
 status: authoritative
 owner: requirements
-purpose: BR-VEND requirements — vendoring the upstream frappe_docker tooling.
+purpose: BR-VEND requirements — cairn's owned Docker build recipe.
 ---
 
-# BR-VEND — Vendoring Requirements
+# BR-VEND — Owned Docker Build Recipe Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated:
+2026-08-05_
 
-Requirements for how cairn vendors the upstream `frappe_docker` tooling. Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-001`, `ADR-004`, `ADR-007`, `ADR-008`, `ADR-020`.
-Scope: `frappe_docker` is the single vendored source.
+Requirements for cairn's Docker build recipe (`Containerfile`) and compose configuration.
+Cairn owns this recipe directly — it is not vendored, pinned, or synced from upstream
+`frappe_docker` (`ADR-059`, which supersedes `ADR-001` and `ADR-007`). Conventions: see
+`/CLAUDE.md`. Decisions cited: `ADR-004`, `ADR-059`. Scope: `src/cairn/recipe/frappe_docker/`
+is the single owned recipe tree.
 
 ---
 
-**`BR-VEND-001` — Vendoring mechanism.** The upstream `frappe_docker` tooling MUST be
-vendored into the cairn repository as plain, committed files via `ventwig` — never as a git
-submodule, subtree, or runtime package dependency. *(ADR-007)*
+**`BR-VEND-001` — Recipe ownership.** Cairn owns the Docker build recipe and compose
+configuration at `src/cairn/recipe/frappe_docker/` as ordinary source. Cairn MAY create,
+modify, or delete any file within it, subject to the same review discipline as any other part
+of the codebase — there is no read-only restriction. *(ADR-059)*
 
-**`BR-VEND-002` — Immutable-intent pin.** The vendored copy MUST be pinned to an
-immutable-intent upstream `ref` (a release tag) in `pyproject.toml`, and MUST NOT track a
-moving branch. *(ADR-007, ADR-020)*
+**`BR-VEND-002` — No tracking obligation.** Cairn is under no obligation to track, pin, or
+periodically sync with upstream `frappe/frappe_docker`. Consulting or borrowing from upstream
+is an informal, at-will act the operator performs by hand (e.g. a manual `git clone` and diff)
+when convenient — never a scheduled, automated, or tooling-mediated one. There is no pin file,
+lock file, or drift check. *(ADR-059)*
 
-**`BR-VEND-003` — Lock is the anchor.** The synced upstream commit and content-tree hash
-MUST be recorded in a committed `.ventwig.lock`, and mirrored into a package-relative
-companion (`src/cairn/vendored/frappe_docker.pin.toml`) that build-time code reads instead
-— so the anchor travels inside the wheel rather than requiring a checkout. Builds MUST
-reproduce without network access to the upstream host. *(ADR-007)*
-
-**`BR-VEND-004` — Read-only.** No cairn operation may create, modify, or delete any file
-within the vendored `frappe_docker/` tree. *(ADR-001)*
-
-**`BR-VEND-005` — Drift is a hard stop.** Before producing an image, cairn MUST verify the
-vendored tree matches the content-tree hash recorded in its pin (`BR-VEND-003`). On any
-drift the operation MUST abort; there is no override. This check MUST NOT require the
-`ventwig` package to be installed — it is a build-time precondition, not a vendoring
-operation, and recomputes the same tree-hash algorithm using only `git` (`ADR-007`).
-*(ADR-001, ADR-007)*
-
-**`BR-VEND-006` — Build-input completeness.** Before producing an image, cairn MUST verify
-the vendored tree contains the required build inputs (at minimum `images/custom/Containerfile`
-and the `resources/` it references), and MUST abort with a clear error if any are absent.
+**`BR-VEND-003` — Build-input completeness.** Before producing an image, cairn MUST verify the
+recipe tree contains the required build inputs (at minimum `images/custom/Containerfile` and
+the `resources/` it references), and MUST abort with a clear error if any are absent. This is
+an ordinary sanity check on cairn's own source, not a precondition tied to any external sync.
 *(ADR-004)*
 
-**`BR-VEND-007` — No upstream git history.** The vendored tree MUST NOT contain upstream
-version-control metadata (no nested `.git`). *(ADR-007)*
-
-**`BR-VEND-008` — No package-marker pollution.** ventwig MUST be configured with
-`create_parent_package_markers = false`. *(ADR-007)*
-
-**`BR-VEND-009` — Deliberate upgrades only.** Upgrading the vendored upstream MUST be an
-explicit, reviewable act (bump `ref` → `ventwig sync` → review → commit tree + lock). cairn
-MUST NOT upgrade or re-sync the pin automatically as a side effect of any other operation.
-*(ADR-007, ADR-020)*
-
-**`BR-VEND-010` — Git working tree.** The cairn project MUST be a git working tree.
-*(ADR-008)*
+**`BR-VEND-004` — No nested version-control metadata.** The recipe tree MUST NOT contain a
+nested `.git` directory. This is a hygiene rule carried from how the tree was originally
+bootstrapped (a one-time copy from upstream `frappe_docker`, `ADR-059`), not an ongoing sync
+constraint — the recipe's own history lives in cairn's own git history from that point forward.
 
 ---
 
 ## Cross-references
-- `BR-VEND-005` / `BR-VEND-006` are enforced at build time; `BUILD` cites them.
-- The `cairn-build vendor status | sync` command surface is specified under `BR-CLI`.
+- `BR-VEND-003` is enforced at build time; `BUILD` cites it.
+- The command surface that once wrapped this pillar (`cairn-build vendor status | sync`) is
+  retired (`ADR-059`) — there is no longer a `vendor` subcommand.

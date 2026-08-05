@@ -28,6 +28,8 @@ file in `docs/adr/` (not condensed here) — these rows exist for live-tracking 
 
 | ID | Status | Area | Decision needed | Recommendation / trigger | Full record |
 |---|---|---|---|---|---|
-| `ADR-020` | `deferred` | `VEND` | Strengthen upstream-pin immutability in ventwig (SHA pinning and/or re-sync verification) | Ventwig enhancement, not a cairn blocker; at minimum add re-sync verification | [../docs/adr/020-strengthen-upstream-pin-immutability-ventwig-enhancement.md](../docs/adr/020-strengthen-upstream-pin-immutability-ventwig-enhancement.md) |
-| `ADR-021` | `deferred` | `VEND` | Whether to fork `frappe_docker` as an escape hatch for hard commit-pinning | Deferred until a concrete, essential need is evidenced — see the fork-pressure register in the full record | [../docs/adr/021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md](../docs/adr/021-deliberate-fork-of-frappe-docker-as-the-sanctioned-escape-hatch.md) |
 | `ADR-044` | `deferred` | `BUILD` | Whether to add a local git mirror for private-app reachability, replacing the PAT-based auth `BR-BUILD-016` already ships | Deferred — revisit only if PAT-based auth proves insufficient for a client | [../docs/adr/044-local-git-mirror-for-private-app-reachability-not-a-revival-of.md](../docs/adr/044-local-git-mirror-for-private-app-reachability-not-a-revival-of.md) |
+
+`ADR-020` and `ADR-021` were resolved 2026-08-05 by `ADR-059` (cairn owns its Docker build
+recipe outright; the ventwig pin and the fork question are both moot) and removed from this
+queue — see [../docs/adr/059-cairn-owns-its-docker-build-recipe-frappe-docker-vendoring-retired.md](../docs/adr/059-cairn-owns-its-docker-build-recipe-frappe-docker-vendoring-retired.md).

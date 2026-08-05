@@ -47,7 +47,7 @@ distributing entity of a client's image is the client's to declare, not cairn's.
 | `com.datahenge.cairn.frappe.url` / `.ref` / `.commit` | Frappe source, declared ref, resolved commit |
 | `com.datahenge.cairn.apps` | JSON array of `{name, url, ref, commit}`, **manifest order** |
 | `com.datahenge.cairn.build-args` | JSON object of **effective** build args (`BR-BUILD-010`) |
-| `com.datahenge.cairn.frappe-docker.ref` / `.commit` | the vendored upstream pin, from `frappe_docker.pin.toml` (`ADR-007`) |
+| `com.datahenge.cairn.frappe-docker.ref` / `.commit` | the owned recipe's own provenance — cairn's package version and the git commit covering `src/cairn/recipe/frappe_docker/` at build time; there is no separate upstream pin (`ADR-059`) |
 
 Apps and build args are single JSON labels because their cardinality varies; everything
 else is scalar so it can be read without parsing.

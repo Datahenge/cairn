@@ -9,7 +9,53 @@ code changes live in git history.
 
 ---
 
-## 2026-08-05 (latest — first real target converged; fork-pressure register item 4; `W-001`/`W-002` closed)
+## 2026-08-05 (latest — `ADR-059`: cairn owns its Docker build recipe; frappe_docker vendoring retired)
+
+Working through the fork-pressure register's item 4 (below) with Brian surfaced a bigger
+question than forking `frappe_docker`: since `cairn-adopt reconcile` never composes against
+cairn's own vendored copy at deploy time (it reads the compose directory/filename off the
+*target's* descriptor — `descriptor.py`'s `Compose.directory`/`Compose.file`), and since
+`BR-DEPLOY-007` already scopes cairn to existing environments only, cairn will always face a
+pre-existing compose file regardless. The vendored `compose.yaml` inside cairn's own repo
+serves no purpose there. Combined with a direct read of `images/custom/Containerfile`
+(~130 lines, one Debian base, six version `ARG`s — smaller and more legible than assumed) and
+the observation that `BR-VEND-009` already made upstream delivery to a real VPS a deliberate,
+manual act (never automatic), the conclusion reached was: **own the recipe outright, rather
+than fork-and-still-track-upstream.**
+
+- **`docs/adr/059-...md`** (new, authoritative) — decision record: cairn owns its Docker
+  build recipe and compose YAML permanently, at `src/cairn/recipe/frappe_docker/` (renamed
+  from `src/cairn/vendored/`), bootstrapped as a byte-for-byte copy. No `ventwig`, no pin, no
+  drift check, no sync obligation — upstream `frappe_docker` becomes an informal, at-will
+  reference. Supersedes `ADR-001` (wrap, never modify) and `ADR-007` (vendoring via ventwig);
+  resolves `ADR-020` (ventwig pin immutability — moot) and `ADR-021` (fork escape hatch —
+  superseded, ownership grants everything a fork would without forking). All four archived
+  to `docs/archive/` with forwarding stubs left in place.
+- **`docs/00-project-scope.md`** — Purpose, "Is not," and guiding-principle prose rewritten:
+  "Never own what we don't own" becomes "Own what we depend on."
+- **`docs/requirements/01-vendoring.md`** — full rewrite. The ten `BR-VEND-001..010`
+  (ventwig mechanism, tag pin, lock anchor, read-only, drift hard-stop, build-input
+  completeness, no upstream `.git`, no package markers, deliberate-upgrades-only, git working
+  tree) replaced by four ownership-era requirements: recipe ownership, no tracking obligation,
+  build-input completeness (kept, reframed), no nested VCS metadata.
+- **`docs/requirements/02-build.md`, `06-cli.md`** — `BR-BUILD-009`/`011`/`013` reworded for
+  ownership (provenance labels now stamp the recipe's own git commit/cairn version, not a
+  `frappe_docker.pin.toml` upstream pin); `BR-CLI-006` (`vendor status`/`sync`) struck — no
+  replacement command ships.
+- **`AGENTS.md`, `CURRENT_CONTEXT.md`** — `VEND` area glossary redefined from "vendoring" to
+  "the owned Docker build recipe"; artifacts table and Standing Rules updated to the new path.
+- Citation touch-ups in `docs/adr/015-...md`, `018-...md`, `029-...md`, `030-...md`,
+  `044-...md`, `046-...md`, and `decisions/008-...md` where they referenced the retired
+  vendoring model, plus `docs/technical/05-implementation-index.md`'s Vendoring row.
+- **`open/OPEN_DECISIONS.md`** — `ADR-020`/`ADR-021` rows removed (resolved). **`open/OPEN_WORK.md`**
+  — `W-010` closed (superseded); `W-023`..`W-031` added for the deferred **code** migration
+  (renaming `src/cairn/vendored/` → `src/cairn/recipe/`, retiring `vendor.py`/`project.py`/the
+  `vendor` CLI sub-app, redesigning `build.py`'s provenance labels, updating tests, fixing a
+  pre-existing `(ADR-001)` ID leak in `userdocs/builder/index.md`) — **not executed this pass**,
+  per this project's own documentation-precedes-code discipline. Code still lives at the old
+  vendored/ventwig paths until that work lands.
+
+## 2026-08-05 (first real target converged; fork-pressure register item 4; `W-001`/`W-002` closed)
 
 The client VPS adopt reached the finish line: `cairn-adopt reconcile` ran against a real target
 for the first time ever, and — after one genuine surprise — the site is now actually running the

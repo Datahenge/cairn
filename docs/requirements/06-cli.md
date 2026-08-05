@@ -84,8 +84,9 @@ it is already stamped on the image; this is the command that reads them back. Im
 did not build MUST be excluded, but their count MUST be reported, so the command is never
 mistaken for a complete inventory. *(BR-DEPLOY-005, BR-BUILD-011, BR-BUILD-014, ADR-032)*
 
-**`BR-CLI-006`** *(vendor)* — `cairn-build vendor status | sync` — thin ventwig wrappers.
-*(BR-VEND-*)*
+**`BR-CLI-006`** *(vendor, struck)* — `cairn-build vendor status | sync` is retired. Cairn no
+longer syncs from upstream `frappe_docker`; it owns its recipe directly and carries no command
+surface for tracking an external pin. *(ADR-059)*
 
 **`BR-CLI-009`** *(no declared environment, no auto-vivification, `ADR-052`)* — `assign-tag
 --manifest <path>` and `retire --manifest <path>` MUST **error if that manifest declares no
@@ -155,7 +156,7 @@ the omission is never a surprise. A removal that fails MUST NOT abort the rest.
 
 **Label-scoping is a cache-safety mechanism, not merely tidiness.** On podman, an untagged
 image may be a **build-cache stage** rather than a former build — the `builder` stage of the
-vendored Containerfile is untagged, larger than the final image, and is what lets a rebuild
+recipe's Containerfile is untagged, larger than the final image, and is what lets a rebuild
 skip `bench init`. A prune written against "dangling" would delete it and silently convert
 every later build into a cold one. cairn's labels are applied only at the **final** commit,
 so a stage image never carries them, and a label-scoped prune cannot reach the cache. cairn
@@ -271,7 +272,7 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
 - **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under
   `data_dir` (`BR-REG-011`).
 
-*(BR-VEND-005/006, BR-BUILD-005, BR-CFG-015, BR-CLI-014, BR-REG-011, ADR-027, ADR-043, ADR-046,
+*(BR-VEND-003, BR-BUILD-005, BR-CFG-015, BR-CLI-014, BR-REG-011, ADR-027, ADR-043, ADR-046,
 ADR-048)*
 
 **`BR-CLI-021`** *(setup — the privileged installer, nested per role)* — Each CLI carries its own
@@ -336,7 +337,7 @@ failure, not as success. *(ADR-022, ADR-023, ADR-025)*
 so systemd and CI detect outcomes. *(BR-DEPLOY-019)*
 
 **`BR-CLI-013`** *(output)* — Human-readable by default; **`--json`** on read/introspection
-commands (`images`, `vendor status`, `doctor`) for CI/scripting. *(—)*
+commands (`images`, `doctor`) for CI/scripting. *(—)*
 
 **`BR-CLI-014`** *(config discovery)* — cairn resolves the manifest (`cairn.toml`) only from
 `--manifest` or `$CAIRN_MANIFEST` — never by searching a directory (`ADR-042`) — resolves

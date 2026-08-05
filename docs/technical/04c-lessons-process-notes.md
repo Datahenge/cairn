@@ -15,18 +15,19 @@ _Last updated: 2026-08-04_
 
 ## 1. Derive build-input checks from the source, don't hardcode them
 
-*Applied in code. Illuminates `BR-VEND-006`._
+*Applied in code. Illuminates `BR-VEND-003` (renumbered from `BR-VEND-006` when the
+vendoring model was retired for direct recipe ownership, `ADR-059`)._
 
-`BR-VEND-006` requires verifying the vendored tree holds "at minimum
+`BR-VEND-003` requires verifying the recipe tree holds "at minimum
 `images/custom/Containerfile` and the `resources/` it references". The obvious
 implementation — a hardcoded list of six resource paths — is wrong by construction: it
-silently rots the first time the `frappe_docker` pin is bumped and upstream adds or moves
-a file, and it rots *quietly*, still reporting success.
+silently rots the first time the recipe changes and a file is added or moved, and it rots
+*quietly*, still reporting success.
 
 `vendor.assert_build_inputs` instead parses the Containerfile's own `COPY` instructions
 and requires each build-context path to exist, skipping `COPY --from=<stage>` lines whose
-sources come from an earlier build stage rather than the vendored tree. The check derives
-its expectations from the artifact it is checking, so it stays correct across upgrades.
+sources come from an earlier build stage rather than the recipe tree. The check derives
+its expectations from the artifact it is checking, so it stays correct across edits.
 
 Generalizable: when a requirement says "and everything it references", parse the
 referencing artifact rather than transcribing its current contents.

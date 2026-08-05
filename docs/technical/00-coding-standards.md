@@ -13,8 +13,10 @@ here.
 ## Language / Runtime
 
 - Python ≥ 3.11 (`requires-python = ">=3.11"` in `pyproject.toml`).
-- The vendored `src/cairn/vendored/frappe_docker/` tree is upstream code, never edited and
-  never linted to our standard (`ADR-001`, `BR-VEND-004`).
+- The owned `src/cairn/recipe/frappe_docker/` tree (renamed from `vendored/`, `ADR-059`) is a
+  Docker build recipe — Containerfile and shell, not Python — and is not linted to this
+  document's Python standard. It is otherwise ordinary cairn source: freely edited, reviewed
+  like any other change.
 
 ## Naming Conventions
 

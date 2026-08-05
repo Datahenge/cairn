@@ -27,4 +27,10 @@ free of them (`BR-CFG-008`).
 **Closed 2026-07-25:** the vendored tree now lives at `src/cairn/vendored/frappe_docker` —
 inside `src/cairn` — so the wheel carries it without any special packaging step (`ADR-007`,
 `ADR-018`). A `pip install`-ed cairn has a vendored tree to build from.
+
+**Note (2026-08-05):** vendoring itself is retired (`ADR-059`) — the tree is cairn's own
+owned recipe now, moving to `src/cairn/recipe/frappe_docker/`. This decision's substance
+(the manifest root and cairn's own project root resolve independently) is unaffected; only
+the tree's name and the reason it ships in the wheel changed (owned source, not a vendored
+copy).
 *(BR-CFG-012, BR-CLI-014, BR-BUILD-011)*

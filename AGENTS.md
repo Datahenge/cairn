@@ -45,7 +45,8 @@ before writing code.
 
 Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside ADRs).
 
-**BR areas:** `VEND` vendoring · `BUILD` image build · `DEPLOY` reconcile/lifecycle ·
+**BR areas:** `VEND` the owned Docker build recipe (Containerfile + compose YAML) cairn
+authors and maintains directly (`ADR-059`) · `BUILD` image build · `DEPLOY` reconcile/lifecycle ·
 `DATA` data-plane boundary (off-limits; sole DB touch is `bench migrate` / opt-in
 `install-app`) · `CFG` environment-specific config on the sites volume (site config,
 local secrets, local policy files — e.g. a cofferdam policy file) · `CLI` command surface ·
@@ -90,7 +91,7 @@ traceability.
 | `CHANGELOG.md` (root) | Software release history | — |
 | `docs/plans/` | Narrative implementation plans, downstream of requirements | — |
 | `userdocs/` | Published end-user documentation (mkdocs-material → GitHub Pages, `ADR-045`) — the only tree a user ever sees | — |
-| `src/cairn/vendored/frappe_docker/` | Vendored upstream, **read-only** (ventwig, `ADR-001`) — never edit | — |
+| `src/cairn/recipe/frappe_docker/` | Owned Docker build recipe (Containerfile + compose YAML), authored and maintained directly by cairn — no vendoring, no pin, freely edited (`ADR-059`) | — |
 
 ## Workflow (Scribe Coding phases)
 
@@ -128,8 +129,6 @@ If Brian asks for a "Dorwin Analysis," see
 - When a design changes, update the affected requirements **and** `docs/CHANGELOG.md`
   in the same change.
 - Do **not** begin code for a pillar whose requirements are not yet solid.
-- Never edit the vendored `src/cairn/vendored/frappe_docker/` tree; manage it only via
-  `cairn vendor sync` (which wraps ventwig).
 - **`BR`/`ADR` IDs are internal — they never reach a user.** They belong in docstrings,
   comments, tests, commit messages, and `docs/`. They MUST NOT appear in **anything a
   user can see**: CLI `--help` text, error messages, warnings, progress output,

@@ -1,11 +1,11 @@
 ---
-status: authoritative
+status: archived
 owner: technical
-purpose: ADR-001 — Wrap `frappe_docker`, never modify it
+purpose: ADR-001 — retired, superseded by ADR-059.
 ---
 
-# ADR-001 — Wrap `frappe_docker`, never modify it
+# ADR-001 — Wrap `frappe_docker`, never modify it (retired)
 
-**Decided:** 2026-07-21
-Treat upstream `frappe/frappe_docker` as an untouched dependency. All new
-capability is bolted on *around* it; we never fork or patch upstream files.
+Fully superseded by `ADR-059`, 2026-08-05: cairn now owns its Docker build recipe outright
+instead of vendoring `frappe_docker` unmodified. The full original record is preserved at
+[../archive/001-wrap-frappe-docker-never-modify-it.md](../archive/001-wrap-frappe-docker-never-modify-it.md).

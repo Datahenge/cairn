@@ -18,8 +18,10 @@ PAT. Brian's actual situation is a client who won't/can't issue a fine-grained P
 already has an SSH deploy key working on the builder VPS (`git@github-clientrepo:...`). That
 already works for `git ls-remote` (a bare host-side subprocess, `resolve.py`) but not for the
 actual clone, which runs inside an isolated BuildKit sandbox with no SSH access at all —
-forwarding SSH in would mean editing the vendored, unmodified Containerfile (`ADR-007`), the
-deferred fork escape hatch (`ADR-021`).
+forwarding SSH in would mean editing the Containerfile, which was forbidden while it was
+vendored read-only (`ADR-007`, now retired). Cairn owns the recipe outright now (`ADR-059`),
+so this constraint no longer applies — editing the Containerfile directly is available should
+this plan be picked back up.
 
 The idea, validated in-session (`ADR-044`): mirror the private repo locally on the builder — using
 the SSH credentials that already work host-side — and serve it to the build over `git://localhost`
