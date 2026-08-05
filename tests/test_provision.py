@@ -342,7 +342,8 @@ def _survey(**overrides) -> adopt_module.Survey:
         project="erp",
         directory=Path("/opt/frappe_docker"),
         sites=("erp.test",),
-        image="localhost:5000/erp",
+        registry_host="localhost:5000",
+        image="erp",
         tag="test",
     )
     return adopt_module.Survey(**{**defaults, **overrides})
@@ -354,7 +355,7 @@ def test_the_descriptor_comes_from_adopt_survey(sandbox, monkeypatch):
     provision.stage_descriptor(Recorder(), _options(workdir=sandbox))
 
     written = provision.DESCRIPTOR_PATH.read_text(encoding="utf-8")
-    assert 'site        = "erp.test"' in written
+    assert 'site          = "erp.test"' in written
 
 
 def test_stage_descriptor_forwards_the_project_name(sandbox, monkeypatch):

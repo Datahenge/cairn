@@ -99,10 +99,13 @@ Lists every repository, tag, and the digest it resolves to. Reads the registry's
 remotely — never pulls an image to find out. Grouped by digest, not one row per tag — a
 deterministic content-hash tag, `latest`, and any moving tag you assigned (an environment
 pointer, or anything else) can all name the same build, so every name for it shows up on one
-line rather than three repeated digests you'd otherwise have to cross-reference by eye:
+line rather than three repeated digests you'd otherwise have to cross-reference by eye. The
+repository line prints the **full reference** — registry host included — not just the bare
+name: `image = "..."` in a target descriptor needs the host too, since cairn refuses to assume
+one, and this is meant to be copy-pasted straight in:
 
 ```
-Repository acmecorp/erpnext-v16
+Repository registry.example.com:5000/acmecorp/erpnext-v16
   DIGEST         TAGS
   a1b2c3d4e5f6   latest, production, v16-a1b2c3d4e5f6
 ```

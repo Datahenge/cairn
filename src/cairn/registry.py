@@ -113,6 +113,15 @@ class RemoteImage:
         return self.digest.removeprefix("sha256:")[:12]
 
 
+def _looks_like_host(segment: str) -> bool:
+    """Whether *segment* reads as a registry host rather than a namespace.
+
+    Docker's own heuristic: a host has a dot, a port (colon), or is literally ``localhost`` —
+    anything else is the first path segment of a hostless (implicitly Docker Hub) reference.
+    """
+    return "." in segment or ":" in segment or segment == "localhost"
+
+
 def parse_ref(reference: str) -> ImageRef:
     """Parse ``<registry>/<repository>:<tag>``, or raise :class:`RegistryError`.
 
@@ -129,12 +138,29 @@ def parse_ref(reference: str) -> ImageRef:
         )
 
     registry, _, repository = remainder.partition("/")
-    if "." not in registry and ":" not in registry and registry != "localhost":
+    if not _looks_like_host(registry):
         raise RegistryError(
             f"'{reference}' has no registry host, so cairn cannot tell where to send the "
             f"request. Prefix it with the registry, e.g. registry.example.com/{remainder}:{tag}."
         )
     return ImageRef(registry=registry, repository=repository, tag=tag)
+
+
+def split_host(base: str) -> tuple[str, str]:
+    """Split a tagless ``<repository>`` reference into its registry host and repository path.
+
+    Unlike :func:`parse_ref`, a missing host is not an error here: the caller may be recording
+    a fact about an image already running (`cairn-adopt examine`, `BR-CLI-020`), and a running
+    container's own reference is often exactly what was written when it was pulled — a bare
+    ``frappe/erpnext`` for a Docker Hub image, never ``docker.io/frappe/erpnext`` in practice.
+    A missing host means Docker Hub — the same interpretation ``docker`` itself gives a hostless
+    reference — made explicit as ``docker.io`` (one of the two names `_DOCKER_HUB_NAMES`
+    recognizes) rather than left unstated.
+    """
+    first, _, rest = base.partition("/")
+    if rest and _looks_like_host(first):
+        return first, rest
+    return "docker.io", base
 
 
 def tags(ref: ImageRef) -> list[str]:

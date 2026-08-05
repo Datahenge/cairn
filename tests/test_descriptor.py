@@ -14,7 +14,8 @@ from cairn.errors import DescriptorError
 
 MINIMAL = """\
 environment = "production"
-image = "ghcr.io/datahenge/erpnext-btu-v16"
+registry_host = "ghcr.io"
+image = "datahenge/erpnext-btu-v16"
 tag = "production"
 site = "erp.example.com"
 """
@@ -67,7 +68,35 @@ def test_the_watched_reference_joins_image_and_tag(tmp_path):
     assert loaded.reference == "ghcr.io/datahenge/erpnext-btu-v16:v16"
 
 
-@pytest.mark.parametrize("key", ["environment", "image", "tag", "site"])
+# --- registry_host: separate from image, not a combined string, and required ---
+
+
+def test_registry_host_is_required(tmp_path):
+    """Even Docker Hub has a canonical name for it (`"docker.io"`), so there is no case where
+    this value would need to be fabricated — it is required, not defaulted."""
+    text = "\n".join(
+        line for line in MINIMAL.splitlines() if not line.startswith("registry_host")
+    )
+
+    with pytest.raises(DescriptorError, match="'registry_host' is required"):
+        descriptor.load(_write(tmp_path, text))
+
+
+def test_registry_host_and_image_are_joined_at_the_point_of_use(tmp_path):
+    """Separate fields, not one string glued together — `repository`/`reference` join them."""
+    text = MINIMAL.replace('registry_host = "ghcr.io"', 'registry_host = "127.0.0.1:5000"')
+    text = text.replace(
+        'image = "datahenge/erpnext-btu-v16"', 'image = "acmecorp/erpnext-v16"'
+    )
+    loaded = descriptor.load(_write(tmp_path, text))
+
+    assert loaded.registry_host == "127.0.0.1:5000"
+    assert loaded.image == "acmecorp/erpnext-v16"
+    assert loaded.repository == "127.0.0.1:5000/acmecorp/erpnext-v16"
+    assert loaded.reference == "127.0.0.1:5000/acmecorp/erpnext-v16:production"
+
+
+@pytest.mark.parametrize("key", ["environment", "registry_host", "image", "tag", "site"])
 def test_every_required_key_is_required_by_name(tmp_path, key):
     text = "\n".join(line for line in MINIMAL.splitlines() if not line.startswith(key))
 

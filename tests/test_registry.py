@@ -97,6 +97,39 @@ def test_localhost_is_a_registry():
     assert registry.parse_ref("localhost:5000/x/y:v1").registry == "localhost:5000"
 
 
+# --- split_host: parse_ref's lenient sibling for a fact already running ------
+
+
+def test_split_host_finds_a_dotted_host():
+    assert registry.split_host("ghcr.io/acmecorp/erpnext-v16") == (
+        "ghcr.io",
+        "acmecorp/erpnext-v16",
+    )
+
+
+def test_split_host_finds_a_host_with_a_port():
+    assert registry.split_host("127.0.0.1:5000/lifescientific/erpnext-v16") == (
+        "127.0.0.1:5000",
+        "lifescientific/erpnext-v16",
+    )
+
+
+def test_split_host_finds_localhost():
+    assert registry.split_host("localhost:5000/x/y") == ("localhost:5000", "x/y")
+
+
+def test_split_host_names_docker_hub_explicitly_for_a_hostless_reference():
+    """Unlike `parse_ref`, no host is not an error — a running container's own reference is a
+    fact to record (`cairn-adopt examine`), not an assertion cairn is making about where to
+    push or pull. `docker` itself would resolve this against Docker Hub, so that's made
+    explicit as `"docker.io"` rather than left unstated."""
+    assert registry.split_host("frappe/erpnext") == ("docker.io", "frappe/erpnext")
+
+
+def test_split_host_names_docker_hub_for_a_bare_single_segment_repository():
+    assert registry.split_host("erpnext") == ("docker.io", "erpnext")
+
+
 def test_docker_hub_is_addressed_at_its_api_host():
     """The name written in a reference is not the host the API lives on."""
     assert registry.ImageRef("docker.io", "library/nginx", "latest").api_host == (

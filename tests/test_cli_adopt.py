@@ -90,7 +90,8 @@ def target(tmp_path, monkeypatch):
         "\n".join(
             [
                 'environment = "production"',
-                'image = "ghcr.io/datahenge/erpnext-btu-v16"',
+                'registry_host = "ghcr.io"',
+                'image = "datahenge/erpnext-btu-v16"',
                 'tag = "production"',
                 'site = "erp.example.com"',
             ]
@@ -191,13 +192,19 @@ def test_systemd_units_report_what_they_assumed():
 # --- examine (BR-CLI-020) ---------------------------------------------------
 
 
-def _survey(sites=("erp.acme.test",), apps=("frappe", "erpnext"), image="localhost:5000/erp"):
+def _survey(
+    sites=("erp.acme.test",),
+    apps=("frappe", "erpnext"),
+    registry_host="localhost:5000",
+    image="erp",
+):
     return adopt.Survey(
         project="erp-acme",
         directory=Path("/opt/frappe_docker"),
         overrides=("mariadb", "redis"),
         sites=tuple(sites),
         apps=tuple(apps),
+        registry_host=registry_host,
         image=image,
         tag="test",
     )
@@ -211,8 +218,8 @@ def test_examine_needs_no_project_and_prints_a_descriptor(tmp_path, monkeypatch)
     result = runner.invoke(cli_adopt.app, ["examine", "--environment", "test"])
 
     assert result.exit_code == 0
-    assert 'environment = "test"' in result.stdout
-    assert 'site        = "erp.acme.test"' in result.stdout
+    assert 'environment   = "test"' in result.stdout
+    assert 'site          = "erp.acme.test"' in result.stdout
 
 
 def test_examine_writes_nothing(tmp_path, monkeypatch):

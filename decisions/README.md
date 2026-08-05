@@ -16,8 +16,8 @@ the original ID into the new file's `origin` field so a citation made while it w
 resolves.
 
 These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`, `ADR-054`,
-`ADR-055`, `ADR-056`) continue the same `ADR-NNN` sequence as `docs/adr/` — they were simply
-judged lightweight rather than consequential, not a separate numbering track.
+`ADR-055`, `ADR-056`, `ADR-057`, `ADR-058`) continue the same `ADR-NNN` sequence as `docs/adr/`
+— they were simply judged lightweight rather than consequential, not a separate numbering track.
 
 ## Records
 
@@ -32,3 +32,5 @@ judged lightweight rather than consequential, not a separate numbering track.
 | [054-ghcr-and-registry-choice-docs-migrated-to-userdocs.md](054-ghcr-and-registry-choice-docs-migrated-to-userdocs.md) | `authoritative` | `ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; content migrated into `userdocs/registry/` |
 | [055-docs-check-word-count-default-raised-to-2200.md](055-docs-check-word-count-default-raised-to-2200.md) | `authoritative` | `docs_check.py`'s default word-count ceiling raised from 1800 to 2200 |
 | [056-changelog-word-ceiling-tripled-to-6000-stop-same-day-archive-churn.md](056-changelog-word-ceiling-tripled-to-6000-stop-same-day-archive-churn.md) | `authoritative` | `docs/CHANGELOG.md`'s word-count ceiling tripled from 2000 to 6000 |
+| [057-target-descriptor-splits-registry-host-from-image.md](057-target-descriptor-splits-registry-host-from-image.md) | `archived` | The target descriptor splits `registry_host` from `image`, made optional — superseded same day by `ADR-058`, which makes it required |
+| [058-target-descriptor-registry-host-is-required-docker-io-for-hub.md](058-target-descriptor-registry-host-is-required-docker-io-for-hub.md) | `authoritative` | `registry_host` is required; `"docker.io"` is the explicit name for Docker Hub |

@@ -9,7 +9,81 @@ code changes live in git history.
 
 ---
 
-## 2026-08-04 (latest — `cairn-registry images` grouped by digest, not one row per tag; `.docs_check_allowlist` fix, `ADR-056`)
+## 2026-08-04 (latest — `registry_host` made required; `"docker.io"` names Docker Hub, `ADR-058`)
+
+Same thread, hours later: Brian asked whether `ADR-057`'s reasoning for making `registry_host`
+optional ("no value would exist for Docker Hub") was actually true. It wasn't — `registry.py`
+already had `_DOCKER_HUB_NAMES = frozenset({"docker.io", "index.docker.io"})`, unrelated to this
+session, recognizing exactly this. `docker.io` is the canonical name, and precisely what `docker`
+itself normalizes a hostless reference to.
+
+- **`ADR-058`** supersedes `ADR-057` the same day — `Descriptor.registry_host` changes from
+  `str | None = None` to `str` (required, same as `image`/`tag`/`site`); `registry.split_host()`'s
+  hostless fallback changes from `(None, base)` to `("docker.io", base)`; `render()` prints
+  `registry_host` unconditionally instead of only when present. `ADR-057` archived in full to
+  `docs/archive/057-...md`, forwarding stub left at its original `decisions/` path, matching this
+  project's established same-day-supersession pattern (`ADR-049`/`050` → `ADR-052`).
+- Every fixture across `test_descriptor.py`, `test_adopt.py`, `test_reconcile.py`,
+  `test_provision.py`, `test_doctor.py`, `test_cli_adopt.py`, `test_registry.py` that built a
+  `Descriptor`/`Survey`/minimal TOML without `registry_host` updated to include it — the schema
+  tightening surfaced every place a test had been implicitly relying on the old default.
+  `userdocs/reference/target-descriptor.md` and `userdocs/target/index.md` updated to match.
+  Full suite (774) + lint + docs-check + `mkdocs build --strict` all pass.
+
+---
+
+## 2026-08-04 (target descriptor splits `registry_host` from `image`, `ADR-057`, superseded)
+
+Same live-VPS thread: fixing `cairn-registry images`'s missing host (previous entry) prompted
+Brian to ask why the descriptor's `image` field was a combined `<host>/<repo>` string at all —
+"a key named `image` that's actually 2 things combined into one" — rather than a separate field,
+the way the manifest's own `[cairn.registry] host` already is.
+
+- **`descriptor.py`**: `Descriptor` gains `registry_host: str | None = None`. `image` now holds
+  the repository path alone. New `repository` property (`registry_host/image`, or `image` alone
+  if absent) and `reference` now built from it. Optional, not required — mirroring the
+  manifest's own optional `registry` — because a hostless reference is a real case this exact
+  session already hit: a pre-cairn deployment running the public `frappe/erpnext:v16.26.1`,
+  which genuinely names no host. Requiring one would force a fabricated value onto a fact.
+- **`registry.py`**: new `split_host()`, `parse_ref`'s lenient sibling — same host-detection
+  heuristic (factored into `_looks_like_host`), but a missing host isn't an error, since this is
+  recording what's actually running, not asserting where cairn should push or pull.
+- **`adopt.py`**: `Survey.registry_host`, populated by `_survey_image` via `split_host`;
+  `render()` prints `registry_host` (when present) and realigned every top-level key to match;
+  `report()`'s "Running image" line reassembles the split for display.
+- **`reconcile.py`**: `CUSTOM_IMAGE` and the `RepoDigests` match now use `descriptor.repository`
+  instead of the bare `.image`, since those need the full pull reference either way.
+- **`cairn-registry images`, same session**: repository line split too — `Registry <host>`
+  printed once, `Repository <name>` per line, instead of one glued string repeated per
+  repository (the shape that made the host easy to miss copying by hand in the first place).
+- Backward compatible: an existing descriptor with `registry_host` absent and a full
+  `host/namespace/name` string in `image` behaves exactly as before. No live client has
+  installed one yet (`open/OPEN_WORK.md`), so this is a clean addition, not a migration.
+- New tests across `test_descriptor.py`, `test_adopt.py`, `test_reconcile.py`,
+  `test_registry.py`, `test_cli_registry.py`; `userdocs/reference/target-descriptor.md` and
+  `userdocs/target/index.md` updated. Full suite (770) + lint pass.
+
+---
+
+## 2026-08-04 (`cairn-registry images`'s repository line was still not copy-pasteable)
+
+Immediate real-world fallout from the previous entry's fix: Brian used `cairn-registry images`
+to find the value for a target descriptor's `image`, hand-copied the repository line
+(`lifescientific/erpnext-v16`), and `cairn-adopt doctor`'s registry check failed —
+`registry.parse_ref` refuses a reference with no registry host, and the printed line never had
+one. The grouping fix labeled the line `Repository <name>`, but *name* was always the bare
+repository, never `config.host/<name>` — the exact string a descriptor's `image` field needs.
+
+- `images_command` now prints `Repository {base.base}` — the full `<host>/<repository>`
+  reference, via `ImageRef.base`, which already existed and was simply unused here. `--json` is
+  untouched (`registry` and `name` are already separate, structured fields there; a scripting
+  consumer joins them itself rather than needing a third, pre-joined string).
+  `userdocs/registry/cli.md`'s example updated to show a host in the repository line. New test
+  `test_the_repository_line_is_the_full_copy_pasteable_reference`; full suite + lint pass.
+
+---
+
+## 2026-08-04 (`cairn-registry images` grouped by digest, not one row per tag; `.docs_check_allowlist` fix, `ADR-056`)
 
 Two unrelated items, same session.
 

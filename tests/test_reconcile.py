@@ -25,7 +25,8 @@ OTHER = "sha256:" + "b" * 64
 def _descriptor(**overrides):
     values = {
         "environment": "production",
-        "image": "ghcr.io/datahenge/erpnext-btu-v16",
+        "registry_host": "ghcr.io",
+        "image": "datahenge/erpnext-btu-v16",
         "tag": "production",
         "site": "erp.example.com",
     }

@@ -573,7 +573,8 @@ def test_run_target_reports_and_returns_the_exit_code(monkeypatch):
 def _descriptor(**overrides):
     defaults = dict(
         environment="production",
-        image="ghcr.io/datahenge/erpnext-btu-v16",
+        registry_host="ghcr.io",
+        image="datahenge/erpnext-btu-v16",
         tag="production",
         site="erp.example.com",
     )

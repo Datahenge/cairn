@@ -111,6 +111,11 @@ def images_command(
         if not repositories:
             note(f"No repositories found in {config.host}.")
             return 0
+        # Registry printed once, separately from each repository — the same split a target
+        # descriptor's `registry_host`/`image` now makes, rather than one glued-together
+        # string repeated on every line.
+        note(f"Registry {config.host}")
+        note("")
         for name in repositories:
             base = registry.ImageRef(config.host, name, "")
             note(f"Repository {name}")

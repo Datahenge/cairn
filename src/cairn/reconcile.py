@@ -260,7 +260,7 @@ def running_digest(descriptor: Descriptor) -> str | None:
         return None
 
     for entry in digests:
-        if isinstance(entry, str) and entry.startswith(f"{descriptor.image}@"):
+        if isinstance(entry, str) and entry.startswith(f"{descriptor.repository}@"):
             return entry.partition("@")[2]
     return None
 
@@ -346,7 +346,7 @@ def _compose_environment(descriptor: Descriptor) -> dict[str, str]:
     pull removed.
     """
     return {
-        "CUSTOM_IMAGE": descriptor.image,
+        "CUSTOM_IMAGE": descriptor.repository,
         "CUSTOM_TAG": descriptor.tag,
         "PULL_POLICY": "missing",
         "SITES": f"`{descriptor.site}`",

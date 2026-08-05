@@ -43,7 +43,16 @@ SECRET_MECHANISMS = ("docker-secrets", "env-file", "none")
 #: the real name off the running project instead of guessing it (`BR-CLI-020`).
 DEFAULT_COMPOSE_FILE = "compose.yaml"
 
-TOP_LEVEL_KEYS = {"environment", "image", "tag", "site", "compose", "secrets", "health"}
+TOP_LEVEL_KEYS = {
+    "environment",
+    "image",
+    "tag",
+    "site",
+    "registry_host",
+    "compose",
+    "secrets",
+    "health",
+}
 
 
 @dataclass(frozen=True)
@@ -84,15 +93,25 @@ class Descriptor:
     image: str
     tag: str
     site: str
+    #: The registry host, separate from *image* so a repository name is never two things
+    #: glued into one string. Required and explicit — even Docker Hub has a canonical name
+    #: for it, `"docker.io"` (one of the two `_DOCKER_HUB_NAMES` in `registry.py` recognizes),
+    #: so there is no case where a value here would be fabricated rather than simply named.
+    registry_host: str
     compose: Compose = field(default_factory=Compose)
     health: Health = field(default_factory=Health)
     secret_mechanism: str = "none"
     path: Path | None = None
 
     @property
+    def repository(self) -> str:
+        """The registry + image, no tag — what `docker pull`/`CUSTOM_IMAGE` actually need."""
+        return f"{self.registry_host}/{self.image}"
+
+    @property
     def reference(self) -> str:
         """The image reference this host watches — the desired-state pointer (`BR-DEPLOY-002`)."""
-        return f"{self.image}:{self.tag}"
+        return f"{self.repository}:{self.tag}"
 
     @property
     def is_production(self) -> bool:
@@ -126,6 +145,7 @@ def load(path: Path | None = None) -> Descriptor:
         image=_required(target, data, "image"),
         tag=_required(target, data, "tag"),
         site=_required(target, data, "site"),
+        registry_host=_required(target, data, "registry_host"),
         compose=_compose(target, data.get("compose", {})),
         health=_health(target, data.get("health", {})),
         secret_mechanism=_secret_mechanism(target, data.get("secrets", {})),

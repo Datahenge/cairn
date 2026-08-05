@@ -24,6 +24,7 @@ needed.
 | [033-the-declared-environment-list-is-a-cairn-environments-table-in.md](033-the-declared-environment-list-is-a-cairn-environments-table-in.md) | `ADR-033` | `ADR-052` |
 | [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `ADR-049` (in `decisions/`) | `ADR-052` |
 | [050-new-tag-and-retag-merge-into-assign-tag.md](050-new-tag-and-retag-merge-into-assign-tag.md) | `ADR-050` | `ADR-052` |
+| [057-target-descriptor-splits-registry-host-from-image.md](057-target-descriptor-splits-registry-host-from-image.md) | `ADR-057` (in `decisions/`) | `ADR-058` |
 
 ## Index — archived-for-size
 

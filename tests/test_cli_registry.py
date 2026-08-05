@@ -100,10 +100,28 @@ def test_images_lists_repositories_and_tags(local_registry, monkeypatch):
     result = runner.invoke(cli_registry.app, ["images"])
 
     assert result.exit_code == 0
+    assert f"Registry {local_registry.host}" in result.stderr
     assert "Repository erpnext-btu-v16" in result.stderr
     assert "DIGEST" in result.stderr and "TAGS" in result.stderr
     assert "v16-aaaaaaaaaaaa" in result.stderr
     assert "production" in result.stderr
+
+
+def test_the_registry_host_is_printed_once_not_per_repository(local_registry, monkeypatch):
+    """A target descriptor's `registry_host` and `image` are now separate fields
+    (`BR-DEPLOY-010`) — the registry is one fact about the whole listing, not something to
+    repeat, glued onto every repository line, the way the combined-string design used to."""
+    monkeypatch.setattr(registry, "catalog", lambda host: ["acme/erpnext-v16", "acme/other"])
+    monkeypatch.setattr(registry, "tags", lambda ref: ["latest"])
+    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "b" * 64)
+
+    result = runner.invoke(cli_registry.app, ["images"])
+
+    assert result.stderr.count(f"Registry {local_registry.host}") == 1
+    repository_lines = [
+        line for line in result.stderr.splitlines() if line.startswith("Repository")
+    ]
+    assert repository_lines == ["Repository acme/erpnext-v16", "Repository acme/other"]
 
 
 def test_images_groups_tags_sharing_a_digest_on_one_line(local_registry, monkeypatch):

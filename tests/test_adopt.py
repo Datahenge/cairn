@@ -188,8 +188,26 @@ def test_the_running_image_is_read_from_the_container_not_the_env_file(monkeypat
 
     found = adopt.survey()
 
-    assert found.image == IMAGE
+    assert found.registry_host == "localhost:5000"
+    assert found.image == "erpnext-acme"
     assert found.tag == "test"
+
+
+def test_a_hostless_running_image_gets_docker_hub_named_explicitly(monkeypatch, tmp_path):
+    """A host adopted for the first time may be running a public Docker Hub image
+    (`frappe/erpnext:v16.26.1`) whose own reference never named a registry host — `examine`
+    must record that as `"docker.io"`, not `None` or "frappe" mistaken for a host, since
+    `registry_host` is required and there is no case where it should be fabricated."""
+    _install(
+        monkeypatch,
+        _routes(tmp_path, **{"ps": _compose_ps(image="frappe/erpnext:v16.26.1")}),
+    )
+
+    found = adopt.survey()
+
+    assert found.registry_host == "docker.io"
+    assert found.image == "frappe/erpnext"
+    assert found.tag == "v16.26.1"
 
 
 def test_compose_ps_is_read_as_lines_or_as_an_array(monkeypatch, tmp_path):
@@ -485,13 +503,14 @@ def test_the_rendered_descriptor_round_trips(monkeypatch, tmp_path):
     loaded = descriptor.load(written)
 
     assert loaded.environment == "test"
-    assert loaded.image == IMAGE
+    assert loaded.registry_host == "localhost:5000"
+    assert loaded.image == "erpnext-acme"
     assert loaded.tag == "test"
     assert loaded.site == "erp.acme.test"
+    assert loaded.reference == f"{IMAGE}:test"
     assert loaded.compose.overrides == ("mariadb", "redis", "https")
     assert loaded.compose.project == PROJECT
     assert loaded.compose.file == "compose.yaml"
-    assert loaded.reference == f"{IMAGE}:test"
 
 
 def test_a_non_default_compose_file_name_round_trips(monkeypatch, tmp_path):
