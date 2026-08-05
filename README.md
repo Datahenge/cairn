@@ -63,19 +63,9 @@ credentials — authenticate with `docker login` or `podman login` before pushin
 walkthrough](https://datahenge.github.io/cairn/builder/) and [Build
 Automation](https://datahenge.github.io/cairn/builder/automation/).
 
-**On a target** (a full walkthrough isn't published yet — this is everything there is to
-know for now):
-
-```
-cairn-adopt examine             # describe this host's running stack (one-time, or after a manual change)
-cairn-adopt systemd-units       # print the reconcile service + timer; review, then install them
-cairn-adopt reconcile --dry-run # see what would change
-cairn-adopt reconcile           # converge to whatever the environment's pointer says
-```
-
-`reconcile` is idempotent and meant to run on a timer — with nothing to do, it does
-nothing. It never rolls back on failure; it stops and reports, because a failed `bench
-migrate` is not something to silently reverse.
+**On a target** — adopt an existing deployment and converge it going forward: see the [Target
+walkthrough](https://datahenge.github.io/cairn/target/) and [Reconcile
+Automation](https://datahenge.github.io/cairn/target/automation/).
 
 **On a registry host** (only if you self-host — see [Where your images
 live](#where-your-images-live)): see the [Registry

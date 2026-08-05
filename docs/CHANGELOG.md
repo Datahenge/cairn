@@ -33,6 +33,12 @@ client's own build, not the pre-existing public image.
   `cairn-adopt doctor`'s target-role checks both verified against real infrastructure.
   `docs/technical/05-implementation-index.md`'s Reconcile/deploy, Examine, and Doctor rows
   updated with completion judgments, including the caveat.
+- **`W-007` closed** — `USAGE.md` was never written; superseded by the published user-facing
+  docs on GitHub Pages (`userdocs/` → `https://datahenge.github.io/cairn/`, `ADR-045`), which
+  already cover installation and per-role walkthroughs. `README.md`'s "How to use" section
+  trimmed to match: the inline target walkthrough (stale — it predated `userdocs/target/`)
+  replaced with a one-line pointer to the published [Target](https://datahenge.github.io/cairn/target/)
+  walkthrough, matching how Builder and Registry already link out instead of duplicating.
 
 ---
 
