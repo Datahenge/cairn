@@ -60,4 +60,5 @@ not what's installed — the same package carries all three.
    rather than after a build is already sitting local-only.
 2. **[Builder](../builder/index.md)** — building and pushing images. Starts with
    `cairn-build doctor`.
-3. **Target** — adopting and running an existing deployment. Not yet written.
+3. **[Target](../target/index.md)** — adopting and running an existing deployment. Starts
+   with `cairn-adopt doctor`.

@@ -31,3 +31,4 @@ needed.
 |---|---|---|
 | [CHANGELOG-2026-07.md](CHANGELOG-2026-07.md) | `docs/CHANGELOG.md` | Dated entries 2026-07-21 through 2026-07-27 |
 | [CHANGELOG-2026-08-03.md](CHANGELOG-2026-08-03.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-03 |
+| [CHANGELOG-2026-08-04-early.md](CHANGELOG-2026-08-04-early.md) | `docs/CHANGELOG.md` | Earlier 2026-08-04 entries (`setup` engine-detection fix through `CONFIGURATION.md` retirement) |

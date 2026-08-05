@@ -201,8 +201,7 @@ terminal output has scrolled away.
   is only ever one correct answer: what this manifest's own refs currently resolve to.
 - **Adopt it.** `cairn-adopt` is the target-side binary — it polls the environment's tag
   and converges on its own next poll once the pointer moves; nothing pushes into the
-  target. The target-side walkthrough isn't written yet; see [Get
-  Started](../get-started/index.md#next-steps) for what exists in the meantime.
+  target. See **[Target](../target/index.md)** for the target-side walkthrough.
 - **Automate it.** Once a manual build, push, and pointer move all work, `cairn-build
   setup-timer` installs a systemd timer that repeats the same sequence on a schedule
   unattended — see [Build Automation](automation.md).

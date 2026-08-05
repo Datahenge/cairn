@@ -11,12 +11,13 @@ data.
 
 !!! note "This site is a work in progress"
     [Get Started](get-started/index.md) is verified against a real deployment as it's written,
-    as is [Builder](builder/index.md). [Self-Hosted Registry](registry/index.md) is written
-    ahead of a live run against a real registry host — decide the registry question first
-    anyway (see [Get Started](get-started/index.md#next-steps)), since Builder's
-    push/automation and the target role both assume the registry decision is already made.
-    [Reference](reference/index.md) now covers the manifest, build config, and target
-    descriptor in full. Guides and the target-role guide are still placeholders.
+    as is [Builder](builder/index.md). [Self-Hosted Registry](registry/index.md) and
+    [Target](target/index.md) are written ahead of a live run against real infrastructure —
+    decide the registry question first anyway (see [Get
+    Started](get-started/index.md#next-steps)), since Builder's push/automation and the target
+    role both assume the registry decision is already made. [Reference](reference/index.md)
+    now covers the manifest, build config, and target descriptor in full. Guides is still a
+    placeholder.
 
 ## Where to go next
 
@@ -24,5 +25,6 @@ data.
 - **[Registry](registry/index.md)** — decide and, if self-hosting, provision a registry.
   Do this before Builder — see why below.
 - **[Builder](builder/index.md)** — building and pushing images.
+- **[Target](target/index.md)** — adopting and converging an existing deployment.
 - **[Guides](guides/index.md)** — configuration and day-to-day operation.
 - **[Reference](reference/index.md)** — command surface and file formats.

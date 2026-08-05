@@ -15,9 +15,9 @@ approved and implemented, durable decisions are promoted into a numbered record 
 the original ID into the new file's `origin` field so a citation made while it was open still
 resolves.
 
-These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`, `ADR-054`)
-continue the same `ADR-NNN` sequence as `docs/adr/` — they were simply judged lightweight
-rather than consequential, not a separate numbering track.
+These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`, `ADR-054`,
+`ADR-055`) continue the same `ADR-NNN` sequence as `docs/adr/` — they were simply judged
+lightweight rather than consequential, not a separate numbering track.
 
 ## Records
 
@@ -30,3 +30,4 @@ rather than consequential, not a separate numbering track.
 | [051-cairn-build-prune-runs-inside-the-build-script-not-a-separate-timer.md](051-cairn-build-prune-runs-inside-the-build-script-not-a-separate-timer.md) | `authoritative` | `cairn-build prune` runs inside the build script, not a separate timer |
 | [053-registry-splits-etc-cairn-config-from-opt-cairn-registry-data.md](053-registry-splits-etc-cairn-config-from-opt-cairn-registry-data.md) | `authoritative` | The registry role splits `/etc/cairn` (config + secrets) from `/opt/cairn-registry` (compose project + relocatable data) |
 | [054-ghcr-and-registry-choice-docs-migrated-to-userdocs.md](054-ghcr-and-registry-choice-docs-migrated-to-userdocs.md) | `authoritative` | `ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; content migrated into `userdocs/registry/` |
+| [055-docs-check-word-count-default-raised-to-2200.md](055-docs-check-word-count-default-raised-to-2200.md) | `authoritative` | `docs_check.py`'s default word-count ceiling raised from 1800 to 2200 |

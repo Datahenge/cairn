@@ -15,19 +15,20 @@ docs/archive/CHANGELOG-2026-07.md = 12500
 docs/archive/CHANGELOG-2026-08-03.md = 3000
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
+docs/archive/CHANGELOG-2026-08-04-early.md = 1200
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
-docs/requirements/02-build.md = 2050
-# ^ new entry 2026-08-04: BR-BUILD-002/014a for the manifest:environment 1:1 redesign and
-# the registry-side existing-image fallback (ADR-052) — genuine new requirement content.
 docs/requirements/03-deploy.md = 2450
 # ^ bumped 2026-08-04 for BR-DEPLOY-004/009/009a's promotion-is-proof-not-assertion rewrite
 # (ADR-052).
-docs/requirements/06-cli.md = 3150
-# ^ bumped 2026-08-03 for BR-CLI-024..027 (cairn-registry, ADR-048); genuine new command-
-# surface content, not sprawl — section C already delegates substance to BR-REG rather
-# than restating it. Bumped again 2026-08-04, twice: first for the new-tag/retag ->
-# assign-tag merge (ADR-050, since superseded), then for ADR-052's manifest:environment
-# 1:1 redesign (BR-CLI-002a/004/007/009/022/023).
+docs/requirements/06-cli.md = 4000
+# ^ recalibrated 2026-08-04 (ADR-055): default ceiling rose to 2200 and this entry set to
+# real headroom (current ~3130 words) instead of the last-few-dozen-words margin it had
+# drifted to from repeated same-day bumps (ADR-048, ADR-050, ADR-052). ~4500 words is where
+# the doc's own A-E sectioning judged to stop being sufficient and an actual split (most
+# likely: section E, shared conventions, into its own file) becomes the right call — this
+# ceiling is set to trip a fresh review before that point, not at it.
 docs/technical/ABOUT_GHCR.md = 3500
 docs/technical/high-level-motivations-and-workflows.md = 2000

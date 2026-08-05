@@ -39,7 +39,7 @@ EXCLUDED_DIRS = {
 EXCLUDED_PATHS = {
     Path("src/cairn/vendored/frappe_docker"),
 }
-DEFAULT_MAX_WORDS = 1800
+DEFAULT_MAX_WORDS = 2200
 ALLOWLIST_FILENAME = ".docs_check_allowlist"
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")

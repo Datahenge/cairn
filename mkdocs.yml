@@ -72,6 +72,9 @@ nav:
   - Builder:
       - Overview: builder/index.md
       - Build Automation: builder/automation.md
+  - Target:
+      - Overview: target/index.md
+      - Reconcile Automation: target/automation.md
   - Guides: guides/index.md
   - Reference:
       - Overview: reference/index.md
