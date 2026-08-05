@@ -9,7 +9,11 @@ the full ownership map.
 
 ## [Unreleased]
 
-Nothing recorded yet since the last release.
+### Changed
+- `cairn-registry`'s default `data_dir` (where registry image blobs are stored) changed from
+  `/opt/cairn-registry/data` to `/var/lib/cairn-registry`, correcting an FHS misapplication in
+  the original default. Still fully operator-relocatable via `[registry] data_dir` in
+  `/etc/cairn/registry.toml`.
 
 ## [0.3.0]
 

@@ -32,14 +32,14 @@ adopt, and is verified in code by `registry_config.py`/`registry_provision.py`/
 read from that fixed path only — no directory search, matching the discovery model
 `BR-CFG-012`/`ADR-042` already established for `builder.toml`. Absent entirely, `cairn-registry
 setup` still runs, against documented built-in defaults (`port = 5000`,
-`bind_address = "127.0.0.1"`, `data_dir = "/opt/cairn-registry/data"`, retention disabled).
+`bind_address = "127.0.0.1"`, `data_dir = "/var/lib/cairn-registry"`, retention disabled).
 Recognized keys:
 
 ```toml
 [registry]
 port = 5000
 bind_address = "127.0.0.1"
-data_dir = "/opt/cairn-registry/data"
+data_dir = "/var/lib/cairn-registry"
 
 [registry.retention]
 enabled = false

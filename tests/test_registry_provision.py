@@ -73,7 +73,7 @@ def sandbox(tmp_path, monkeypatch):
         registry_config,
         "load",
         lambda path=None: registry_config.RegistryConfig(
-            data_dir=tmp_path / "opt/cairn-registry/data"
+            data_dir=tmp_path / "var/lib/cairn-registry"
         ),
     )
 

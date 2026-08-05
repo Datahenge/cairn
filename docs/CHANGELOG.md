@@ -9,7 +9,21 @@ code changes live in git history.
 
 ---
 
-## 2026-08-05 (latest — correction: `cairn-registry setup` was already verified live 2026-08-04; `W-015` narrowed)
+## 2026-08-05 — `ADR-060`: registry `data_dir` default corrected to `/var/lib/cairn-registry`
+
+`ADR-053` justified defaulting registry blob storage under `/opt/cairn-registry` as mirroring
+FHS convention; that citation was wrong — FHS assigns `/opt` to a program's own installed
+files, and `/var/lib` to a service's growing runtime state (its own canonical examples include
+`/var/lib/docker`, `/var/lib/mysql`). `registry_config.py`'s `_DEFAULT_DATA_DIR` now defaults to
+`/var/lib/cairn-registry`; `data_dir` remains fully operator-relocatable. `PROJECT_DIR`
+(`/opt/cairn-registry`, the compose project file) is unchanged — `ADR-053`'s config/data split
+still holds, only the bulk-data default moved. `docs/requirements/08-registry.md` and
+`userdocs/registry/` updated to match; no migration tooling written (pre-1.0, one live
+deployment, moved by hand).
+
+---
+
+## 2026-08-05 — correction: `cairn-registry setup` was already verified live 2026-08-04; `W-015` narrowed
 
 `docs/technical/05-implementation-index.md`'s Registry row and `open/OPEN_WORK.md`'s `W-015`
 both understated progress already made: a real (non-`--dry-run`) `cairn-registry setup` had

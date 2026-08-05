@@ -70,7 +70,7 @@ Expected once provisioned:
 ```
 OK   reachable       127.0.0.1:5000 — 0 repositor(y/ies)
 OK   certificate     /etc/cairn/registry.crt valid
-OK   disk headroom   82 GB free at /opt/cairn-registry/data
+OK   disk headroom   82 GB free at /var/lib/cairn-registry
 
 All 3 checks passed.
 ```

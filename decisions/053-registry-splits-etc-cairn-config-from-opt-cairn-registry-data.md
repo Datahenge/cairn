@@ -6,6 +6,12 @@ purpose: ADR-053 — the registry role splits /etc/cairn (config + secrets) from
 
 # ADR-053 — the registry role splits `/etc/cairn` (config + secrets) from `/opt/cairn-registry` (compose project + relocatable data)
 
+> **Amended by `ADR-060`** (2026-08-05): the FHS citation below for `/opt` as the default
+> *data* location was wrong — `/opt` is for a program's own installed files, `/var/lib` is
+> FHS's home for a service's growing runtime state. The default `data_dir` moved to
+> `/var/lib/cairn-registry`. The split described here (low-churn shared config vs. relocatable
+> bulk data) is otherwise unchanged, and `/opt/cairn-registry` still holds the compose project.
+
 **Decided:** 2026-08-04 (retroactively — capturing a layout already implemented in
 `registry_provision.py`, raised by Brian after reviewing a real `cairn-registry setup
 --dry-run`, who asked whether maintaining two directories was worth it versus one).

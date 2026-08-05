@@ -32,7 +32,7 @@ _GC_KEYS = {"schedule"}
 
 _DEFAULT_PORT = 5000
 _DEFAULT_BIND_ADDRESS = "127.0.0.1"
-_DEFAULT_DATA_DIR = Path("/opt/cairn-registry/data")
+_DEFAULT_DATA_DIR = Path("/var/lib/cairn-registry")
 _DEFAULT_KEEP_LAST = 10
 _DEFAULT_MAX_AGE_DAYS = 90
 _DEFAULT_SCHEDULE = "weekly"

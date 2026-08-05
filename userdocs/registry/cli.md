@@ -32,6 +32,9 @@ or `--only registry` on its own — finishes by running the same checks as `doct
 with its code. `--dry-run` and `--only preflight`/`--only admin-group` skip this, since
 neither leaves anything running to check yet.
 
+### Storage
+Images served by the registry are stored in `/var/lib/cairn-registry` by default.
+
 ### Configuration
 
 `setup` scaffolds `/etc/cairn/registry.toml` the first time none exists, fully commented:
@@ -40,7 +43,7 @@ neither leaves anything running to check yet.
 [registry]
 port = 5000
 bind_address = "127.0.0.1"
-data_dir = "/opt/cairn-registry/data"
+data_dir = "/var/lib/cairn-registry"
 
 [registry.retention]
 enabled = false
@@ -123,7 +126,7 @@ cairn-registry doctor
 ```
 OK   reachable       127.0.0.1:5000 — 0 repositor(y/ies)
 OK   certificate     /etc/cairn/registry.crt valid
-OK   disk headroom   82 GB free at /opt/cairn-registry/data
+OK   disk headroom   82 GB free at /var/lib/cairn-registry
 
 All 3 checks passed.
 ```
