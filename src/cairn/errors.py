@@ -11,20 +11,6 @@ class CairnError(Exception):
     """Base class for all cairn errors."""
 
 
-class ProjectRootNotFoundError(CairnError):
-    """No cairn project root (a ``pyproject.toml`` with a ``[tool.ventwig]`` table)
-    was found at or above the working directory."""
-
-
-class VendorToolError(CairnError):
-    """The ``ventwig`` vendoring tool is unavailable or could not be invoked."""
-
-
-class VendorDriftError(CairnError):
-    """The vendored tree has drifted from its ``.ventwig.lock`` anchor, or contains
-    upstream version-control metadata (BR-VEND-005, BR-VEND-007)."""
-
-
 class ConfigError(CairnError):
     """Base for manifest and build-configuration problems."""
 
@@ -67,8 +53,8 @@ class TranscriptError(CairnError):
 
 
 class VendorInputsMissingError(CairnError):
-    """The vendored tree is missing a required build input — the custom
-    ``Containerfile`` or a file it copies from the build context (BR-VEND-006)."""
+    """The recipe tree is missing a required build input — the custom
+    ``Containerfile`` or a file it copies from the build context (BR-VEND-003)."""
 
 
 class RegistryError(CairnError):

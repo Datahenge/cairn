@@ -27,13 +27,11 @@ OK   docker buildx   github.com/docker/buildx v0.35.0 ...
 OK   free disk       199 GB free on /var/lib/docker
 OK   available memory 63.8 GB available
 OK   git             v2.47.3
-OK   vendored tree   matches its recorded pin
-OK   vendor .git     no nested .git
 OK   build inputs    Containerfile complete
 WARN shared config   /etc/cairn does not exist yet — run this CLI's `setup` subcommand, or create it by hand
 OK   known manifests none found under /srv/cairn
 
-All 11 checks passed (2 warning(s)).
+All 9 checks passed (2 warning(s)).
 ```
 
 Both warnings above are expected at this point: there's no manifest yet (next section), and
@@ -166,7 +164,7 @@ cairn-build images --local
 cairn/erpnext-v16:v16-d47f139c6ffe  (input hash d47f139c6ffe)
   frappe       v16.25.0         9a8daf34
   erpnext      v16.26.1         fd00cebb
-  built with vendored base v3.2.1
+  built from recipe a1c2e3f4
     a1b2c3d4e5f6    1.79 GB       2m  cairn/erpnext-v16:v16-d47f139c6ffe, cairn/erpnext-v16:latest
 
 1 image(s) built by cairn across 1 input hash(es); 0 superseded, holding 0 B.
@@ -174,13 +172,13 @@ cairn/erpnext-v16:v16-d47f139c6ffe  (input hash d47f139c6ffe)
 
 Leads with the tag you'd actually recognize, not the input hash — the hash is still there,
 parenthetically, and is usually visible again in the tag's own suffix
-(`<series>-<hash>`). `frappe_docker` is cairn's own vendored fork of `frappe_docker`
-(`ADR-001`) — its version is part of what produced this image, since it supplies the
-Containerfile itself, so two images from an identical `cairn.toml` can still differ if it
-moved between builds. Every image cairn builds carries its full provenance as OCI labels —
-resolved commits, the effective build args, that same vendored pin — so `docker inspect`
-(or the listing above) can always answer "what exactly is this" later, long after the
-terminal output has scrolled away.
+(`<series>-<hash>`). `src/cairn/recipe/frappe_docker/` is cairn's own owned Docker build
+recipe — its git commit is part of what produced this image, since it supplies the
+Containerfile itself, so two images from an identical `cairn.toml` can still differ if the
+recipe changed between builds. Every image cairn builds carries its full provenance as OCI
+labels — resolved commits, the effective build args, that same recipe commit — so `docker
+inspect` (or the listing above) can always answer "what exactly is this" later, long after
+the terminal output has scrolled away.
 
 ## Next steps
 

@@ -6,9 +6,10 @@ how a build machine accumulates nameless multi-gigabyte images nobody can accoun
 
 Everything needed to account for them is already on the images. `BR-BUILD-011` stamps the
 input hash, both tags, the resolved Frappe and app commits, the effective build args, and
-the vendored pin onto every image cairn builds. This module reads them back and groups by
-**input hash**, so supersession becomes something you can see rather than infer: several
-images under one hash are, by definition, the same declared image built more than once.
+the owned recipe's own provenance onto every image cairn builds. This module reads them
+back and groups by **input hash**, so supersession becomes something you can see rather
+than infer: several images under one hash are, by definition, the same declared image
+built more than once.
 
 Two consequences of `--label` semantics are load-bearing here:
 
@@ -37,7 +38,7 @@ INPUT_HASH_LABEL = f"{LABEL_NAMESPACE}.input-hash"
 APPS_LABEL = f"{LABEL_NAMESPACE}.apps"
 FRAPPE_REF_LABEL = f"{LABEL_NAMESPACE}.frappe.ref"
 FRAPPE_COMMIT_LABEL = f"{LABEL_NAMESPACE}.frappe.commit"
-PIN_REF_LABEL = f"{LABEL_NAMESPACE}.frappe-docker.ref"
+RECIPE_COMMIT_LABEL = f"{LABEL_NAMESPACE}.frappe-docker.commit"
 
 #: The standard OCI creation timestamp (`ADR-030`) — the only clock a registry read has.
 CREATED_LABEL = "org.opencontainers.image.created"
@@ -76,8 +77,8 @@ class Provenance:
         return self.labels.get(FRAPPE_COMMIT_LABEL, "")
 
     @property
-    def vendor_pin(self) -> str:
-        return self.labels.get(PIN_REF_LABEL, "")
+    def recipe_commit(self) -> str:
+        return self.labels.get(RECIPE_COMMIT_LABEL, "")
 
     @property
     def apps(self) -> list[dict[str, str]]:
@@ -221,8 +222,8 @@ def render(groups: list[ImageGroup], others: int) -> str:
                 f"  {app.get('name', '?'):<12} {app.get('ref', '?'):<16} "
                 f"{str(app.get('commit', ''))[:SHORT_COMMIT] or '?'}"
             )
-        if newest.vendor_pin:
-            lines.append(f"  built with vendored base {newest.vendor_pin}")
+        if newest.recipe_commit:
+            lines.append(f"  built from recipe {newest.recipe_commit[:SHORT_COMMIT]}")
 
         for image in image_group.images:
             names = ", ".join(image.tags) if image.tags else "no tags — superseded"
@@ -358,8 +359,8 @@ def render_registry(base: registry.ImageRef, groups, others: int) -> str:
                 f"  {app.get('name', '?'):<12} {app.get('ref', '?'):<16} "
                 f"{str(app.get('commit', ''))[:SHORT_COMMIT] or '?'}"
             )
-        if newest.vendor_pin:
-            lines.append(f"  built with vendored base {newest.vendor_pin}")
+        if newest.recipe_commit:
+            lines.append(f"  built from recipe {newest.recipe_commit[:SHORT_COMMIT]}")
 
         for image in members:
             lines.append(

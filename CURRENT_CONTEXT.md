@@ -17,9 +17,9 @@ separate `cairn-provision` installer. Most recently landed: `ADR-052` (manifest:
 (`W-015`) and the first live run against real infrastructure — everything in the deploy path is
 tested but unexercised on a real host or registry; see `open/OPEN_WORK.md`. Newly decided:
 `ADR-059` retires `frappe_docker` vendoring in favor of cairn owning its Docker build recipe
-outright, superseding `ADR-001`/`ADR-007`; the documentation cascade is done, the code
-migration (renaming `src/cairn/vendored/` to `src/cairn/recipe/`, retiring the `ventwig`-backed
-`vendor` command surface) is queued as separate `open/OPEN_WORK.md` items, not yet started. The docs tree itself
+outright, superseding `ADR-001`/`ADR-007`; both the documentation cascade and the code
+migration (`src/cairn/vendored/` renamed to `src/cairn/recipe/`, the `ventwig`-backed `vendor`
+command surface retired, `W-023`..`W-031`) are done as of 2026-08-05. The docs tree itself
 finished its migration onto the canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) —
 this file, `open/`, `scratch/`, `docs/technical/`, `docs/adr/`, `decisions/`, and
 `docs/discussions/` are the result.

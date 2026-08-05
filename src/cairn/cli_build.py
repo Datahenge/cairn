@@ -1,13 +1,11 @@
 """`cairn-build` — the build/control CLI (`BR-CLI-001`, group A of `BR-CLI`).
 
-Builds images, manages the vendored tree, moves environment pointers, and provisions a
-build machine. Never touches a running deployment — that is `cairn-adopt`'s job
-(`ADR-046`).
+Builds images, moves environment pointers, and provisions a build machine. Never touches a
+running deployment — that is `cairn-adopt`'s job (`ADR-046`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
@@ -27,11 +25,9 @@ from . import (
     resolve,
     timing,
     transcript,
-    vendor,
 )
 from .cli_support import done, note, report_timing, run, step, version_callback
 from .errors import CairnError
-from .project import find_project_root
 from .provision import (
     BUILD_STAGE_FUNCS,
     BUILD_STAGES,
@@ -44,16 +40,10 @@ from .provision import (
 
 app = typer.Typer(
     name="cairn-build",
-    help="Build ERPNext images, manage the vendored tree, and move environment pointers.",
+    help="Build ERPNext images and move environment pointers.",
     no_args_is_help=True,
     add_completion=False,
 )
-
-vendor_app = typer.Typer(
-    help="Manage the vendored, pinned frappe_docker tree (wraps ventwig).",
-    no_args_is_help=True,
-)
-app.add_typer(vendor_app, name="vendor")
 
 
 @app.callback()
@@ -69,43 +59,6 @@ def _root(
     ] = False,
 ) -> None:
     """cairn-build — reproducible ERPNext image builds and registry pointer moves."""
-
-
-def _run_in_project(action: Callable[[Path], int]) -> None:
-    """Resolve cairn's project root, run ``action(root)``, and exit with its return code.
-
-    Reserved for the two commands that actually shell out to ``ventwig`` (`vendor status`/
-    `vendor sync`) — the only operations that need a development checkout with a
-    ``pyproject.toml``. Everything else resolves the vendored tree package-relatively and
-    uses :func:`cli_support.run` directly.
-    """
-    run(lambda: action(find_project_root()))
-
-
-@vendor_app.command(
-    "status",
-    help="Report whether the vendored frappe_docker tree still matches its recorded lock.",
-)
-def vendor_status(
-    source: Annotated[
-        str | None, typer.Argument(help="Check one source by name; default: all.")
-    ] = None,
-) -> None:
-    """Report whether the vendored frappe_docker tree matches its lock (BR-CLI-006)."""
-    _run_in_project(lambda root: vendor.status(root, source))
-
-
-@vendor_app.command(
-    "sync",
-    help="Re-materialize the vendored frappe_docker tree from its pinned ref.",
-)
-def vendor_sync(
-    source: Annotated[
-        str | None, typer.Argument(help="Sync one source by name; default: all.")
-    ] = None,
-) -> None:
-    """Re-materialize the vendored tree from its pinned ref (BR-CLI-006, BR-VEND-009)."""
-    _run_in_project(lambda root: vendor.sync(root, source))
 
 
 @app.command(
@@ -235,7 +188,7 @@ def build_command(
         if push_after:
             push.assert_registry_configured(build_config)
 
-        step("Checking vendored tree and resolving refs (contacts each app's remote)…")
+        step("Checking build inputs and resolving refs (contacts each app's remote)…")
         with watch.phase("checks + ref resolution"):
             plan = build.plan(
                 manifest,
@@ -632,7 +585,7 @@ def retire_command(
 
 @app.command(
     "doctor",
-    help="Check that this machine can build: container engine, git, vendored tree, and config.",
+    help="Check that this machine can build: container engine, git, build inputs, and config.",
 )
 def doctor_command(
     manifest_path: Annotated[
@@ -640,7 +593,7 @@ def doctor_command(
         typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
 ) -> None:
-    """Check that this machine can build: Docker Engine v23+/buildx, vendored tree sound.
+    """Check that this machine can build: Docker Engine v23+/buildx, build inputs present.
 
     Reports every check before exiting non-zero on any failure (BR-CLI-007, BR-CLI-012).
     A missing manifest only warns here (`doctor` legitimately runs before one exists).

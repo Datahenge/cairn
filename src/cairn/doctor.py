@@ -10,9 +10,9 @@ one fails, so a single invocation reports the full picture; each failure names i
 docker or podman (`ADR-027`) — plus buildx when the engine is docker; free disk under the
 engine's own data root and available memory, the same floors `setup`'s preflight gates a
 build on (`BR-DEPLOY-021`); ``git``, which every manifest ref is resolved with
-(`BR-BUILD-005`); the vendored tree clean (BR-VEND-005), free of upstream git metadata
-(BR-VEND-007), and complete in its build inputs (BR-VEND-006); and, informationally only,
-which client manifests already exist under `/srv/cairn/` (`BR-CLI-022`).
+(`BR-BUILD-005`); the recipe tree complete in its build inputs (BR-VEND-003); and,
+informationally only, which client manifests already exist under `/srv/cairn/`
+(`BR-CLI-022`).
 
 **`cairn-adopt doctor` checks:** the descriptor itself parses; Docker is installed and its
 daemon reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is
@@ -128,8 +128,6 @@ def run_build_checks(
     return [
         *results,
         check_git(),
-        _guard("vendored tree", vendor.assert_clean, "matches its recorded pin"),
-        _guard("vendor .git", vendor.assert_no_nested_git, "no nested .git"),
         _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
         check_shared_config_dir(),
         check_known_manifests(),
@@ -489,7 +487,7 @@ def _guard(label: str, assertion: Callable[[], None], passed_detail: str) -> Che
     """Turn one of the ``vendor.assert_*`` build preconditions into a :class:`CheckResult`.
 
     doctor reports rather than aborts, so the operator sees every problem at once; the
-    hard stop stays with the build itself (BR-VEND-005).
+    hard stop stays with the build itself (BR-VEND-003).
     """
     try:
         assertion()

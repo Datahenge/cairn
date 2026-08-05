@@ -9,7 +9,41 @@ code changes live in git history.
 
 ---
 
-## 2026-08-05 (latest — `ADR-059`: cairn owns its Docker build recipe; frappe_docker vendoring retired)
+## 2026-08-05 (latest — `ADR-059` code migration: `W-023`..`W-031` landed)
+
+The deferred code migration from the entry below landed same-day: `src/cairn/vendored/` is
+now `src/cairn/recipe/`, and every ventwig-era code path it depended on is gone.
+
+- **`src/cairn/vendor.py`** — trimmed to `assert_build_inputs` (`BR-VEND-003`) plus the
+  Containerfile-reading helpers it needs; `status`/`sync`/`_refresh_pin_file`/`read_pin`/
+  `_tree_hash`/`assert_clean`/`assert_no_nested_git` all removed. New `recipe_commit()`
+  reads cairn's own git history for `BR-BUILD-011` provenance, degrading to `""` in an
+  installed wheel (no `.git`).
+- **`src/cairn/project.py`** — deleted entirely; **`src/cairn/errors.py`** —
+  `ProjectRootNotFoundError`/`VendorToolError`/`VendorDriftError` removed as unused.
+- **`src/cairn/cli_build.py`** — the `vendor` Typer sub-app, `_run_in_project`, and the
+  `find_project_root` import are gone; help text and step messages reworded.
+- **`src/cairn/build.py`** — `plan()` drops the `assert_clean`/`assert_no_nested_git`
+  calls; `provenance_labels()` stamps `com.datahenge.cairn.frappe-docker.ref`/`.commit`
+  from cairn's own `__version__` and `vendor.recipe_commit()` instead of a
+  `frappe_docker.pin.toml` read. **`src/cairn/images.py`** follows suit — `vendor_pin`
+  became `recipe_commit`, and the local/registry reports now print "built from recipe
+  `<commit>`" instead of "built with vendored base `<ref>`".
+- **`src/cairn/doctor.py`** — the `vendored tree`/`vendor .git` guards are gone; `build
+  inputs` stays.
+- **`pyproject.toml`** — `[tool.ventwig]` and the `ventwig` dev dependency removed; the
+  `description` field and the ruff `extend-exclude` path updated to match.
+- Tests updated alongside each change (`test_vendor.py` rewritten, `test_project.py`
+  deleted, `test_build.py`/`test_doctor.py`/`test_cli_build.py`/`test_images.py`/
+  `test_timing.py`/`test_cli_adopt.py` adjusted); `tools/docs_check.py`'s hardcoded
+  exclusion path fixed (found stale by its own check); `userdocs/index.md`,
+  `userdocs/reference/index.md`, and `userdocs/builder/index.md` swept of the `ventwig`/
+  `vendor status|sync` walkthrough and the `(ADR-001)` ID leak.
+- **`open/OPEN_WORK.md`** — `W-023`..`W-031` swept to
+  `docs/archive/OPEN_WORK-done.md`. **`docs/technical/05-implementation-index.md`** — the
+  Owned Docker recipe row updated from "code migration pending" to `Implemented`.
+
+## 2026-08-05 (`ADR-059`: cairn owns its Docker build recipe; frappe_docker vendoring retired)
 
 Working through the fork-pressure register's item 4 (below) with Brian surfaced a bigger
 question than forking `frappe_docker`: since `cairn-adopt reconcile` never composes against

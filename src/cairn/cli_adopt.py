@@ -71,7 +71,7 @@ def reconcile_command(
     """Converge the target to its desired state (BR-CLI-008, BR-DEPLOY-003).
 
     Deliberately does **not** require a cairn project: a target has no manifest and no
-    vendored tree, only the descriptor that says what it runs (`ADR-034`).
+    recipe tree, only the descriptor that says what it runs (`ADR-034`).
     """
     watch = timing.Stopwatch()
     try:

@@ -103,7 +103,7 @@ def target(tmp_path, monkeypatch):
 
 
 def test_reconcile_needs_no_project(target, monkeypatch):
-    """A target has no manifest and no vendored tree — only the descriptor."""
+    """A target has no manifest and no recipe tree — only the descriptor."""
     state = reconcile.State(desired_digest="sha256:aaa", running_digest=None, stack_up=False)
     monkeypatch.setattr(
         reconcile,

@@ -342,7 +342,7 @@ wheels = [
 
 [[package]]
 name = "datahenge-cairn"
-version = "0.3.4"
+version = "0.3.8"
 source = { editable = "." }
 dependencies = [
     { name = "typer" },
@@ -355,7 +355,6 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "twine" },
-    { name = "ventwig" },
 ]
 docs = [
     { name = "mkdocs-material" },
@@ -370,7 +369,6 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "typer", specifier = ">=0.12" },
-    { name = "ventwig", marker = "extra == 'dev'", specifier = ">=0.2,<0.3" },
 ]
 provides-extras = ["dev", "docs"]
 
@@ -1114,15 +1112,6 @@ wheels = [
 ]
 
 [[package]]
-name = "tomlkit"
-version = "0.15.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/94/96/e07752635b98536177fa1f37671c8f3cdde2e724c6bcf6034b2cfb571565/tomlkit-0.15.1.tar.gz", hash = "sha256:e25bbf38843005246210a12982776f27f99cb9be67160e14434d0c0d21ee1e97", size = 180129, upload-time = "2026-07-17T01:48:04.562Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl", hash = "sha256:177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304", size = 49449, upload-time = "2026-07-17T01:48:05.728Z" },
-]
-
-[[package]]
 name = "twine"
 version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1164,19 +1153,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
-]
-
-[[package]]
-name = "ventwig"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tomlkit" },
-    { name = "typer" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/60/c2/a29037ff76ba6d8e4379b59651b849a69b21062f7f09a247cb104f4bcc7b/ventwig-0.2.0.tar.gz", hash = "sha256:1b04914cc960746497497e9072c7e9e876be4b8bc7290783b1c7de5b428393d6", size = 52129, upload-time = "2026-07-05T19:29:24.253Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/3a/6f99122e27fe7919c011c4804ba35074f0d4b8e20b6a7834e04a6759bb4d/ventwig-0.2.0-py3-none-any.whl", hash = "sha256:bc2aaa53b8b143ee878be37546a61deb417e738be6d269b3950b661821fff102", size = 12427, upload-time = "2026-07-05T19:29:22.929Z" },
 ]
 
 [[package]]

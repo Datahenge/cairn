@@ -37,7 +37,7 @@ def _inspection(image_id, tags, *, minutes_old=0, size=2_952_790_016, cairn=True
             images.APPS_LABEL: APPS,
             images.FRAPPE_REF_LABEL: "version-16",
             images.FRAPPE_COMMIT_LABEL: "be4728af" + "0" * 32,
-            images.PIN_REF_LABEL: "v3.2.1",
+            images.RECIPE_COMMIT_LABEL: "cafe1234" + "0" * 32,
         }
     created = datetime.now(UTC) - timedelta(minutes=minutes_old)
     return {
@@ -130,7 +130,7 @@ def test_report_names_the_inputs_and_marks_supersession(monkeypatch):
     assert "input hash 1bf0adf3823f" in rendered
     assert "erpnext" in rendered and "a5de60c3" in rendered
     assert "btu" in rendered and "5d66f6d4" in rendered
-    assert "built with vendored base v3.2.1" in rendered
+    assert "built from recipe cafe1234" in rendered
     assert "superseded" in rendered
 
 

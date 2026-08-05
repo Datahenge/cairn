@@ -1,8 +1,8 @@
 """cairn — reproducible ERPNext image builds and pull-based deploys.
 
-A thin, opinionated wrapper around the vendored, pinned ``frappe_docker`` tooling.
-See ``docs/requirements/`` for the authoritative ``BR-*`` requirements this package
-implements.
+Builds images from an owned Docker build recipe (`src/cairn/recipe/`, `ADR-059`) rather
+than a vendored, pinned one. See ``docs/requirements/`` for the authoritative ``BR-*``
+requirements this package implements.
 """
 
 from __future__ import annotations

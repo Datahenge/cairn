@@ -1,8 +1,8 @@
 # cairn
 
-A thin, opinionated wrapper around [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)
-that makes running a custom ERPNext deployment (Frappe + ERPNext + custom apps) on a
-single VPS reproducible, immutable, and low-thought — without ever modifying upstream.
+A thin, opinionated wrapper around Frappe/ERPNext's Docker build tooling, built from
+cairn's own owned Docker build recipe, that makes running a custom ERPNext deployment
+(Frappe + ERPNext + custom apps) on a single VPS reproducible, immutable, and low-thought.
 
 Two pillars: **reproducible custom image builds** and a **pull-based deploy lifecycle**
 (git ref → image tag → running stack, with image-only rollback). A strict data-plane

@@ -9,7 +9,7 @@ already there, and what a deliberate `--rebuild` produces later.
 1. *Only images cairn built.* Candidates come from :func:`cairn.images.inspect_local`,
    which admits an image only if it carries cairn's own provenance labels. Since `--label`
    values are applied at the **final** commit, a multi-stage *stage* image never has them —
-   so the vendored Containerfile's `builder` stage, the thing that lets a rebuild skip
+   so the owned Containerfile's `builder` stage, the thing that lets a rebuild skip
    `bench init`, is outside this command's reach by construction rather than by care
    (lessons §12). This is why the selection is never written against "dangling": on podman
    an untagged image may be cache, and deleting it silently converts every later build into

@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .config import Manifest
 
-#: The secret id the vendored Containerfile mounts (`Containerfile:128`).
+#: The secret id the owned Containerfile mounts (`Containerfile:128`).
 SECRET_ID = "apps_json"
 
 

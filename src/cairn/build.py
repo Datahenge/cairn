@@ -1,19 +1,17 @@
 """Assemble and run the image build (BR-BUILD-009/010/011/012).
 
-The pipeline, in order: enforce the vendored-tree preconditions, resolve every ref, work
-out the effective build args, derive the cache bust and tags, render ``apps.json`` to a
-private temporary file, and invoke the selected engine with provenance labels attached.
+The pipeline, in order: enforce the recipe's build-input precondition, resolve every ref,
+work out the effective build args, derive the cache bust and tags, render ``apps.json`` to
+a private temporary file, and invoke the selected engine with provenance labels attached.
 
 Three things this module is careful about:
 
-* **Preconditions first** (`BR-BUILD-009`). Drift, nested git metadata, and missing build
-  inputs are checked before anything expensive happens — drift is a hard stop with no
-  override (`BR-VEND-005`).
+* **Preconditions first** (`BR-BUILD-009`). Missing build inputs are checked before
+  anything expensive happens (`BR-VEND-003`).
 * **Effective, not declared, build args** (`BR-BUILD-010`). The Containerfile's own ``ARG``
   defaults are read and the manifest's knobs layered over them, so provenance records what
-  the build actually used and the input hash covers it. A vendored-pin bump that moves a
-  default therefore changes the tag even with an unchanged manifest — intended, see
-  `BR-BUILD-008`.
+  the build actually used and the input hash covers it. A recipe edit that moves a default
+  therefore changes the tag even with an unchanged manifest — intended, see `BR-BUILD-008`.
 * **`apps.json` only ever as a secret** (`BR-BUILD-006`). It is never a build-arg, and the
   file holding it is owner-only and removed on the way out.
 
@@ -58,7 +56,7 @@ FRAPPE_BRANCH_ARG = "FRAPPE_BRANCH"
 LABEL_NAMESPACE = "com.datahenge.cairn"
 OCI_NAMESPACE = "org.opencontainers.image"
 
-#: The vendored Containerfile's expensive intermediate stage (`BR-BUILD-015`).
+#: The owned Containerfile's expensive intermediate stage (`BR-BUILD-015`).
 CACHE_STAGE_TARGET = "builder"
 
 #: Repository the cache stage is named under, so a listing explains itself.
@@ -193,11 +191,9 @@ def plan(
 ) -> BuildPlan:
     """Resolve everything and decide the whole build, without invoking anything.
 
-    Enforces the `VEND` preconditions first (`BR-BUILD-009`), then resolves refs, so a
-    drifted tree fails before any network work.
+    Enforces the `VEND` precondition first (`BR-BUILD-009`), then resolves refs, so
+    missing build inputs fail before any network work.
     """
-    vendor.assert_clean()
-    vendor.assert_no_nested_git()
     vendor.assert_build_inputs()
 
     containerfile = vendor.containerfile_path()
@@ -258,9 +254,11 @@ def provenance_labels(
     """Return the OCI labels stamped onto the image (BR-BUILD-011, `ADR-030`).
 
     ``org.opencontainers.image.vendor`` is deliberately unset: the distributing entity of
-    the operator's image is theirs to declare, not cairn's.
+    the operator's image is theirs to declare, not cairn's. ``frappe-docker.ref``/
+    ``.commit`` record the owned recipe's own provenance — cairn's own version, and the
+    git commit covering `src/cairn/recipe/frappe_docker/` at build time — since there is
+    no longer a separate upstream pin to record (`ADR-059`).
     """
-    pin = vendor.read_pin()
     return {
         f"{OCI_NAMESPACE}.created": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         f"{OCI_NAMESPACE}.title": manifest.image_name,
@@ -283,8 +281,8 @@ def provenance_labels(
         f"{LABEL_NAMESPACE}.build-args": json.dumps(
             build_args, sort_keys=True, separators=(",", ":")
         ),
-        f"{LABEL_NAMESPACE}.frappe-docker.ref": pin.get("ref", ""),
-        f"{LABEL_NAMESPACE}.frappe-docker.commit": pin.get("commit", ""),
+        f"{LABEL_NAMESPACE}.frappe-docker.ref": __version__,
+        f"{LABEL_NAMESPACE}.frappe-docker.commit": vendor.recipe_commit(),
     }
 
 

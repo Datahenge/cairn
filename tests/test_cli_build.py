@@ -35,7 +35,6 @@ from cairn import (
     prune,
     push,
     registry,
-    vendor,
 )
 from cairn.config import App, BuildConfig, Frappe, Manifest
 from cairn.errors import BuildError, ManifestNotFoundError, PushError, RegistryError
@@ -103,9 +102,8 @@ def _image(short, tags=(), *, input_hash="aaa111", minutes_old=0, size=2_750_000
 
 
 @pytest.fixture
-def project(tmp_path, monkeypatch):
-    """A discovered project root, so no test needs a real vendored repo on disk."""
-    monkeypatch.setattr(cli_build, "find_project_root", lambda: tmp_path)
+def project(tmp_path) -> Path:
+    """A scratch directory standing in for a manifest's working directory."""
     return tmp_path
 
 
@@ -350,25 +348,13 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
 
 
 def test_doctor_needs_no_project_root(tmp_path, monkeypatch):
-    """The vendored tree is package-relative now — doctor works from anywhere."""
+    """The recipe tree is package-relative — doctor works from anywhere."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 0)
 
     result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 0
-
-
-def test_vendor_status_outside_a_project_exits_two(tmp_path, monkeypatch):
-    """Unlike every other command, `vendor status`/`sync` shell out to ventwig itself,
-    which needs a real checkout — project discovery failing there is an ordinary,
-    actionable error, not a traceback."""
-    monkeypatch.chdir(tmp_path)
-
-    result = runner.invoke(cli_build.app, ["vendor", "status"])
-
-    assert result.exit_code == 2
-    assert "No cairn project found" in result.stderr
 
 
 # --- build (BR-CLI-002, BR-CLI-016, BR-CLI-017) -----------------------------
@@ -922,35 +908,6 @@ def test_a_missing_manifest_is_an_actionable_error(project, monkeypatch):
     assert "Error: No cairn.toml found" in result.stderr
 
 
-# --- vendor (BR-CLI-006) ---------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("vendor_attr", "cli_args", "expected_source", "returned_code"),
-    [
-        ("status", ["vendor", "status", "frappe_docker"], "frappe_docker", 1),
-        ("sync", ["vendor", "sync"], None, 0),
-    ],
-    ids=["status", "sync-defaults-to-every-source"],
-)
-def test_vendor_command_forwards_the_source_and_exit_code(
-    project, monkeypatch, vendor_attr, cli_args, expected_source, returned_code
-):
-    """A thin wrapper: ventwig's exit code is authoritative and must survive the trip."""
-    seen: dict = {}
-
-    def _stub(root, source=None):
-        seen["args"] = (root, source)
-        return returned_code
-
-    monkeypatch.setattr(vendor, vendor_attr, _stub)
-
-    result = runner.invoke(cli_build.app, cli_args)
-
-    assert result.exit_code == returned_code
-    assert seen["args"] == (project, expected_source)
-
-
 # --- setup (BR-CLI-021) -----------------------------------------------------
 
 
@@ -1091,8 +1048,6 @@ def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
         ["prune"],
         ["doctor"],
         ["setup"],
-        ["vendor", "status"],
-        ["vendor", "sync"],
     ],
 )
 def test_every_command_has_help(command):

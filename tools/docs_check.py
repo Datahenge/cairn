@@ -34,10 +34,10 @@ EXCLUDED_DIRS = {
     "build",
 }
 
-#: Vendored upstream, read-only (ADR-001) — never linted to our own standard, same as ruff's
-#: own `extend-exclude` in pyproject.toml.
+#: The owned Docker build recipe (ADR-059) — never linted to our own standard, same as
+#: ruff's own `extend-exclude` in pyproject.toml.
 EXCLUDED_PATHS = {
-    Path("src/cairn/vendored/frappe_docker"),
+    Path("src/cairn/recipe/frappe_docker"),
 }
 DEFAULT_MAX_WORDS = 2200
 ALLOWLIST_FILENAME = ".docs_check_allowlist"

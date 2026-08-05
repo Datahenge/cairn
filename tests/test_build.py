@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from cairn import build, github_auth, registry, transcript, vendor
+from cairn import __version__, build, github_auth, registry, transcript, vendor
 from cairn.config import App, BuildConfig, Frappe, Manifest
-from cairn.errors import BuildError, VendorDriftError
+from cairn.errors import BuildError, VendorInputsMissingError
 from cairn.resolve import RefKind, Resolution, ResolvedRef
 
 CONTAINERFILE = """\
@@ -124,10 +124,8 @@ def test_passthrough_knob_is_upper_cased(containerfile):
 # --- provenance (BR-BUILD-011, ADR-030) -------------------------------------
 
 
-def _labels(monkeypatch, pin=None):
-    if pin is None:
-        pin = {"ref": "v3.2.1", "commit": "d4a3100"}
-    monkeypatch.setattr(vendor, "read_pin", lambda: pin)
+def _labels(monkeypatch, recipe_commit="d4a3100"):
+    monkeypatch.setattr(vendor, "recipe_commit", lambda: recipe_commit)
     return build.provenance_labels(
         _manifest(), _resolution(), {"PYTHON_VERSION": "3.13.1"}, "v16-abc123", "latest"
     )
@@ -161,19 +159,19 @@ def test_apps_label_is_json_in_manifest_order(monkeypatch):
     ]
 
 
-def test_frappe_docker_pin_reaches_the_labels(monkeypatch):
-    """BR-BUILD-011: the frappe_docker pin (ADR-030) comes from vendor.read_pin()."""
-    labels = _labels(monkeypatch, pin={"ref": "v3.2.1", "commit": "d4a3100"})
+def test_recipe_provenance_reaches_the_labels(monkeypatch):
+    """BR-BUILD-011: the owned recipe's provenance (ADR-030, ADR-059) comes from
+    vendor.recipe_commit() and cairn's own version — there is no separate upstream pin."""
+    labels = _labels(monkeypatch, recipe_commit="d4a3100")
 
-    assert labels["com.datahenge.cairn.frappe-docker.ref"] == "v3.2.1"
+    assert labels["com.datahenge.cairn.frappe-docker.ref"] == __version__
     assert labels["com.datahenge.cairn.frappe-docker.commit"] == "d4a3100"
 
 
-def test_missing_pin_degrades_to_empty(monkeypatch):
-    """Provenance is best-effort here; BR-VEND-005 is the check that actually gates."""
-    labels = _labels(monkeypatch, pin={})
+def test_missing_recipe_commit_degrades_to_empty(monkeypatch):
+    """recipe_commit() is best-effort (empty in an installed wheel); provenance follows."""
+    labels = _labels(monkeypatch, recipe_commit="")
 
-    assert labels["com.datahenge.cairn.frappe-docker.ref"] == ""
     assert labels["com.datahenge.cairn.frappe-docker.commit"] == ""
 
 
@@ -190,8 +188,8 @@ def _plan(**overrides):
         labels={"com.datahenge.cairn.input-hash": "abc123"},
         resolution=_resolution(),
         apps_json="[]\n",
-        context=Path("/vendor/frappe_docker"),
-        containerfile=Path("/vendor/frappe_docker/images/custom/Containerfile"),
+        context=Path("/recipe/frappe_docker"),
+        containerfile=Path("/recipe/frappe_docker/images/custom/Containerfile"),
         engine_name="podman",
     )
     return build.BuildPlan(**{**defaults, **overrides})
@@ -303,16 +301,16 @@ def test_run_writes_the_authenticated_apps_json_to_the_real_secret_file(monkeypa
 
 
 def test_plan_enforces_vendor_preconditions_before_resolving(monkeypatch):
-    """BR-BUILD-009: drift is a hard stop, checked before any network work."""
+    """BR-BUILD-009: missing build inputs are a hard stop, checked before any network work."""
     called: list[str] = []
     monkeypatch.setattr(build.resolve, "resolve_manifest", lambda m: called.append("resolved"))
 
-    def _drifted():
-        raise VendorDriftError("drifted")
+    def _incomplete():
+        raise VendorInputsMissingError("missing")
 
-    monkeypatch.setattr(build.vendor, "assert_clean", _drifted)
+    monkeypatch.setattr(build.vendor, "assert_build_inputs", _incomplete)
 
-    with pytest.raises(VendorDriftError):
+    with pytest.raises(VendorInputsMissingError):
         build.plan(_manifest(), BuildConfig())
 
     assert called == []
@@ -604,11 +602,9 @@ def _planned(monkeypatch, containerfile, tmp_path, *, series):
         build={},
         series=series,
     )
-    monkeypatch.setattr(vendor, "assert_clean", lambda: None)
-    monkeypatch.setattr(vendor, "assert_no_nested_git", lambda: None)
     monkeypatch.setattr(vendor, "assert_build_inputs", lambda: None)
     monkeypatch.setattr(vendor, "containerfile_path", lambda: containerfile)
     monkeypatch.setattr(vendor, "build_context", lambda: tmp_path)
-    monkeypatch.setattr(vendor, "read_pin", lambda: {"ref": "v3.2.1"})
+    monkeypatch.setattr(vendor, "recipe_commit", lambda: "d4a3100")
     monkeypatch.setattr(build.resolve, "resolve_manifest", lambda m: _resolution())
     return build.plan(manifest, BuildConfig(), engine_name="docker")

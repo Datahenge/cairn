@@ -21,7 +21,7 @@ from cairn.errors import (
     ManifestNotFoundError,
     RefResolutionError,
     RegistryError,
-    VendorDriftError,
+    VendorInputsMissingError,
 )
 
 DOCKER = engine.BuildEngine(name="docker", version="27.3.1")
@@ -30,8 +30,6 @@ PODMAN = engine.BuildEngine(name="podman", version="5.4.2")
 
 @pytest.fixture
 def all_vendor_checks_pass(monkeypatch):
-    monkeypatch.setattr(doctor.vendor, "assert_clean", lambda: None)
-    monkeypatch.setattr(doctor.vendor, "assert_no_nested_git", lambda: None)
     monkeypatch.setattr(doctor.vendor, "assert_build_inputs", lambda: None)
 
 
@@ -94,7 +92,7 @@ def _stub_config(monkeypatch, build_config, apps=()):
 
 
 def _boom():
-    raise VendorDriftError("nope")
+    raise VendorInputsMissingError("nope")
 
 
 # --- config check (BR-CFG-012; missing manifest warns, malformed fails) ------
@@ -399,8 +397,6 @@ def test_buildx_checked_only_for_docker(
         "free disk",
         "available memory",
         "git",
-        "vendored tree",
-        "vendor .git",
         "build inputs",
         "shared config",
         "known manifests",
@@ -428,8 +424,6 @@ def test_buildx_not_checked_for_podman(
         "free disk",
         "available memory",
         "git",
-        "vendored tree",
-        "vendor .git",
         "build inputs",
         "shared config",
         "known manifests",
@@ -480,8 +474,6 @@ def test_all_checks_run_even_after_a_failure(
 ):
     """BR-CLI-007: one invocation reports the full picture; no short-circuit."""
     monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
-    monkeypatch.setattr(doctor.vendor, "assert_clean", _boom)
-    monkeypatch.setattr(doctor.vendor, "assert_no_nested_git", _boom)
     monkeypatch.setattr(doctor.vendor, "assert_build_inputs", _boom)
 
     results = doctor.run_build_checks()
@@ -493,32 +485,30 @@ def test_all_checks_run_even_after_a_failure(
         doctor.Status.OK,  # available memory
         doctor.Status.OK,  # git
         doctor.Status.FAIL,
-        doctor.Status.FAIL,
-        doctor.Status.FAIL,
         doctor.Status.OK,  # shared config
         doctor.Status.OK,  # known manifests
     ]
 
 
-# --- vendored-tree guards ---------------------------------------------------
+# --- build-input guard --------------------------------------------------------
 
 
 def test_guard_reports_failure_without_raising():
-    """BR-VEND-005: doctor reports drift rather than aborting, so all checks still run."""
+    """BR-VEND-003: doctor reports the problem rather than aborting, so all checks still run."""
 
-    def _drifted():
-        raise VendorDriftError("Vendored tree has drifted from .ventwig.lock;\nsecond line")
+    def _incomplete():
+        raise VendorInputsMissingError("Containerfile is missing a build input;\nsecond line")
 
-    result = doctor._guard("vendored tree", _drifted, "matches .ventwig.lock")
+    result = doctor._guard("build inputs", _incomplete, "Containerfile complete")
 
     assert result.status is doctor.Status.FAIL
-    assert result.detail == "Vendored tree has drifted from .ventwig.lock;"
+    assert result.detail == "Containerfile is missing a build input;"
 
 
 def test_guard_reports_success():
-    result = doctor._guard("vendored tree", lambda: None, "matches .ventwig.lock")
+    result = doctor._guard("build inputs", lambda: None, "Containerfile complete")
 
-    assert result.status is doctor.Status.OK and result.detail == "matches .ventwig.lock"
+    assert result.status is doctor.Status.OK and result.detail == "Containerfile complete"
 
 
 # --- exit codes (BR-CLI-012) ------------------------------------------------
