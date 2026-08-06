@@ -1,11 +1,15 @@
 # cairn
 
-Frappe + ERPNext + your custom apps, on a single VPS, running the current commit —
-automatically. cairn owns its Docker build recipe and compose configuration outright
-(bootstrapped from [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker), not
-vendored or wrapped around it) and pairs it with a CI/CD lifecycle you won't find anywhere
-else for a Frappe stack: **build**, **register**, and **converge a live deployment** — no
-GitHub Actions, no webhooks, no infrastructure to run.
+Frappe + ERPNext + your custom apps, on a single VPS, running the current commit — automatically.
+
+cairn owns its Docker build recipe and compose configuration outright
+(bootstrapped from [`frappe/frappe_docker`](https://github.com/frappe/frappe_docker)) and pairs it with a CI/CD lifecycle you won't find anywhere
+else for a Frappe stack:
+
+**build**, **register**, and **converge a live deployment**
+* no GitHub Actions
+* no webhooks
+* no infrastructure to run.
 
 > _Cairn: a trail marker of stacked stones. Each deploy drops a durable marker
 > (ref → resolved commits → image tag → digest) you can navigate back to._
