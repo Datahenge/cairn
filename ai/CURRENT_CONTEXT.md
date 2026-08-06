@@ -107,6 +107,15 @@ reachability` audit too was deliberately deferred, not folded in — tracked as 
 `provision.build_unit_name`'s naming logic extracted into a pure `unit_name_for` so `doctor.py`
 reuses it without duplication risk. `BR-CLI-007` amended in place; new build-timer check is
 unverified against a real `setup-timer` install (`docs/technical/05-implementation-index.md`).
+Same day, Brian re-reviewed and suspected the *service* also needed to be active, not just the
+timer — checking the unit definitions showed both cairn-build's build service and cairn-adopt's
+reconcile service are `Type=oneshot`, inactive between runs by design, so his literal suggestion
+would have false-WARNed on every healthy install. The real gap underneath it was genuine though:
+neither check asked whether the last run had actually *succeeded*. Added `systemctl is-failed`
+on the service, ahead of each check's existing enabled/active read, to both the new build-timer
+check and (same blind spot, fixed alongside) `cairn-adopt doctor`'s pre-existing
+`check_reconcile_timer` — a failed last run now FAILs rather than reading as merely
+not-yet-started. `ADR-070` amended in place; no new ID.
 
 ## Read First
 

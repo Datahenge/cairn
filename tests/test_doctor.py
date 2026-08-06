@@ -389,6 +389,35 @@ def test_build_timer_single_manifest_ok_when_enabled_and_active(monkeypatch, tmp
     assert "enabled & active" in results[0].detail
 
 
+def test_build_timer_single_manifest_fails_when_last_run_failed(monkeypatch, tmp_path):
+    """A `Type=oneshot` service is `inactive` between runs by design — only
+    `systemctl is-failed` on the service itself can say the last run actually broke, and
+    that takes priority over the timer's own enabled/active state."""
+    root = tmp_path / "cairn"
+    manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
+    _set_manifest_root(monkeypatch, root)
+    systemd_dir = tmp_path / "systemd"
+    systemd_dir.mkdir()
+    unit = "cairn-build-acme-erpnext-btu-v16-production"
+    (systemd_dir / f"{unit}.timer").touch()
+    (systemd_dir / f"{unit}.service").touch()
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", systemd_dir)
+
+    def _run_stub(command):
+        if command[1] == "is-failed":
+            return _completed(1, stdout="failed\n")
+        state = "enabled" if command[1] == "is-enabled" else "active"
+        return _completed(0, stdout=f"{state}\n")
+
+    monkeypatch.setattr(doctor, "_run", _run_stub)
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert results[0].status is doctor.Status.FAIL
+    assert f"{unit}.service failed on its last run" in results[0].detail
+    assert "journalctl" in results[0].detail
+
+
 def test_build_timer_single_manifest_warns_when_enabled_but_inactive(monkeypatch, tmp_path):
     root = tmp_path / "cairn"
     manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
@@ -907,6 +936,12 @@ def test_check_compose(monkeypatch, run_stub, expected_status, expected_detail):
         assert expected_detail in result.detail
 
 
+def _reconcile_failed_stub(command):
+    if command[1] == "is-failed":
+        return _completed(1, stdout="failed\n")
+    return _completed(0, stdout="active\n")
+
+
 @pytest.mark.parametrize(
     ("run_stub", "expected_status", "expected_detail"),
     [
@@ -914,8 +949,10 @@ def test_check_compose(monkeypatch, run_stub, expected_status, expected_detail):
         # not a failure: legitimately true before the first manual reconcile.
         (lambda command: _completed(3, stdout="inactive\n"), doctor.Status.WARN, "inactive"),
         (lambda command: None, doctor.Status.WARN, "not available"),
+        # Type=oneshot: "active" alone can't say the last pass succeeded — is-failed can.
+        (_reconcile_failed_stub, doctor.Status.FAIL, "failed on its last run"),
     ],
-    ids=["active", "inactive", "systemd-absent"],
+    ids=["active", "inactive", "systemd-absent", "last-run-failed"],
 )
 def test_check_reconcile_timer(monkeypatch, run_stub, expected_status, expected_detail):
     monkeypatch.setattr(doctor, "_run", run_stub)

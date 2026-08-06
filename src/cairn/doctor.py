@@ -358,13 +358,18 @@ def _known_manifest_paths() -> list[Path]:
 
 
 def _check_one_build_timer(manifest_path: Path) -> CheckResult:
-    """Report one manifest's build-timer status: unit files present, timer enabled/active.
+    """Report one manifest's build-timer status: unit files present, timer enabled/active,
+    and whether the service's *last run* actually succeeded.
 
-    Never FAILs on the timer's own state — an enabled-but-inactive timer is `setup-timer`'s
-    own deliberate steady state until an operator confirms the first manual build (see
-    `stage_timers_build`), the same reasoning `check_reconcile_timer` already applies to
-    `cairn-adopt`'s timer. Only a structurally broken install (the `.timer` present without
-    its `.service`) fails.
+    The service is `Type=oneshot` (`provision.build_service`) — it runs, exits, and goes
+    back to `inactive` between firings, so "active" says nothing about whether it's
+    healthy; only `systemctl is-failed` on the *service* answers that, and it takes
+    priority over the timer's own enabled/active state below. Short of that, this never
+    FAILs on the timer's own state — an enabled-but-inactive timer is `setup-timer`'s own
+    deliberate steady state until an operator confirms the first manual build (see
+    `stage_timers_build`), the same reasoning `check_reconcile_timer` applies to
+    `cairn-adopt`'s timer. Only a structurally broken install (the `.timer` present
+    without its `.service`), or a service that has actually failed, fails.
     """
     label = "build timer"
     try:
@@ -397,6 +402,14 @@ def _check_one_build_timer(manifest_path: Path) -> CheckResult:
     if not service_file.exists():
         return CheckResult(
             label, Status.FAIL, f"{display}: {unit}.timer exists but {unit}.service is missing"
+        )
+
+    if _systemctl_state(["systemctl", "is-failed", f"{unit}.service"]) == "failed":
+        return CheckResult(
+            label,
+            Status.FAIL,
+            f"{display}: {unit}.service failed on its last run — check "
+            f"`journalctl -u {unit}.service` for why",
         )
 
     enabled_state = _systemctl_state(["systemctl", "is-enabled", f"{unit}.timer"])
@@ -478,17 +491,34 @@ def check_compose() -> CheckResult:
 
 
 def check_reconcile_timer() -> CheckResult:
-    """Report whether the reconcile timer is installed and active.
+    """Report whether the reconcile timer is installed and active, and whether its last run
+    actually succeeded.
 
-    A warning, not a failure: a target legitimately has no timer yet before the first
-    manual `cairn-adopt reconcile` has succeeded — installing it earlier is what turns one wrong
-    descriptor into a wrong deploy every few minutes, which is why `systemd-units` prints
-    rather than installs. Unlike `check_compose`, a nonzero exit here is the *normal* answer
-    for "not active" (`systemctl is-active`'s documented behaviour) — not a failure to run.
+    A warning, not a failure, for "not yet installed/active": a target legitimately has no
+    timer yet before the first manual `cairn-adopt reconcile` has succeeded — installing it
+    earlier is what turns one wrong descriptor into a wrong deploy every few minutes, which
+    is why `systemd-units` prints rather than installs. Unlike `check_compose`, a nonzero
+    exit here is the *normal* answer for "not active" (`systemctl is-active`'s documented
+    behaviour) — not a failure to run.
+
+    But "active" alone can't say the service is healthy: reconcile's unit is
+    `Type=oneshot` (`systemd._service`), so it runs, exits, and goes back to `inactive`
+    between passes. `systemctl is-failed` on the *service* — checked first, taking
+    priority over the timer's own state — is what actually answers whether the last pass
+    succeeded, the same reasoning `doctor.check_build_timers` applies to the build timer.
     """
     label = "reconcile timer"
-    unit = f"{systemd.UNIT_NAME}.timer"
-    result = _run(["systemctl", "is-active", unit])
+    timer_unit = f"{systemd.UNIT_NAME}.timer"
+    service_unit = f"{systemd.UNIT_NAME}.service"
+
+    if _systemctl_state(["systemctl", "is-failed", service_unit]) == "failed":
+        return CheckResult(
+            label,
+            Status.FAIL,
+            f"{service_unit} failed on its last run — check `journalctl -u {service_unit}` for why",
+        )
+
+    result = _run(["systemctl", "is-active", timer_unit])
     if result is None:
         return CheckResult(
             label, Status.WARN, "systemd not available, or the timer is not installed"
@@ -496,12 +526,12 @@ def check_reconcile_timer() -> CheckResult:
 
     state = result.stdout.strip() or result.stderr.strip() or "unknown"
     if state == "active":
-        return CheckResult(label, Status.OK, f"{unit} is active")
+        return CheckResult(label, Status.OK, f"{timer_unit} is active")
     return CheckResult(
         label,
         Status.WARN,
-        f"{unit} is {state} — install it with `cairn-adopt systemd-units` once a manual "
-        f"`cairn-adopt reconcile` has succeeded",
+        f"{timer_unit} is {state} — install it with `cairn-adopt systemd-units` once a "
+        f"manual `cairn-adopt reconcile` has succeeded",
     )
 
 

@@ -305,9 +305,13 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
 
   Also reports **build-timer status** (`setup-timer`'s units, `BR-CLI-023`), scoped by
   mutually exclusive `--manifest` (one) or `--all` (every manifest under `/srv/cairn/`,
-  `BR-CLI-022`) — neither given reports the check as skipped, not omitted (`ADR-070`).
+  `BR-CLI-022`) — neither given reports the check as skipped, not omitted (`ADR-070`). The
+  service is `Type=oneshot` — inactive between runs by design — so "active" alone can't say
+  the last run succeeded; `systemctl is-failed` on the service is checked too and FAILs
+  ahead of the timer's own enabled/active state (`ADR-070`).
 - **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
-  `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
+  `/etc/cairn`'s current group, permissions, and membership, reported only, as above. Its
+  reconcile-timer check applies the same `is-failed`-takes-priority reasoning (`ADR-070`).
 - **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under
   `data_dir` (`BR-REG-011`).
 

@@ -27,6 +27,19 @@ A follow-up question — should `--all` also broaden the other manifest-scoped c
 (`config`, `github reachability`) to a full per-manifest audit — was raised and deliberately
 deferred rather than folded into this change; see `docs/open/OPEN_DECISIONS.md`.
 
+**Second round, same day.** Brian, reviewing the shipped check, suspected the timer *and* the
+service both needed to be "active." Verifying against the actual unit definitions
+(`systemd._service`, `provision.build_service`) showed both cairn-build's build service and
+cairn-adopt's reconcile service are `Type=oneshot`: they run, exit, and return to `inactive`
+between firings — an "active" service is actually the *unusual* state, caught only in the
+instant it's running. Checking `is-active` on the service, as Brian's hunch first suggested,
+would have produced a false WARN on every healthy install. The real gap his instinct was
+pointing at was genuine, though: neither check asked whether the *last* run had actually
+succeeded. `systemctl is-failed` on the service answers that directly, independent of the
+timer's own state, and was missing from both `cairn-build doctor`'s new check and
+`cairn-adopt doctor`'s pre-existing `check_reconcile_timer` (same blind spot, fixed alongside
+rather than left as a known gap in a check just re-verified).
+
 ## Decision
 
 `cairn-build doctor` gains two mutually exclusive scope flags for the new build-timer check:
@@ -35,6 +48,12 @@ deferred rather than folded into this change; see `docs/open/OPEN_DECISIONS.md`.
   existence, and the timer's enabled/active state).
 - `--all` — walk every manifest found under `/srv/cairn/*/*.toml` (the same enumeration
   `check_known_manifests` already performs) and report one result per manifest.
+
+Both check `systemctl is-failed` on the `.service` first, ahead of the timer's own
+enabled/active state: a failed last run FAILs the check outright, regardless of what the
+timer itself reports, since a "the last scheduled run silently broke" is a worse and more
+actionable finding than "not yet started." `cairn-adopt doctor`'s `check_reconcile_timer`
+gained the identical `is-failed` check the same session, for the identical reason.
 
 Giving both is a usage error, not a silent precedence rule — an operator should never have to
 guess which one doctor honored.
@@ -59,7 +78,10 @@ would hide that the option exists.
   `check_config` already loaded.
 - `cli_build.py`: `doctor_command` gains `--all`, validated against `--manifest` via
   `typer.BadParameter` before either check family runs.
-- `docs/requirements/06-cli.md`'s `BR-CLI-007` cairn-build bullet documents the flags and the
-  bare-invocation reminder.
+- `docs/requirements/06-cli.md`'s `BR-CLI-007` cairn-build bullet documents the flags, the
+  bare-invocation reminder, and the `is-failed`-takes-priority behavior; the `cairn-adopt`
+  bullet notes its check gained the same.
+- `doctor.check_reconcile_timer` (`cairn-adopt`) gains the same `is-failed` check ahead of
+  its existing `is-active` read, with no change to its own flags or invocation.
 
 *(BR-CLI-007, BR-CLI-022, BR-CLI-023, ADR-028, ADR-046, ADR-062)*

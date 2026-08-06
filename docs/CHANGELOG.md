@@ -40,6 +40,18 @@ into `run_build_checks`. `cli_build.py`'s `doctor_command` gains `--all`, checke
 `--manifest` via `typer.BadParameter` before either check family runs. Tests added to
 `tests/test_doctor.py` and `tests/test_cli_build.py`.
 
+**Same-day follow-up.** Brian, re-reviewing, suspected the *service* also needed to be active,
+not just the timer. Checking the actual unit definitions showed both cairn-build's build
+service and cairn-adopt's reconcile service are `Type=oneshot` — they run, exit, and return to
+`inactive` between firings, so "active" is the unusual state, not the healthy one; his
+suggested check would have false-WARNed on every healthy install. The real gap underneath the
+hunch was genuine, though: neither check asked whether the *last* run had actually succeeded.
+Added `systemctl is-failed` on the service to both `check_build_timers` and — since
+`cairn-adopt doctor`'s pre-existing `check_reconcile_timer` had the identical blind spot —
+`check_reconcile_timer` too, taking priority over each check's existing enabled/active read. A
+failed last run now FAILs the check outright rather than reporting the more benign "not yet
+started." `ADR-070` and `BR-CLI-007` amended in place; no new ID minted.
+
 ---
 
 ## 2026-08-06 (`images` splits by role: `cairn-build` local-only, `cairn-registry` gains `--host`/`--namespace`/`--image`)
