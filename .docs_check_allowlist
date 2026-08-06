@@ -1,4 +1,4 @@
-# Per-file word-count overrides for tools/docs_check.py (DOC002).
+# Per-file word-count overrides for ai/tools/docs_check.py (DOC002).
 # Format: <repo-relative path> = <max words>
 # These are pre-existing documents whose size predates the Scribe Coding migration
 # (2026-08-03) — listed here rather than split, to avoid losing content during a
@@ -6,7 +6,7 @@
 # the sprawl-control policy new documents should follow.
 
 docs/CHANGELOG.md = 6000
-# ^ tripled 2026-08-04 (ADR-056): the 2000 ceiling set earlier the same day re-tripped within
+# ^ tripled 2026-08-04: the 2000 ceiling set earlier the same day re-tripped within
 # hours, mid-session, forcing an archive pass that interrupts the work generating the entries.
 # This file grows by same-day append, unlike a settled requirements doc — the next archive
 # pass happens on its own schedule, not forced by a ceiling sized for a single quiet day.
@@ -26,7 +26,7 @@ docs/requirements/03-deploy.md = 2600
 # (ADR-052); bumped again 2026-08-05 for BR-DEPLOY-003b (convergence verified against the
 # running container, not the local image store — W-022).
 docs/requirements/06-cli.md = 4000
-# ^ recalibrated 2026-08-04 (ADR-055): default ceiling rose to 2200 and this entry set to
+# ^ recalibrated 2026-08-04: default ceiling rose to 2200 and this entry set to
 # real headroom (current ~3130 words) instead of the last-few-dozen-words margin it had
 # drifted to from repeated same-day bumps (ADR-048, ADR-050, ADR-052). ~4500 words is where
 # the doc's own A-E sectioning judged to stop being sufficient and an actual split (most
@@ -34,3 +34,6 @@ docs/requirements/06-cli.md = 4000
 # ceiling is set to trip a fresh review before that point, not at it.
 docs/technical/ABOUT_GHCR.md = 3500
 docs/technical/high-level-motivations-and-workflows.md = 2000
+docs/archive/CHANGELOG-2026-08-04.md = 3500
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.

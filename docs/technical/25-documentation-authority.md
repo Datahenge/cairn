@@ -94,6 +94,12 @@ After meaningful implementation, configuration, documentation work, or a complet
 reached through review or discussion, ask: does any referenced document describe intent rather
 than reality? If yes, update the owner document before closing the task.
 
+When a completion judgment lands a phase at `Implemented` in
+[05-implementation-index.md](05-implementation-index.md)'s Completion Judgment column, also ask:
+does a `../plans/*.md` file exist for that phase? If yes, archive it (or delete it, if it adds
+nothing beyond what the requirements/ADRs already capture) in the same session — do not leave it
+for a backlog item to notice later.
+
 ## Archive Rule
 
 Do not load [archive/](../archive/) for active work unless historical context is explicitly
@@ -136,5 +142,7 @@ match:
   `scratch/` sitting outside it was the scaffold's own inconsistency, not a deliberate split;
   nesting them removes that anomaly without changing any tree's role. `ai/` groups the surface
   meant for an AI agent's own use (the session router and the docs-hygiene scripts) separately
-  from `docs/`, which is the project's documentation regardless of who reads it. See
-  `docs/decisions/068-nest-decisions-open-scratch-under-docs-add-ai-directory.md`.
+  from `docs/`, which is the project's documentation regardless of who reads it. Full rationale
+  in `docs/CHANGELOG.md`'s 2026-08-06 entry — process/scaffolding change, no standalone
+  Decision/ADR file per `docs/technical/01-documentation-conventions.md`'s "When A Decision
+  Earns A Decision/ADR File."

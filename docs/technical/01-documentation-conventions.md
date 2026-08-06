@@ -62,6 +62,36 @@ rather than hand-writing another `docs/archive/CHANGELOG-*.md`; it archives the 
 down to a comfortable margin under `.docs_check_allowlist`'s budget and keeps
 `docs/archive/README.md`'s index in sync mechanically.
 
+## When A Decision Earns A Decision/ADR File
+
+`docs/adr/` and `docs/decisions/` are the same kind of artifact — rationale for a choice, split
+only by weight — and both are expensive: a stable ID that citations, tests, and other documents
+may reference forever, plus an index row and (eventually) an archive stub to maintain. Reserve
+them for choices about **cairn the product**.
+
+Create a Decision/ADR file only when at least one of these holds:
+
+- A rejected alternative has lasting explanatory value — a future reader would plausibly ask
+  "why not the obvious simpler thing?" and deserves a real answer.
+- The choice amends a requirement (`BR-<AREA>-NNN`) in a way that needs recorded justification
+  beyond "we found a bug and fixed it."
+
+**Out of scope for a Decision/ADR file:** documentation process, tooling calibration (e.g.
+`docs_check.py`'s word-count ceiling, `changelog_rotate.py`'s archive cadence), directory or
+scaffolding reorganization, cleanup sessions. None of these are things a future maintainer of
+cairn-the-product would need to find by a stable ID — they get **one `docs/CHANGELOG.md` entry**
+and nothing else. Rule of thumb: *would a future maintainer of cairn-the-product need to find
+this by ID? If not, it's process — log it, don't file it.*
+
+This rule applies to itself: a future tightening of these documentation conventions is process,
+not product, and gets a `docs/CHANGELOG.md` entry, not a new Decision/ADR file.
+
+**One home for rationale.** A product decision's full rationale lives in exactly one place — the
+Decision/ADR file, or the requirement text itself for a small in-place amendment.
+`docs/CHANGELOG.md` summarizes and links to it; it does not re-narrate the reasoning at ADR
+length. `docs/discussions/discussion-log.md` stays reserved for reasoning that was exploratory
+and did not resolve into a stable decision (parked ideas, rejected approaches, open threads).
+
 ## Documentation Review Sessions
 
 Documentation entropy is expected, not a sign of failure. Every requirement change, decision,

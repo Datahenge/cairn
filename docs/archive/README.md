@@ -37,6 +37,7 @@ needed.
 | [CHANGELOG-2026-07.md](CHANGELOG-2026-07.md) | `docs/CHANGELOG.md` | Dated entries 2026-07-21 through 2026-07-27 |
 | [CHANGELOG-2026-08-03.md](CHANGELOG-2026-08-03.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-03 |
 | [CHANGELOG-2026-08-04-early.md](CHANGELOG-2026-08-04-early.md) | `docs/CHANGELOG.md` | Earlier 2026-08-04 entries (`setup` engine-detection fix through `CONFIGURATION.md` retirement) |
+| [CHANGELOG-2026-08-04.md](CHANGELOG-2026-08-04.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-04 |
 
 ## Index — archived open-work
 
@@ -49,3 +50,4 @@ needed.
 | File | Archived from | Covers |
 |---|---|---|
 | [next-steps.md](next-steps.md) | `docs/plans/next-steps.md` | Session-resumption plan, `status: archived` since 2026-08-03 — its live-backlog role was absorbed into `docs/open/OPEN_WORK.md`; moved here 2026-08-05 purely to stop it loading for ordinary "what's done, what remains" questions, which `docs/technical/05-implementation-index.md` + `docs/open/OPEN_WORK.md` already answer |
+| [phase-1-build.md](phase-1-build.md) | `docs/plans/phase-1-build.md` | Early Phase-1 build-pillar plan, `status: archived` since 2026-07-24 (superseded in part by `docs/requirements/` and later ADRs) — moved here 2026-08-06, closing `W-011`, which had sat open since Phase 4 began asking for exactly this move |

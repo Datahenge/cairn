@@ -54,9 +54,12 @@ Also 2026-08-05: `ADR-066` resolves `W-021` — `cairn-build build --push` now a
 manifest's declared environment by default (`--no-assign-tag` opts out; a manifest with none
 is silently skipped, not errored); the `:production` gate needed no new wiring since it was
 already keyed off the target environment rather than how assignment was requested.
-2026-08-06: `ADR-068` nested `decisions/`/`open/`/`scratch/` under `docs/` and moved this file
-plus `tools/` into a new root-level `ai/` directory, closing the scaffold-vs-`docs/` anomaly the
-canonical Scribe Coding migration left in place.
+2026-08-06: nested `decisions/`/`open/`/`scratch/` under `docs/` and moved this file plus
+`tools/` into a new root-level `ai/` directory, closing the scaffold-vs-`docs/` anomaly the
+canonical Scribe Coding migration left in place. Same day, tightened the Scribe Coding rules
+(when a change earns a Decision/ADR file vs. a `docs/CHANGELOG.md` line only; plans archive the
+same session their phase completes) and pruned four process-only decision files that predated
+the new rule — see `docs/CHANGELOG.md`.
 
 ## Read First
 

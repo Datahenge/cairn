@@ -119,6 +119,9 @@ traceability.
 Follow `docs/technical/01-documentation-conventions.md` for status headers and sprawl control
 before creating a new Markdown document. Use `docs/scratch/` for notes that aren't yet worth
 keeping. Run `ai/tools/docs_check.py` before considering a documentation change complete.
+Before minting a new `docs/adr/` or `docs/decisions/` file, check that same document's "When A
+Decision Earns A Decision/ADR File" section — process/tooling/scaffolding changes get a
+`docs/CHANGELOG.md` entry instead, never a new ID.
 
 If Brian asks for a "Dorwin Analysis," see
 `docs/technical/02-dorwin-analysis-and-hardin-version.md` and produce a Hardin Version.
