@@ -269,7 +269,9 @@ no-op unless `[registry.retention] enabled = true` (`BR-CLI-011`).
 MUST report its read-only window first, require `--yes`/`--dry-run` (`BR-CLI-010`).
 
 **`BR-CLI-027`** *(setup-timer)* — emits, never installs (`ADR-035`), a `prune`+`gc` timer on
-`[registry.gc] schedule` (`BR-REG-010`, `BR-CLI-019`/`023`).
+`[registry.gc] schedule` (`BR-REG-010`, `BR-CLI-019`/`023`). The generated script is written
+to `PROJECT_DIR` (`/opt/cairn-registry`), not the invoking shell's working directory
+(`ADR-062`, `ADR-063`).
 
 ## D. Commands on all three CLIs
 

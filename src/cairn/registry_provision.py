@@ -418,11 +418,20 @@ def stage_timers_registry(runner: Runner, options: SetupOptions) -> None:
     Not started deliberately, same reasoning as the build/reconcile timers: the first
     prune/gc pass should be watched by hand before it runs unattended on a schedule.
     `setup-timer` has no preceding `preflight` stage, so this checks root itself.
+
+    The script is written to `PROJECT_DIR`, not `options.workdir` (`ADR-062`, `ADR-063`):
+    `options.workdir` defaults to the invoking shell's `cwd`, ordinarily an operator's home
+    directory — a retired account could silently take a generated maintenance script down
+    with it. `PROJECT_DIR` (`/opt/cairn-registry`) is already this role's durable,
+    non-user-specific home for its own installed files (`compose.yaml` lives there too,
+    `ADR-053`), reused rather than reinvented. Unlike `cairn-build`'s per-client unit name,
+    this role has no naming-collision counterpart to fix — one registry, one host, one fixed
+    `MAINTENANCE_UNIT_NAME` (`ADR-048`).
     """
     require_root(runner)
     config = registry_config.load()
     cairn_registry = find_executable("cairn-registry")
-    script = options.workdir / "registry-maintenance.sh"
+    script = PROJECT_DIR / "registry-maintenance.sh"
     runner.write(
         script,
         maintenance_script(options.workdir, cairn_registry),

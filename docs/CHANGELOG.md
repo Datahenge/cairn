@@ -9,6 +9,21 @@ code changes live in git history.
 
 ---
 
+## 2026-08-05 — `ADR-063`: registry maintenance script moves from `cwd` to `/opt/cairn-registry`
+
+Companion review after `ADR-062`, checking `cairn-adopt`/`cairn-registry` for the same class
+of bug. `cairn-adopt` was clean (fixed `cairn-reconcile` unit name is correct — one adopt host
+serves exactly one deployment — and there is no generated script at all). `cairn-registry`
+had the same `cwd`-dependent script bug `ADR-062` fixed in `cairn-build`:
+`stage_timers_registry` wrote `registry-maintenance.sh` to `options.workdir`, defaulting to
+the operator's `cwd` at invocation. No naming-collision counterpart applied — one registry
+role serves one host, so the fixed `cairn-registry-maintenance` unit name was already correct.
+
+Fix: the script now writes to `PROJECT_DIR` (`/opt/cairn-registry`), the durable,
+non-user-specific directory `cairn-registry setup` already provisions for `compose.yaml`
+(`ADR-053`). `BR-REG-010`/`BR-CLI-027` updated accordingly. Full rationale in
+`decisions/063-registry-maintenance-script-moves-to-opt-cairn-registry.md`.
+
 ## 2026-08-05 — `ADR-062`: build-automation timer unit name and script both keyed off the manifest's client home
 
 Raised by Brian: `cairn-build setup-timer`'s unit name, `cairn-build-<environment>`, could

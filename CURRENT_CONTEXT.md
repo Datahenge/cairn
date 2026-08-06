@@ -35,7 +35,10 @@ which the old `cairn-build-<environment>` name never did — collision risk acro
 sharing an environment or image name), and the generated script now writes to
 `/srv/cairn/<client>/` instead of `options.workdir` (previously the operator's cwd at
 invocation, often a personal home directory that could later disappear). `setup-timer` now
-hard-stops if `--manifest` isn't canonically homed.
+hard-stops if `--manifest` isn't canonically homed. A companion review of `cairn-adopt`/
+`cairn-registry` found `cairn-adopt` clean but `cairn-registry` carrying the same cwd-dependent
+script bug (no naming counterpart needed — one registry per host); `ADR-063` moved
+`cairn-registry setup-timer`'s generated script to `PROJECT_DIR` (`/opt/cairn-registry`).
 
 ## Read First
 

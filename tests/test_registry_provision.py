@@ -521,6 +521,18 @@ def test_setup_timer_is_enabled_but_never_started(sandbox, monkeypatch):
     assert any("NOT started" in note for note in runner.report.warnings)
 
 
+def test_setup_timer_writes_the_script_to_project_dir_not_the_workdir(sandbox, monkeypatch):
+    """The generated script must live in `PROJECT_DIR`, a durable non-user-specific home —
+    not wherever `setup-timer` happened to be invoked from (`ADR-062`, `ADR-063`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    runner = Recorder()
+
+    registry_provision.stage_timers_registry(runner, _options(workdir=sandbox))
+
+    assert (registry_provision.PROJECT_DIR / "registry-maintenance.sh").exists()
+    assert not (sandbox / "registry-maintenance.sh").exists()
+
+
 def test_setup_timer_writes_the_schedule_from_config(sandbox, monkeypatch):
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
     monkeypatch.setattr(

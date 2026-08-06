@@ -421,10 +421,13 @@ def setup_timer_command(
         typer.Option("--workdir", help="Directory to record in reported paths."),
     ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
 ) -> None:
-    """Install the maintenance-automation timer only (BR-CLI-027, BR-REG-010).
+    """Install the maintenance-automation timer only (BR-CLI-027, BR-REG-010, ADR-063).
 
     Root-gated the same way `setup` is — writing to `/etc/systemd/system` needs it, and
-    this command has no preceding `preflight` stage of its own to have already checked.
+    this command has no preceding `preflight` stage of its own to have already checked. The
+    generated script is written to `/opt/cairn-registry`, not this command's `--workdir` —
+    that stays a durable, non-user-specific home regardless of where `setup-timer` happens
+    to be invoked from.
     """
     options = SetupOptions(dry_run=dry_run, force=force, workdir=workdir)
     runner = Runner(dry_run=dry_run, force=force)

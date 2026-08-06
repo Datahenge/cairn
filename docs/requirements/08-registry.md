@@ -146,7 +146,14 @@ actions.
 
 **`BR-REG-010`** — `cairn-registry setup-timer` emits (never installs, `ADR-035`) a systemd
 timer that runs `prune` then `gc` on the cadence named by `[registry.gc] schedule`, printed —
-not assumed — exactly as `BR-CLI-019` already requires for the reconcile timer.
+not assumed — exactly as `BR-CLI-019` already requires for the reconcile timer. The fixed
+unit name `cairn-registry-maintenance` needs no per-tenant parameterization — one registry
+role serves one host (`ADR-048`) — but the generated maintenance script MUST be written to
+`PROJECT_DIR` (`/opt/cairn-registry`), never to the invoking shell's working directory: that
+directory is already this role's durable, non-user-specific home for its own installed files
+(`compose.yaml` lives there too, `ADR-053`), and a script build automation depends on MUST
+NOT live somewhere a retired operator account or a cleaned-up home directory can take it
+down (`ADR-062`, `ADR-063`).
 
 ## Doctor
 
