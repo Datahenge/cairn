@@ -297,13 +297,19 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
   `environment`, and any (`image_name`, `environment`) pair repeating within that client MUST
   be reported — case-insensitively, so `staging` and `Staging` collide. This is validation
   only; no command resolves an environment name to a manifest this way, per `BR-DEPLOY-009a`.
+  When a manifest was found, doctor also **resolves every one of its refs live**
+  (`resolve.resolve_manifest`, `ADR-067`) — the same call `build` itself makes — reporting
+  FAIL with the `RefResolutionError` message (already actionable per `BR-BUILD-016` point 5)
+  on any failure, including an unauthenticated `github.com` app. Uses whichever
+  `$CAIRN_GITHUB_TOKEN` the invoking shell has exported, mirroring `build`'s own interactive
+  path. Skipped, not failed, when no manifest was found.
 - **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
   `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
 - **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under
   `data_dir` (`BR-REG-011`).
 
-*(BR-VEND-003, BR-BUILD-005, BR-CFG-015, BR-CLI-014, BR-REG-011, ADR-027, ADR-043, ADR-046,
-ADR-048)*
+*(BR-VEND-003, BR-BUILD-005, BR-BUILD-016, BR-CFG-015, BR-CLI-014, BR-REG-011, ADR-027,
+ADR-043, ADR-046, ADR-048, ADR-067)*
 
 **`BR-CLI-021`** *(setup — the privileged installer, nested per role)* — Each CLI carries its own
 `setup` (`cairn-build setup`, `cairn-adopt setup`, `cairn-registry setup`), replacing the
@@ -373,7 +379,18 @@ one client: a build host serving several clients (`BR-CLI-022`) gets one such fi
 each referenced only by that client's own generated unit, never a single shared token
 assumed to work for every client. Populating it (`CAIRN_GITHUB_TOKEN=<token>`, mode `0600`,
 root-owned) is the operator's job, same as installing the unit itself.
-*(ADR-046, ADR-047, ADR-051, ADR-052, ADR-062, ADR-064, ADR-065)*
+
+**`setup-timer` gates on that file actually working, before writing or enabling anything**
+(`ADR-067`, `BR-DEPLOY-021` point 5). It resolves every ref in the manifest
+(`resolve.resolve_manifest`) using only what the eventual unit's `EnvironmentFile=` would
+supply — the token parsed from `github_token_env_file(client)` if that file exists,
+otherwise none — deliberately **not** the invoking operator's own exported
+`$CAIRN_GITHUB_TOKEN`, since the unit never inherits that either. A failure refuses the
+whole run (script, service, and timer all unwritten) and reports the same actionable
+message `BR-BUILD-016` point 5 gives a failed build, naming the expected file. A pass
+means the manifest already resolves under exactly the credentials the timer will have, so
+no separate warning is printed.
+*(ADR-046, ADR-047, ADR-051, ADR-052, ADR-062, ADR-064, ADR-065, ADR-067)*
 
 ## E. Shared conventions (all three CLIs)
 

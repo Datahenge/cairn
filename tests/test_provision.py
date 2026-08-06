@@ -15,13 +15,16 @@ seams every command goes through, so substituting them covers the whole surface.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 from cairn import adopt as adopt_module
-from cairn import engine, provision, setup_runner
+from cairn import config as config_module
+from cairn import engine, github_auth, provision, setup_runner
+from cairn.errors import RefResolutionError
 
 DOCKER = engine.BuildEngine(name="docker", version="27.3.1")
 
@@ -502,6 +505,19 @@ def test_manifest_stage_dry_run_writes_nothing(sandbox, monkeypatch):
 
 # --- timers -------------------------------------------------------------
 
+_FAKE_MANIFEST = config_module.Manifest("erpnext-v16", config_module.Frappe("u", "r"), ())
+
+
+@pytest.fixture(autouse=True)
+def github_reachable(monkeypatch):
+    """Timer-layout tests must not depend on real manifest content or network reachability
+    — `stage_timers_build` now parses and resolves the manifest as part of its pre-write
+    gate (`ADR-067`). The gate itself gets dedicated tests below, with real control over
+    both `load_manifest` and `resolve_manifest`.
+    """
+    monkeypatch.setattr(provision.config, "load_manifest", lambda path: _FAKE_MANIFEST)
+    monkeypatch.setattr(provision.resolve, "resolve_manifest", lambda manifest: None)
+
 
 def _manifest_at(root: Path, client: str, name: str = "cairn_test.toml") -> Path:
     """A manifest file at its canonical `MANIFEST_ROOT/<client>/` home (`ADR-047`)."""
@@ -610,6 +626,91 @@ def test_stage_timers_build_requires_a_manifest_under_the_client_directory(sandb
         )
 
 
+def test_stage_timers_build_refuses_when_a_ref_wont_resolve(sandbox, monkeypatch):
+    """The whole run is refused before anything is written (`BR-DEPLOY-021` point 5,
+    `ADR-067`) rather than installing a timer that would fail on its first unattended
+    poll."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+
+    def _boom(m):
+        raise RefResolutionError("frappe: cannot read u — No $CAIRN_GITHUB_TOKEN is set.")
+
+    monkeypatch.setattr(provision.resolve, "resolve_manifest", _boom)
+
+    with pytest.raises(provision.Aborted, match="github-token.env"):
+        provision.stage_timers_build(
+            Recorder(),
+            _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+        )
+
+    assert not (provision.SYSTEMD_DIR / "cairn-build-acme-erpnext-v16-test.timer").exists()
+    assert not (manifest.parent / "cairn-build-acme-erpnext-v16-test.sh").exists()
+
+
+def test_stage_timers_build_ignores_the_operators_own_shell_token(sandbox, monkeypatch):
+    """A systemd unit never inherits the invoking shell's environment (`ADR-065`) — the gate
+    must not let the operator's own exported token mask a unit that would actually have
+    none (`ADR-067`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "operators-own-token")
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        provision.resolve,
+        "resolve_manifest",
+        lambda m: seen.append(os.environ.get(github_auth.GITHUB_TOKEN_ENV_VAR)),
+    )
+
+    provision.stage_timers_build(
+        Recorder(),
+        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+    )
+
+    assert seen == [None]
+    assert os.environ.get(github_auth.GITHUB_TOKEN_ENV_VAR) == "operators-own-token"
+
+
+def test_stage_timers_build_uses_the_token_files_value(sandbox, monkeypatch):
+    """Whatever the client's `github-token.env` says is exactly what the unit will see
+    (`ADR-065`, `ADR-067`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.delenv(github_auth.GITHUB_TOKEN_ENV_VAR, raising=False)
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+    token_file = setup_runner.CERT_DIR / "acme" / "github-token.env"
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.write_text("CAIRN_GITHUB_TOKEN=file-token\n", encoding="utf-8")
+    seen: list[str | None] = []
+    monkeypatch.setattr(
+        provision.resolve,
+        "resolve_manifest",
+        lambda m: seen.append(os.environ.get(github_auth.GITHUB_TOKEN_ENV_VAR)),
+    )
+
+    provision.stage_timers_build(
+        Recorder(),
+        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+    )
+
+    assert seen == ["file-token"]
+
+
+def test_stage_timers_build_drops_the_unconditional_warning_on_success(sandbox, monkeypatch):
+    """A passing gate already proves the file is either unneeded or correct — nothing left
+    to warn about (`ADR-067`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+    runner = Recorder()
+
+    provision.stage_timers_build(
+        runner,
+        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+    )
+
+    assert len(runner.report.warnings) == 1
+    assert "NOT started" in runner.report.warnings[0]
+
+
 def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path, monkeypatch):
     runner = Recorder()
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
@@ -660,20 +761,27 @@ def test_a_timer_is_enabled_but_never_started(sandbox, stage, monkeypatch):
     assert any("NOT started" in note for note in runner.report.warnings)
 
 
-def test_stage_timers_build_names_the_expected_token_file(sandbox, monkeypatch):
-    """The operator isn't left to guess the PAT file's path or permissions — cairn reports
-    what it assumed, same as every other host-specific value (`BR-BUILD-016`, `ADR-065`)."""
+def test_stage_timers_build_names_the_expected_token_file_on_failure(sandbox, monkeypatch):
+    """The operator isn't left to guess the PAT file's path or permissions — the refusal
+    names what cairn assumed, same as every other host-specific value (`BR-BUILD-016`,
+    `ADR-065`, `ADR-067`)."""
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
     manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
-    runner = Recorder()
 
-    provision.stage_timers_build(
-        runner,
-        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
-    )
+    def _boom(m):
+        raise RefResolutionError("frappe: cannot read u.")
+
+    monkeypatch.setattr(provision.resolve, "resolve_manifest", _boom)
 
     token_file = str(provision.github_token_env_file("acme"))
-    assert any(token_file in note and "600" in note for note in runner.report.warnings)
+    with pytest.raises(provision.Aborted) as excinfo:
+        provision.stage_timers_build(
+            Recorder(),
+            _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+        )
+
+    assert token_file in str(excinfo.value)
+    assert "600" in str(excinfo.value)
 
 
 def test_the_build_service_sets_a_working_directory_from_the_script_not_workdir(sandbox):

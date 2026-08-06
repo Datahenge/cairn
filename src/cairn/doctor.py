@@ -12,7 +12,10 @@ engine's own data root and available memory, the same floors `setup`'s preflight
 build on (`BR-DEPLOY-021`); ``git``, which every manifest ref is resolved with
 (`BR-BUILD-005`); the recipe tree complete in its build inputs (BR-VEND-003); and,
 informationally only, which client manifests already exist under `/srv/cairn/`
-(`BR-CLI-022`).
+(`BR-CLI-022`). When a manifest was found, every one of its refs is also resolved live
+(`resolve.resolve_manifest`, `ADR-067`) — the same call `build` itself makes — so an
+unauthenticated `github.com` app, or any other unreachable/moved ref, fails here rather
+than mid-build.
 
 **`cairn-adopt doctor` checks:** the descriptor itself parses; Docker is installed and its
 daemon reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is
@@ -115,7 +118,7 @@ def run_build_checks(
     (`BR-DEPLOY-021`) — once the engine is known, since free disk is read from wherever
     that engine actually stores images, not assumed to be `/`.
     """
-    config_result, build_config = check_config(manifest_path)
+    config_result, build_config, manifest = check_config(manifest_path)
     engine_result, selected = check_build_engine(
         preferred_engine or (build_config.engine if build_config else None)
     )
@@ -125,13 +128,17 @@ def run_build_checks(
         results.append(check_buildx())
     results.append(check_disk(selected))
     results.append(check_memory())
-    return [
-        *results,
-        check_git(),
-        _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
-        check_shared_config_dir(),
-        check_known_manifests(),
-    ]
+    results.extend(
+        [
+            check_git(),
+            _guard("build inputs", vendor.assert_build_inputs, "Containerfile complete"),
+            check_shared_config_dir(),
+            check_known_manifests(),
+        ]
+    )
+    if manifest is not None:
+        results.append(check_github_reachability(manifest))
+    return results
 
 
 def run_target_checks() -> list[CheckResult]:
@@ -150,30 +157,51 @@ def run_target_checks() -> list[CheckResult]:
 
 def check_config(
     manifest_path: Path | None = None,
-) -> tuple[CheckResult, config.BuildConfig | None]:
-    """Validate the manifest and build config, returning the config for reuse.
+) -> tuple[CheckResult, config.BuildConfig | None, config.Manifest | None]:
+    """Validate the manifest and build config, returning both for reuse.
 
     *manifest_path* comes from ``--manifest`` or is left to `config.find_manifest`'s own
     ``$CAIRN_MANIFEST`` fallback — doctor never searches a directory for one (`ADR-042`).
     A missing manifest **warns** rather than fails — doctor runs legitimately on a
     target, or before a manifest exists. A malformed manifest, or a malformed build
-    config, fails (BR-CFG-012, BR-CLI-007).
+    config, fails (BR-CFG-012, BR-CLI-007). The parsed `Manifest` is returned alongside
+    the build config so `check_github_reachability` can reuse it without a second parse
+    (`ADR-067`).
     """
     label = "config"
     try:
         found = config.find_manifest(manifest_path)
     except ManifestNotFoundError as exc:
-        return CheckResult(label, Status.WARN, _first_line(str(exc))), None
+        return CheckResult(label, Status.WARN, _first_line(str(exc))), None, None
 
     try:
         manifest = config.load_manifest(found)
         build_config = config.load_build_config(found)
     except CairnError as exc:
-        return CheckResult(label, Status.FAIL, _first_line(str(exc))), None
+        return CheckResult(label, Status.FAIL, _first_line(str(exc))), None, None
 
     sources = ", ".join(build_config.sources) or "defaults only"
     detail = f"{found.name} valid, {len(manifest.apps)} app(s); build config: {sources}"
-    return CheckResult(label, Status.OK, detail), build_config
+    return CheckResult(label, Status.OK, detail), build_config, manifest
+
+
+def check_github_reachability(manifest: config.Manifest) -> CheckResult:
+    """Resolve every ref in *manifest* live — the exact call `build` itself makes.
+
+    Reuses `resolve.resolve_manifest` rather than reproducing ref-resolution logic, so a
+    `github.com` app that would fail for lack of a token is caught here, with the same
+    actionable message `BR-BUILD-016` point 5 already gives a failed build, before the
+    first unattended timer run rather than during it (`ADR-067`). Uses whichever
+    `$CAIRN_GITHUB_TOKEN` the invoking shell has exported, mirroring `cairn-build build`'s
+    own interactive path — `setup-timer`'s pre-write gate checks the unit's own,
+    file-scoped environment instead (`provision.py`).
+    """
+    label = "github reachability"
+    try:
+        resolve.resolve_manifest(manifest)
+    except CairnError as exc:
+        return CheckResult.of(label, False, _first_line(str(exc)))
+    return CheckResult.of(label, True, f"{len(manifest.apps) + 1} ref(s) resolved")
 
 
 def check_shared_config_dir() -> CheckResult:

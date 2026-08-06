@@ -75,8 +75,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import adopt as adopt_module
-from . import engine, setup_runner, systemd
-from .errors import BuildEngineError
+from . import config, engine, github_auth, resolve, setup_runner, systemd
+from .errors import BuildEngineError, CairnError
 from .setup_runner import (
     SHARED_CONFIG_MODE,
     SYSTEMD_DIR,
@@ -356,8 +356,16 @@ def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
     anyone has confirmed the manifest turns one wrong configuration into a wrong deploy every
     quarter of an hour. `setup-timer` has no preceding `preflight` stage, so this checks
     root itself (`BR-CLI-023`).
+
+    Gates on `_check_timer_github_reachability` before writing anything (`BR-DEPLOY-021`
+    point 5, `ADR-067`): a manifest whose refs won't resolve under the token this unit's own
+    `EnvironmentFile=` will give it is refused outright, rather than installed to fail
+    unattended on its first poll.
     """
     require_root(runner)
+    client = client_from_manifest(options.manifest)
+    _check_timer_github_reachability(options.manifest, client)
+
     cairn_build = find_executable("cairn-build")
     unit = build_unit_name(options)
     script = options.manifest.parent / f"{unit}.sh"
@@ -375,12 +383,50 @@ def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
         f"{unit}.timer is enabled but NOT started — run the first build by hand first, "
         f"then `systemctl start {unit}.timer`"
     )
-    token_file = github_token_env_file(client_from_manifest(options.manifest))
-    runner.report.warnings.append(
-        f"if this manifest references a private github.com app, create {token_file} "
-        f"(mode 600, root-owned, one line: CAIRN_GITHUB_TOKEN=<token>) — cairn never "
-        f"writes it; the build runs without it otherwise"
-    )
+
+
+def _timer_github_token(client: str) -> str | None:
+    """The token *this client's unit* will actually see at runtime, or ``None``.
+
+    Parsed straight from `github_token_env_file(client)` — never the invoking operator's
+    own shell, since a systemd unit inherits neither (`ADR-065`, `ADR-067`).
+    """
+    values = read_env_values(github_token_env_file(client), (github_auth.GITHUB_TOKEN_ENV_VAR,))
+    return values.get(github_auth.GITHUB_TOKEN_ENV_VAR) or None
+
+
+def _check_timer_github_reachability(manifest_path: Path, client: str) -> None:
+    """Resolve every ref in *manifest_path*, simulating only what the generated unit's own
+    `EnvironmentFile=` will supply, and raise :class:`Aborted` on any failure (`ADR-067`).
+
+    `github_auth.py` reads `$CAIRN_GITHUB_TOKEN` straight from `os.environ` and takes no
+    override parameter (`ADR-065`: unchanged, deliberately) — so this simulates the unit's
+    narrower environment by setting that one variable for the duration of the check, then
+    restoring whatever the invoking shell had, rather than letting the operator's own
+    exported token mask a unit that would actually have none.
+    """
+    manifest = config.load_manifest(manifest_path)
+    token = _timer_github_token(client)
+    env_var = github_auth.GITHUB_TOKEN_ENV_VAR
+    previous = os.environ.get(env_var)
+    if token is None:
+        os.environ.pop(env_var, None)
+    else:
+        os.environ[env_var] = token
+    try:
+        resolve.resolve_manifest(manifest)
+    except CairnError as exc:
+        token_file = github_token_env_file(client)
+        raise Aborted(
+            f"{exc} The build timer's own environment ({token_file}) gave it no way past "
+            f"this. Fix the ref, or populate that file (mode 600, root-owned, one line: "
+            f"{env_var}=<token>), then rerun."
+        ) from exc
+    finally:
+        if previous is None:
+            os.environ.pop(env_var, None)
+        else:
+            os.environ[env_var] = previous
 
 
 def build_script(options: SetupOptions, cairn_build: Path) -> str:

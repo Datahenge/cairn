@@ -235,7 +235,7 @@ Frappe itself is out of scope: it is supplied via the `FRAPPE_PATH` build-arg
 (`BR-BUILD-004`), which is permanently readable via image history (`BR-BUILD-006`'s own
 reasoning) — a token has no safe channel to reach it, and none is attempted.
 *(BR-BUILD-001, BR-BUILD-004, BR-BUILD-005, BR-BUILD-006, BR-BUILD-011, BR-DEPLOY-011,
-BR-DEPLOY-022, ADR-017)*
+BR-DEPLOY-022, ADR-017, ADR-067)*
 
 ---
 

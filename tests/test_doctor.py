@@ -45,6 +45,13 @@ def git_present(monkeypatch):
     monkeypatch.setattr(doctor.resolve, "git_version", lambda: "2.47.1")
 
 
+@pytest.fixture(autouse=True)
+def github_reachable(monkeypatch):
+    """Composition tests must not depend on network reachability of a stub manifest's apps
+    (`ADR-067`) — `check_github_reachability`'s own tests override this per-case."""
+    monkeypatch.setattr(doctor.resolve, "resolve_manifest", lambda manifest: None)
+
+
 @pytest.fixture
 def shared_config_ok(monkeypatch):
     """Composition tests must not depend on whether /etc/cairn exists on the test host."""
@@ -106,10 +113,11 @@ def test_missing_manifest_warns_rather_than_fails(monkeypatch):
 
     monkeypatch.setattr(doctor.config, "find_manifest", _missing)
 
-    result, build_config = doctor.check_config()
+    result, build_config, manifest = doctor.check_config()
 
     assert result.status is doctor.Status.WARN
     assert build_config is None
+    assert manifest is None
 
 
 def test_malformed_manifest_fails(monkeypatch):
@@ -121,11 +129,12 @@ def test_malformed_manifest_fails(monkeypatch):
 
     monkeypatch.setattr(doctor.config, "load_manifest", _invalid)
 
-    result, build_config = doctor.check_config()
+    result, build_config, manifest = doctor.check_config()
 
     assert result.status is doctor.Status.FAIL
     assert "unknown key" in result.detail
     assert build_config is None
+    assert manifest is None
 
 
 def test_valid_config_reports_app_count_and_sources(monkeypatch):
@@ -135,12 +144,62 @@ def test_valid_config_reports_app_count_and_sources(monkeypatch):
         apps=(config_module.App("erpnext", "u", "r"),),
     )
 
-    result, build_config = doctor.check_config()
+    result, build_config, manifest = doctor.check_config()
 
     assert result.status is doctor.Status.OK
     assert "1 app(s)" in result.detail
     assert "builder.toml" in result.detail
     assert build_config is not None
+    assert manifest is not None
+
+
+# --- github reachability (BR-BUILD-016, ADR-067) ----------------------------
+
+
+def test_github_reachability_ok_when_every_ref_resolves(monkeypatch):
+    """A manifest whose refs all resolve — including any private `github.com` app under
+    whatever token the invoking shell has exported — passes (`ADR-067`)."""
+    manifest = config_module.Manifest(
+        "x", config_module.Frappe("u", "r"), (config_module.App("erpnext", "u2", "r2"),)
+    )
+    monkeypatch.setattr(doctor.resolve, "resolve_manifest", lambda m: object())
+
+    result = doctor.check_github_reachability(manifest)
+
+    assert result.status is doctor.Status.OK
+    assert "2 ref(s) resolved" in result.detail
+
+
+def test_github_reachability_fails_with_the_resolution_error(monkeypatch):
+    """The `RefResolutionError` message is reused verbatim — it already names
+    `$CAIRN_GITHUB_TOKEN` as a candidate fix (`BR-BUILD-016` point 5)."""
+    manifest = config_module.Manifest("x", config_module.Frappe("u", "r"), ())
+
+    def _boom_resolve(m):
+        raise RefResolutionError("frappe: cannot read u — No $CAIRN_GITHUB_TOKEN is set.")
+
+    monkeypatch.setattr(doctor.resolve, "resolve_manifest", _boom_resolve)
+
+    result = doctor.check_github_reachability(manifest)
+
+    assert result.status is doctor.Status.FAIL
+    assert "CAIRN_GITHUB_TOKEN" in result.detail
+
+
+def test_github_reachability_skipped_when_no_manifest_found(
+    monkeypatch, all_vendor_checks_pass, shared_config_ok, known_manifests_ok, disk_ok, memory_ok
+):
+    """`doctor` legitimately runs before a manifest exists — nothing to resolve yet."""
+
+    def _missing(explicit=None):
+        raise ManifestNotFoundError("No manifest given. Pass --manifest <path>.")
+
+    monkeypatch.setattr(doctor.config, "find_manifest", _missing)
+    monkeypatch.setattr(doctor.engine, "detect", lambda preferred: PODMAN)
+
+    labels = [r.label for r in doctor.run_build_checks()]
+
+    assert "github reachability" not in labels
 
 
 # --- shared config dir (BR-CFG-015, ADR-043) --------------------------------
@@ -400,6 +459,7 @@ def test_buildx_checked_only_for_docker(
         "build inputs",
         "shared config",
         "known manifests",
+        "github reachability",
     ]
 
 
@@ -427,6 +487,7 @@ def test_buildx_not_checked_for_podman(
         "build inputs",
         "shared config",
         "known manifests",
+        "github reachability",
     ]
 
 
@@ -487,6 +548,7 @@ def test_all_checks_run_even_after_a_failure(
         doctor.Status.FAIL,
         doctor.Status.OK,  # shared config
         doctor.Status.OK,  # known manifests
+        doctor.Status.OK,  # github reachability
     ]
 
 

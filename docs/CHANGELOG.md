@@ -9,6 +9,27 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 — `ADR-067`: `doctor`/`setup-timer` probe `github.com` reachability live, `OQ-003` resolved
+
+Brian, reviewing `ADR-065`'s `EnvironmentFile=-` path, flagged that it wires a missing token
+but never detects one: `cairn-build doctor` had no check at all for a manifest's `github.com`
+reachability, and `setup-timer` printed the same unconditional reminder regardless of whether
+the manifest needed the file or whether it already existed and was correct. The eventual
+failure wasn't silent — `BR-BUILD-016` point 5's `RefResolutionError` already names
+`$CAIRN_GITHUB_TOKEN` as a candidate fix — but nothing surfaced it before the timer was
+enabled or before it fired unattended for the first time.
+
+Both checks reuse `resolve.resolve_manifest()`, the same function `build` itself calls, at
+two different fidelities. `doctor` runs it with whatever `$CAIRN_GITHUB_TOKEN` the invoking
+shell has exported, mirroring a manual build. `setup-timer` runs it before writing anything,
+simulating only what the eventual unit's `EnvironmentFile=` will supply — the parsed
+`github_token_env_file(client)` if present, otherwise none — deliberately not the operator's
+own shell env, since the unit never inherits that either. `setup-timer` refuses to write or
+enable anything on failure; on success the old unconditional warning is dropped, since a pass
+already proves the file is either unneeded or correct. `github_auth.py`, `resolve.py`, and
+`build.py` are unchanged. `BR-CLI-007` and `BR-CLI-023` rewritten; full rationale in
+`docs/adr/067-doctor-and-setup-timer-probe-github-reachability-before-trusting-it.md`.
+
 ## 2026-08-05 — `ADR-066`: `build --push` assigns the declared environment by default, `W-021` resolved
 
 Brian resolved `W-021` (raised and deferred 2026-08-04): since `setup-timer`'s generated

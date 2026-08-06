@@ -1100,6 +1100,7 @@ def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
     monkeypatch.setattr(provision, "find_executable", lambda name: tmp_path / name)
     monkeypatch.setattr(provision, "MANIFEST_ROOT", tmp_path / "srv" / "cairn")
     monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("test"))
+    monkeypatch.setattr(provision.resolve, "resolve_manifest", lambda manifest: None)
     manifest_path = tmp_path / "srv" / "cairn" / "acme" / "cairn_test.toml"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.touch()
