@@ -375,6 +375,12 @@ def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
         f"{unit}.timer is enabled but NOT started — run the first build by hand first, "
         f"then `systemctl start {unit}.timer`"
     )
+    token_file = github_token_env_file(client_from_manifest(options.manifest))
+    runner.report.warnings.append(
+        f"if this manifest references a private github.com app, create {token_file} "
+        f"(mode 600, root-owned, one line: CAIRN_GITHUB_TOKEN=<token>) — cairn never "
+        f"writes it; the build runs without it otherwise"
+    )
 
 
 def build_script(options: SetupOptions, cairn_build: Path) -> str:
@@ -401,6 +407,19 @@ MANIFEST={shlex.quote(str(options.manifest))}
 """
 
 
+def github_token_env_file(client: str) -> Path:
+    """Where an operator may place *client*'s GitHub PAT, if any of its manifest's apps are
+    private (`BR-BUILD-016`, `ADR-065`).
+
+    Never written by cairn — only referenced (`ADR-017`: cairn is secret-agnostic, it only
+    references and wires secrets the operator provisions). Scoped per client, not host-wide:
+    a build host serving more than one client (`BR-CLI-022`) cannot assume one client's token
+    reaches another client's private repos, so each gets its own file, referenced only by
+    that client's own generated unit.
+    """
+    return setup_runner.CERT_DIR / client / "github-token.env"
+
+
 def build_service(options: SetupOptions, script: Path) -> str:
     """The build unit.
 
@@ -411,7 +430,14 @@ def build_service(options: SetupOptions, script: Path) -> str:
     account can take with it (`ADR-062`'s whole point) — a unit whose `WorkingDirectory`
     still pointed there would fail to start once that directory is gone, even though the
     script itself had already been relocated to safety.
+
+    ``EnvironmentFile=-`` supplies this client's GitHub PAT, if any of its apps are private
+    (`ADR-065`) — the leading ``-`` makes it optional, so a client with no private apps needs
+    no file there and the unit still starts. `github_auth.py` itself is unchanged: it still
+    reads one `CAIRN_GITHUB_TOKEN` from the process environment; this is the only thing that
+    makes *which* value a per-client concern rather than a host-wide one.
     """
+    token_file = github_token_env_file(client_from_manifest(options.manifest))
     return f"""\
 [Unit]
 Description=cairn-build ({options.environment}) — build if the manifest's refs have moved
@@ -422,6 +448,7 @@ Requires=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory={script.parent}
+EnvironmentFile=-{token_file}
 ExecStart={script}
 # A build that cannot finish in 90 minutes is stuck, not slow.
 TimeoutStartSec=5400

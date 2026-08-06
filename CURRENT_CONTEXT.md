@@ -44,10 +44,12 @@ Brian then caught that `ADR-062`'s fix was incomplete: the rendered `.service`'s
 corrected both to derive from the script's own (now durable) location, and dropped
 `--workdir` from `cairn-build setup-timer` entirely once nothing in the stage read it —
 `cairn-adopt setup-timer` confirmed unaffected (it never set `WorkingDirectory=` at all).
-Separately raised and still open: how an unattended build timer authenticates against a
-private `github.com` app — `CAIRN_GITHUB_TOKEN` (`BR-BUILD-016`) is read purely from the
-process environment, which a systemd unit never inherits from an operator's shell; no
-mechanism yet exists to supply it to the generated `.service`. Tracked as `OQ-002`.
+Brian then raised, and resolved overnight, `OQ-002`: how an unattended build timer
+authenticates against a private `github.com` app, expanded once he realized a build host can
+serve more than one client and a single shared `CAIRN_GITHUB_TOKEN` can't be assumed to cover
+every client's private repos. `ADR-065`: `github_auth.py` stays unchanged — the generated
+`.service` now carries a per-client, optional `EnvironmentFile=-/etc/cairn/<client>/
+github-token.env`, never written by cairn, referenced only by that client's own unit.
 
 ## Read First
 

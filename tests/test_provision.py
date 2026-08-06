@@ -660,26 +660,77 @@ def test_a_timer_is_enabled_but_never_started(sandbox, stage, monkeypatch):
     assert any("NOT started" in note for note in runner.report.warnings)
 
 
-def test_the_build_service_sets_a_working_directory_from_the_script_not_workdir():
+def test_stage_timers_build_names_the_expected_token_file(sandbox, monkeypatch):
+    """The operator isn't left to guess the PAT file's path or permissions — cairn reports
+    what it assumed, same as every other host-specific value (`BR-BUILD-016`, `ADR-065`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+    runner = Recorder()
+
+    provision.stage_timers_build(
+        runner,
+        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+    )
+
+    token_file = str(provision.github_token_env_file("acme"))
+    assert any(token_file in note and "600" in note for note in runner.report.warnings)
+
+
+def test_the_build_service_sets_a_working_directory_from_the_script_not_workdir(sandbox):
     """`WorkingDirectory` must track *script*'s own directory — the manifest's durable
     `/srv/cairn/<client>/` home — never `options.workdir`, which a retired operator account
     can take with it (`ADR-062`, `ADR-064`)."""
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+
     rendered = provision.build_service(
-        _options(workdir=Path("/home/alice")), Path("/srv/cairn/acme/build.sh")
+        _options(
+            workdir=Path("/home/alice"),
+            manifest=manifest,
+            image_name="erpnext-v16",
+            environment="test",
+        ),
+        manifest.parent / "build.sh",
     )
 
-    assert "WorkingDirectory=/srv/cairn/acme" in rendered
+    assert f"WorkingDirectory={manifest.parent}" in rendered
     assert "/home/alice" not in rendered
 
 
-def test_the_build_service_does_not_restart_on_failure():
+def test_the_build_service_does_not_restart_on_failure(sandbox):
     """A restart loop against a failing build turns a bad build into a busy one."""
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+
     rendered = provision.build_service(
-        _options(workdir=Path("/opt/cairn")), Path("/opt/cairn/build.sh")
+        _options(manifest=manifest, image_name="erpnext-v16", environment="test"),
+        manifest.parent / "build.sh",
     )
 
     assert "Type=oneshot" in rendered
     assert "Restart=" not in rendered
+
+
+def test_the_build_service_references_this_clients_own_token_file(sandbox):
+    """`EnvironmentFile=-` must name *this* client's PAT file, not a host-wide one — a build
+    host serving several clients cannot assume one client's token reaches another's private
+    repos (`BR-BUILD-016`, `ADR-065`)."""
+    acme = _manifest_at(provision.MANIFEST_ROOT, "acme")
+    globex = _manifest_at(provision.MANIFEST_ROOT, "globex")
+
+    acme_rendered = provision.build_service(
+        _options(manifest=acme, image_name="erpnext-v16", environment="test"),
+        acme.parent / "build.sh",
+    )
+    globex_rendered = provision.build_service(
+        _options(manifest=globex, image_name="erpnext-v16", environment="test"),
+        globex.parent / "build.sh",
+    )
+
+    assert "EnvironmentFile=-" in acme_rendered
+    acme_token_file = provision.github_token_env_file("acme")
+    globex_token_file = provision.github_token_env_file("globex")
+    assert str(acme_token_file) in acme_rendered
+    assert str(globex_token_file) not in acme_rendered
+    assert str(globex_token_file) in globex_rendered
 
 
 def test_the_build_timer_measures_from_the_end_of_the_last_run(sandbox):

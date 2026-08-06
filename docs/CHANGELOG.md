@@ -9,6 +9,24 @@ code changes live in git history.
 
 ---
 
+## 2026-08-05 — `ADR-065`: per-client `EnvironmentFile=` supplies the build timer's GitHub PAT, `OQ-002` resolved
+
+Brian raised this in two parts. First: the unattended build timer had no path to a GitHub
+PAT at all — `github_auth.github_token()` reads `CAIRN_GITHUB_TOKEN` purely from the process
+environment, which a systemd unit never inherits from an operator's shell, and nothing in
+`provision.build_service()` set `Environment=`/`EnvironmentFile=`. Then, overnight: a single
+shared token wouldn't have been the right fix anyway, since a build host can serve more than
+one client (`BR-CLI-022`) and different clients' private repos aren't reachable by the same
+PAT — the "concrete need" `BR-BUILD-016` point 4 had deferred multi-token support against.
+
+Two designs were weighed: redesigning `github_auth.py` around a per-client env-var naming
+scheme (rejected — real code churn, and client-name sanitization becomes cairn's problem),
+versus a per-client `EnvironmentFile=` on the generated systemd unit, leaving `github_auth.py`
+untouched (chosen). `provision.build_service()` now emits
+`EnvironmentFile=-/etc/cairn/<client>/github-token.env` — optional, one per client, never
+written by cairn (`ADR-017`). `BR-BUILD-016` point 4 and `BR-CLI-023` updated. Full rationale
+in `docs/adr/065-per-client-github-token-via-environmentfile-not-a-shared-token.md`.
+
 ## 2026-08-05 — `ADR-064`: build timer's `WorkingDirectory=` and script `cd` corrected; `--workdir` dropped from `cairn-build setup-timer`
 
 Brian caught that `ADR-062`'s fix was incomplete: the rendered `.service`'s

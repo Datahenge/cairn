@@ -331,7 +331,7 @@ NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report manifests found under
 never for selection — `BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-009,
 BR-DEPLOY-021, ADR-043, ADR-047, ADR-052)*
 
-**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-051`, `ADR-052`, `ADR-062`, `ADR-064`)* — Both CLIs carry
+**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-051`, `ADR-052`, `ADR-062`, `ADR-064`, `ADR-065`)* — Both CLIs carry
 a `setup-timer` subcommand, separate from `setup`, installing only the build/reconcile
 systemd timer — enabled, not started, unchanged in substance from `ADR-046`'s
 `setup --only timers`. Split out for discoverability in `--help`, where a first-time reader
@@ -358,8 +358,16 @@ not the operator's `cwd` at the moment `setup-timer` ran — `cairn-build setup-
 `--workdir` at all, since nothing in the stage reads one. `cairn-build`'s script runs
 `build --push --assign-tag --yes`, then `prune --keep 1 --yes` — disk cleanup rides the same
 script rather than a separate timer (`ADR-051`), and the retag step rides `build`'s own
-`--assign-tag` flag (`BR-CLI-002a`) rather than a second command. *(ADR-046, ADR-047,
-ADR-051, ADR-052, ADR-062, ADR-064)*
+`--assign-tag` flag (`BR-CLI-002a`) rather than a second command.
+
+**The generated `.service` carries `EnvironmentFile=-/etc/cairn/<client>/github-token.env`**
+(`ADR-065`) — optional (the leading `-`; a client with no private apps needs no file there at
+all), never written by cairn (`BR-BUILD-016`: cairn stores no secrets), and scoped to this
+one client: a build host serving several clients (`BR-CLI-022`) gets one such file per client,
+each referenced only by that client's own generated unit, never a single shared token
+assumed to work for every client. Populating it (`CAIRN_GITHUB_TOKEN=<token>`, mode `0600`,
+root-owned) is the operator's job, same as installing the unit itself.
+*(ADR-046, ADR-047, ADR-051, ADR-052, ADR-062, ADR-064, ADR-065)*
 
 ## E. Shared conventions (all three CLIs)
 

@@ -199,35 +199,37 @@ ADR-059)*
 ## Private `github.com` apps
 
 **`BR-BUILD-016`** *(one token, `github.com` only)* — cairn MAY authenticate a manifest app's
-`github.com` URL with a single, operator-provided token, read from `$CAIRN_GITHUB_TOKEN`. Not a
-`BUILD_CONFIG_KEYS` entry: it has no `builder.toml` counterpart, by design — that file is
-deliberately shared and group-writable (`BR-DEPLOY-022`), the wrong place for a secret, and
-rule 4's "cairn stores no secrets" applies here exactly as it does to every other credential
-(`BR-DEPLOY-011`, `ADR-017`).
+`github.com` URL with an operator-provided token, read from `$CAIRN_GITHUB_TOKEN`. Not a
+`BUILD_CONFIG_KEYS` entry — no `builder.toml` counterpart, by design: that file is shared and
+group-writable (`BR-DEPLOY-022`), the wrong place for a secret; rule 4's "cairn stores no
+secrets" applies here as to every other credential (`BR-DEPLOY-011`, `ADR-017`).
 
 Where a token is configured, cairn MUST use it for both places it talks to a `github.com`
-remote for an app: ref resolution (`git ls-remote`, `BR-BUILD-005`) and the `apps.json` build
-secret (`BR-BUILD-006`). Four things are load-bearing:
+remote: ref resolution (`git ls-remote`, `BR-BUILD-005`) and the `apps.json` build secret
+(`BR-BUILD-006`). Five things are load-bearing:
 
 1. **Scoped to `github.com` exactly.** Injected only when a URL's host is exactly `github.com`
-   over `http`/`https` — never any other host, and never an SSH form (`git@github.com:...`,
-   `ssh://…`), which needs a live handshake a Basic-auth credential cannot provide. Sending the
-   token to an unrelated host would leak it there.
+   over `http`/`https` — never any other host, never an SSH form (`git@github.com:...`,
+   `ssh://…`), which needs a live handshake, not Basic-auth. Sending the token to an
+   unrelated host would leak it there.
 2. **The manifest never carries it.** `cairn.toml` app URLs stay plain and portable
-   (`BR-BUILD-001`); the token is layered on only at the point of the actual git invocation —
-   in memory for `ls-remote`, inside the already-ephemeral, owner-only `apps.json` secret file
-   for the build — never written back into anything that persists.
-3. **Provenance stays plain.** Resolved-ref URLs recorded onto the image (`BR-BUILD-011`),
-   `--dry-run` output (`BR-BUILD-012`), and every error message MUST show the untouched URL.
-   Where the underlying tool's own output might otherwise quote a credentialed URL back (git's
-   own error text on a failed `ls-remote`), cairn MUST redact the token from it before the
-   message is raised.
-4. **One token.** A single token covers every private `github.com` app for this phase; per-app
-   or per-org credentials are an explicit non-goal, deferred until a concrete need arises.
+   (`BR-BUILD-001`); the token is layered on only at the git invocation itself — in memory
+   for `ls-remote`, inside the ephemeral, owner-only `apps.json` secret file for the build —
+   never written back into anything persistent.
+3. **Provenance stays plain.** Resolved-ref URLs on the image (`BR-BUILD-011`), `--dry-run`
+   output (`BR-BUILD-012`), and every error message MUST show the untouched URL. Where a
+   tool's own output might quote a credentialed URL back (e.g. git's error text on a failed
+   `ls-remote`), cairn MUST redact the token first.
+4. **One token per build, not one token per host.** One `$CAIRN_GITHUB_TOKEN` covers every
+   private app in a single build; per-app/per-org credentials stay a non-goal. A build host
+   MAY serve several clients (`BR-CLI-022`) whose tokens MUST NOT be assumed interchangeable;
+   `github_auth.py` is unchanged — *which* value it sees per client is external
+   (`BR-CLI-023`'s `EnvironmentFile=`, or the operator's shell), never multiplexed in code
+   (`ADR-065`).
 5. **A missing token is named as a candidate.** When `ls-remote` fails against a `github.com`
-   URL and no token is configured, cairn's error MUST point at `$CAIRN_GITHUB_TOKEN` as a
-   possible fix, in addition to git's own failure line — git's own wording (e.g. "could not
-   read Username", "terminal prompts disabled") names the symptom, not the missing token.
+   URL with no token configured, cairn's error MUST point at `$CAIRN_GITHUB_TOKEN` as a
+   possible fix, alongside git's own failure line — git's own wording (e.g. "could not read
+   Username") names the symptom, not the missing token.
 
 Frappe itself is out of scope: it is supplied via the `FRAPPE_PATH` build-arg
 (`BR-BUILD-004`), which is permanently readable via image history (`BR-BUILD-006`'s own

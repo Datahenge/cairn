@@ -84,6 +84,7 @@ unarchived.
 | [ADR-052](052-manifest-environment-1-1-proof-not-assertion-promotion.md) | `authoritative` | Manifest:environment is 1:1; promotion is proof, not assertion |
 | [ADR-059](059-cairn-owns-its-docker-build-recipe-frappe-docker-vendoring-retired.md) | `authoritative` | cairn owns its Docker build recipe; frappe_docker vendoring is retired |
 | [ADR-061](061-cairn-build-owned-marker-tag-untagged-only-pruning-retired.md) | `authoritative` | A `cairn-build-owned` marker tag, stripped on push, replaces untagged-only pruning |
+| [ADR-065](065-per-client-github-token-via-environmentfile-not-a-shared-token.md) | `authoritative` | Build timer authenticates private `github.com` apps via a per-client `EnvironmentFile`, not a single shared token |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../../decisions/](../../decisions/)
 instead, as lightweight decisions.
