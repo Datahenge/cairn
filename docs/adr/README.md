@@ -86,6 +86,7 @@ unarchived.
 | [ADR-061](061-cairn-build-owned-marker-tag-untagged-only-pruning-retired.md) | `authoritative` | A `cairn-build-owned` marker tag, stripped on push, replaces untagged-only pruning |
 | [ADR-065](065-per-client-github-token-via-environmentfile-not-a-shared-token.md) | `authoritative` | Build timer authenticates private `github.com` apps via a per-client `EnvironmentFile`, not a single shared token |
 | [ADR-067](067-doctor-and-setup-timer-probe-github-reachability-before-trusting-it.md) | `authoritative` | `doctor`/`setup-timer` probe `github.com` reachability live, instead of only naming the token file as a possibility |
+| [ADR-068](068-cairn-owns-initial-provisioning-not-just-reconcile.md) | `authoritative` | Cairn's scope grows to include provisioning a new environment's Compose stack, not just reconciling an existing one; `bench new-site`/DB creation stays the operator's |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../decisions/](../decisions/)
 instead, as lightweight decisions.

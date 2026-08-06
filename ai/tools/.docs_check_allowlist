@@ -32,6 +32,9 @@ docs/requirements/06-cli.md = 4000
 # the doc's own A-E sectioning judged to stop being sufficient and an actual split (most
 # likely: section E, shared conventions, into its own file) becomes the right call — this
 # ceiling is set to trip a fresh review before that point, not at it.
+docs/technical/05-implementation-index.md = 2300
+# ^ bumped 2026-08-06 for the "Owned Docker recipe" row's recipe-trim + ADR-068 note — an
+# inventory of the whole project's implementation state grows with the project, not sprawl.
 docs/technical/ABOUT_GHCR.md = 3500
 docs/technical/high-level-motivations-and-workflows.md = 2000
 docs/archive/CHANGELOG-2026-08-04.md = 3500

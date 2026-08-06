@@ -6,12 +6,12 @@ purpose: BR-DEPLOY requirements — deploying images to environments and keeping
 
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-05_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-06_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
 `ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
-`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`.
+`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`, `ADR-068`.
 
 ---
 
@@ -100,8 +100,10 @@ deployed from it. *(ADR-022, ADR-061)*
 
 ## Scope
 
-**`BR-DEPLOY-007`** — cairn deploys to **existing** environments. Initial site/volume/
-database creation (`bench new-site`) is the operator's responsibility. *(ADR-022)*
+**`BR-DEPLOY-007`** — cairn deploys to existing environments, and MAY provision a new one's
+Compose stack from its own owned recipe (`compose.yaml`/`overrides/*.yaml`, `BR-VEND-001`).
+Either way, initial site/volume/database creation (`bench new-site`) stays the operator's
+responsibility. *(ADR-022, ADR-068)*
 
 **`BR-DEPLOY-008`** — cairn's reconcile is a purpose-built thin orchestrator over
 `docker`/`docker compose`, the registry manifest API, and `systemd`; it does NOT adopt

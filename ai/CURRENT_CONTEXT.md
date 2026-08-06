@@ -60,6 +60,21 @@ canonical Scribe Coding migration left in place. Same day, tightened the Scribe 
 (when a change earns a Decision/ADR file vs. a `docs/CHANGELOG.md` line only; plans archive the
 same session their phase completes) and pruned four process-only decision files that predated
 the new rule — see `docs/CHANGELOG.md`.
+Also 2026-08-06: `src/cairn/recipe/frappe_docker/` — still the untouched byte-for-byte copy
+`ADR-059` bootstrapped it as — trimmed to only what cairn's own code reads or now commits to
+owning: the existing build inputs plus `compose.yaml`/`overrides/*.yaml`/`example.env`/`LICENSE`.
+Everything upstream-only (docs site, test suite, CI workflows, contributor tooling, `pwd.yml`,
+`docker-bake.hcl`, three unused alternate Containerfiles) deleted. New
+`src/cairn/recipe/ATTRIBUTIONS_FRAPPE_DOCKER.md` (`BR-VEND-005`) credits `frappe/frappe_docker`.
+While scoping the trim, `cairn-adopt` turned out to never read cairn's own compose copy at all
+— it inspects whatever's already on the target host — which raised whether to drop that
+scaffolding too. Brian's answer, recorded as `ADR-068`: no — cairn replacing `frappe_docker`
+means cairn's scope now includes *provisioning* a new environment with its own owned Compose
+stack, not just reconciling an existing one, and `cairn-adopt` should eventually gain a
+take-ownership path for a pre-existing hand-built deployment. `BR-DEPLOY-007` amended to match;
+the `bench new-site`/database-creation clause and the `DATA` boundary (`ADR-022`) are explicitly
+unchanged. Neither capability is built — `W-032` (provisioning) and `W-033` (take-ownership)
+queued as design-first Open Work.
 
 ## Read First
 

@@ -7,12 +7,12 @@ purpose: BR-VEND requirements — cairn's owned Docker build recipe.
 # BR-VEND — Owned Docker Build Recipe Requirements
 
 _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated:
-2026-08-05_
+2026-08-06_
 
 Requirements for cairn's Docker build recipe (`Containerfile`) and compose configuration.
 Cairn owns this recipe directly — it is not vendored, pinned, or synced from upstream
 `frappe_docker` (`ADR-059`, which supersedes `ADR-001` and `ADR-007`). Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-004`, `ADR-059`. Scope: `src/cairn/recipe/frappe_docker/`
+`/CLAUDE.md`. Decisions cited: `ADR-004`, `ADR-059`, `ADR-068`. Scope: `src/cairn/recipe/frappe_docker/`
 is the single owned recipe tree.
 
 ---
@@ -38,6 +38,15 @@ an ordinary sanity check on cairn's own source, not a precondition tied to any e
 nested `.git` directory. This is a hygiene rule carried from how the tree was originally
 bootstrapped (a one-time copy from upstream `frappe_docker`, `ADR-059`), not an ongoing sync
 constraint — the recipe's own history lives in cairn's own git history from that point forward.
+
+**`BR-VEND-005` — Attribution retained.** For as long as any part of `src/cairn/recipe/`
+derives from `frappe/frappe_docker`, cairn MUST retain `src/cairn/recipe/
+ATTRIBUTIONS_FRAPPE_DOCKER.md` and `frappe_docker/LICENSE` alongside it, and MUST keep the
+attribution file's description of what was kept and why current as the tree changes. The
+byte-for-byte bootstrap copy (`ADR-059`) was trimmed to only the files cairn actually builds or
+provisions with 2026-08-06 — everything else upstream ships (its docs site, test suite, CI
+workflows, contributor tooling, and alternate build strategies) was dropped as not part of
+cairn's own recipe.
 
 ---
 

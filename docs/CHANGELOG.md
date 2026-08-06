@@ -9,6 +9,36 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (recipe tree trimmed to load-bearing files; `ADR-068` grows cairn's scope to initial provisioning)
+
+Two related changes, same session, both prompted by Brian: make `src/cairn/recipe/frappe_docker/`
+actually cairn's own rather than the untouched byte-for-byte bootstrap copy `ADR-059` left
+behind.
+
+- **Recipe trim + attribution (`BR-VEND-005`).** Deleted everything under
+  `src/cairn/recipe/frappe_docker/` that no cairn code path reads and that isn't part of the
+  compose scaffolding cairn now commits to owning (see next item): upstream's own docs site,
+  test suite, CI workflows, contributor/devcontainer tooling, community-health files, `pwd.yml`
+  (the unparameterized quick-start compose shape `ADR-021`'s fork-pressure incident already
+  flagged as the wrong one), `docker-bake.hcl` (redundant with cairn's own `build.py` build
+  orchestration), and the three alternate Containerfiles (`images/bench`, `images/layered`,
+  `images/production`) `BR-BUILD-009` never builds. Kept: the build inputs
+  `assert_build_inputs()` already required, plus `compose.yaml`/`overrides/*.yaml`/`example.env`
+  (see below), and `LICENSE`. New `src/cairn/recipe/ATTRIBUTIONS_FRAPPE_DOCKER.md` credits
+  `frappe/frappe_docker` and links to the preserved `LICENSE`; `BR-VEND-005` added to
+  `docs/requirements/01-vendoring.md` requiring both be kept current.
+- **`ADR-068`: cairn's scope grows to initial provisioning, not just reconcile.** Trimming the
+  compose scaffolding raised the question of whether `compose.yaml`/`overrides/*.yaml` were dead
+  weight too, since `cairn-adopt` never reads cairn's own copy — it inspects whatever's already
+  on the target host. Brian's answer: no, because cairn replacing `frappe_docker` means owning
+  the whole lifecycle, not just build+reconcile-against-whatever-exists. Cairn's owned Compose
+  stack is now the intended way to provision a *new* environment, and `cairn-adopt` should
+  eventually be able to take over ownership of a pre-existing hand-built deployment rather than
+  reading around it forever. Neither is built yet — both queued as `W-032`/`W-033` in
+  `docs/open/OPEN_WORK.md`, design work only. The `DATA` boundary (`ADR-022`) and
+  `BR-DEPLOY-007`'s `bench new-site`/database-creation clause are explicitly unchanged; only the
+  "existing environments only" framing around them was amended.
+
 ## 2026-08-06 (`.docs_check_allowlist` relocated into `ai/tools/`)
 
 Brian pointed out the allowlist lived at the repo root while everything that reads or writes
