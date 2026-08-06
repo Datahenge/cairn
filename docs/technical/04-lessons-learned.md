@@ -12,7 +12,7 @@ repeating. Distinct from the neighbouring documents by *kind*, not topic:
 | Document | Answers |
 | --- | --- |
 | `docs/requirements/` | What the system must do (`BR-<AREA>-NNN`) |
-| `docs/adr/`, `decisions/` | What we chose, and why (`ADR-NNN`) |
+| `docs/adr/`, `docs/decisions/` | What we chose, and why (`ADR-NNN`) |
 | `docs/discussions/discussion-log.md` | How the design conversation unfolded, chronologically |
 | **this set** | What turned out to be **true** about the tools we build on |
 

@@ -26,7 +26,7 @@ deliberate deviation from the canonical Scribe Coding template, documented in
 ## If A Discussion Leads Somewhere
 
 If a discussion produces a consequential decision, record the decision in [../adr/](../adr/) or
-[../../decisions/](../../decisions/) and link back to the discussion for rationale. Not every
+[../decisions/](../decisions/) and link back to the discussion for rationale. Not every
 discussion needs to "graduate" — most can just stay here.
 
 ## When A Discussion Is Superseded

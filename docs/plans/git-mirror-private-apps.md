@@ -8,7 +8,7 @@ purpose: Plan for a local git mirror solving private-app reachability, blocked o
 
 > **Status: planned, not yet implemented.** Written 2026-07-27, downstream of `BR-BUILD-016`
 > (shipped) and `ADR-044` (full record in `docs/adr/044-local-git-mirror-for-private-app-reachability-not-a-revival-of.md`,
-> tracked live in `open/OPEN_DECISIONS.md`, deferred pending exactly this plan).
+> tracked live in `docs/open/OPEN_DECISIONS.md`, deferred pending exactly this plan).
 
 ## Context
 
@@ -129,10 +129,10 @@ circular import risk, same precedent already in the codebase.
 - `docs/requirements/03-deploy.md`: `stage_mirror` under the `BR-DEPLOY-021` seven-point contract,
   same as `stage_registry`.
 - `docs/adr/044-local-git-mirror-for-private-app-reachability-not-a-revival-of.md` and
-  `open/OPEN_DECISIONS.md`: revise `ADR-044` — the "deferred" stance was against an unscoped
+  `docs/open/OPEN_DECISIONS.md`: revise `ADR-044` — the "deferred" stance was against an unscoped
   idea; record that it's now being acted on as `BR-BUILD-017`, with today's four scoping decisions
   (git://, opt-in, per-build refresh, explicit field). Whether it fully moves to
-  `docs/adr/` `authoritative` status (dropping the `open/OPEN_DECISIONS.md` row) or stays open
+  `docs/adr/` `authoritative` status (dropping the `docs/open/OPEN_DECISIONS.md` row) or stays open
   with updated status is a call to make once the code lands and the `--network=host` assumption
   is confirmed.
 - `userdocs/reference/builder-config.md`: extend the "Private `github.com` apps" section (added

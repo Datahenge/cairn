@@ -24,10 +24,10 @@ thin audience-specific summary.
 | Requirements | [../requirements/](../requirements/) | Implementation and validation source |
 | Technical | [technical/](.) | Implementation/configuration/operations details |
 | ADRs | [adr/](../adr/) | Consequential decisions and rationale |
-| Decisions | [../../decisions/](../../decisions/) | Lighter-weight dated decisions |
+| Decisions | [../decisions/](../decisions/) | Lighter-weight dated decisions |
 | Discussions | [discussions/](../discussions/) | Informal write-ups; not authoritative, not required reading |
-| Open | [../../open/](../../open/) | Live queues/trackers: open questions, decisions, work |
-| Scratch | [../../scratch/](../../scratch/) | Temporary notes; promote or delete, never authoritative |
+| Open | [../open/](../open/) | Live queues/trackers: open questions, decisions, work |
+| Scratch | [../scratch/](../scratch/) | Temporary notes; promote or delete, never authoritative |
 | Archive | [archive/](../archive/) | Historical only |
 | Plans | [../plans/](../plans/) | Narrative implementation plans, downstream of requirements (cairn-specific; see Deviations) |
 | Published site | [../../userdocs/](../../userdocs/) | End-user/operator docs, published via mkdocs-material (`ADR-045`) — the only tree a user ever sees |
@@ -41,11 +41,11 @@ thin audience-specific summary.
 | Per-area requirements | [../requirements/](../requirements/) (`01-vendoring.md` … `08-registry.md`) |
 | Documentation revision history (requirements + decisions + discussion) | [../CHANGELOG.md](../CHANGELOG.md) |
 | Software release history | [../../CHANGELOG.md](../../CHANGELOG.md) |
-| Open discovery/validation questions | [../../open/OPEN_QUESTIONS.md](../../open/OPEN_QUESTIONS.md) |
-| Pending/deferred decisions | [../../open/OPEN_DECISIONS.md](../../open/OPEN_DECISIONS.md) |
-| Outstanding implementation/cleanup work | [../../open/OPEN_WORK.md](../../open/OPEN_WORK.md) |
+| Open discovery/validation questions | [../open/OPEN_QUESTIONS.md](../open/OPEN_QUESTIONS.md) |
+| Pending/deferred decisions | [../open/OPEN_DECISIONS.md](../open/OPEN_DECISIONS.md) |
+| Outstanding implementation/cleanup work | [../open/OPEN_WORK.md](../open/OPEN_WORK.md) |
 | Consequential architecture/process decisions | [adr/](../adr/) |
-| Lightweight dated decisions | [../../decisions/](../../decisions/) |
+| Lightweight dated decisions | [../decisions/](../decisions/) |
 | Coding standards, naming, lint/format tooling, design patterns | [00-coding-standards.md](00-coding-standards.md) |
 | Documentation conventions and Markdown headers | [01-documentation-conventions.md](01-documentation-conventions.md) |
 | Dorwin Analysis / Hardin Version compression technique | [02-dorwin-analysis-and-hardin-version.md](02-dorwin-analysis-and-hardin-version.md) |
@@ -60,15 +60,15 @@ thin audience-specific summary.
 
 ### General Project Work
 
-1. `CURRENT_CONTEXT.md`
+1. `ai/CURRENT_CONTEXT.md`
 2. [../00-project-scope.md](../00-project-scope.md), [../requirements/00-overview.md](../requirements/00-overview.md)
 3. Relevant requirements, technical, or ADR documents
 
 ### Implementation Status Or Code Navigation
 
-1. `CURRENT_CONTEXT.md`, when not already loaded
+1. `ai/CURRENT_CONTEXT.md`, when not already loaded
 2. [technical/README.md](README.md)
-3. [05-implementation-index.md](05-implementation-index.md) and [../../open/OPEN_WORK.md](../../open/OPEN_WORK.md)
+3. [05-implementation-index.md](05-implementation-index.md) and [../open/OPEN_WORK.md](../open/OPEN_WORK.md)
 4. Relevant owner documents named by the implementation index
 5. Named code locations and targeted searches
 
@@ -83,7 +83,7 @@ thin audience-specific summary.
 | Change type | Update |
 |---|---|
 | Requirement or acceptance criterion | [../CHANGELOG.md](../CHANGELOG.md) |
-| Important implementation or process decision | [../../decisions/](../../decisions/) or an ADR |
+| Important implementation or process decision | [../decisions/](../decisions/) or an ADR |
 | Documentation ownership or reading order | This file |
 | Current implementation state, code locations, validation commands | [05-implementation-index.md](05-implementation-index.md) |
 | Software release | [../../CHANGELOG.md](../../CHANGELOG.md) |
@@ -102,7 +102,7 @@ needed.
 ## Superseded ADRs
 
 When an ADR is fully retired, move its body to [archive/](../archive/) and leave a stub at the
-original [adr/](../adr/) or [decisions/](../../decisions/) path pointing to the current
+original [adr/](../adr/) or [decisions/](../decisions/) path pointing to the current
 authority document and the archive copy, so existing citations keep resolving. See
 [adr/README.md](../adr/README.md).
 
@@ -125,7 +125,16 @@ match:
   one file per dated entry as the canonical directory shape implies. Many `ADR-*` entries cite
   it by date rather than by anchor, and splitting would multiply files without adding
   navigability for a log that's read chronologically anyway.
-- **`../plans/` is kept alongside `open/OPEN_WORK.md`.** Canonical's backlog is a single table;
+- **`../plans/` is kept alongside `../open/OPEN_WORK.md`.** Canonical's backlog is a single table;
   cairn's `docs/plans/*.md` carry richer narrative per implementation phase that a table would
-  flatten. `open/OPEN_WORK.md` tracks the live, itemized backlog; `docs/plans/` holds the
+  flatten. `docs/open/OPEN_WORK.md` tracks the live, itemized backlog; `docs/plans/` holds the
   narrative record of how a phase was approached and what was learned along the way.
+- **`decisions/`, `open/`, and `scratch/` were nested under `docs/`, and `CURRENT_CONTEXT.md`
+  and `tools/` moved into a new root-level `ai/` directory** (2026-08-06), rather than staying
+  siblings of `docs/` at the repo root the way canonical's scaffold has them. Rationale: every
+  other durable-documentation tree already lived under `docs/`, so `decisions/`/`open/`/
+  `scratch/` sitting outside it was the scaffold's own inconsistency, not a deliberate split;
+  nesting them removes that anomaly without changing any tree's role. `ai/` groups the surface
+  meant for an AI agent's own use (the session router and the docs-hygiene scripts) separately
+  from `docs/`, which is the project's documentation regardless of who reads it. See
+  `docs/decisions/068-nest-decisions-open-scratch-under-docs-add-ai-directory.md`.

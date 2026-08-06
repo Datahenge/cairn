@@ -11,7 +11,7 @@ purpose: ADR-066 — cairn-build build --push now assigns the manifest's declare
 
 ## Raised
 
-`W-021` (`open/OPEN_WORK.md`): `--assign-tag` on `build --push` was opt-in, but
+`W-021` (`docs/open/OPEN_WORK.md`): `--assign-tag` on `build --push` was opt-in, but
 `setup-timer`'s generated script (`ADR-052`) already passes it unconditionally on every poll
 (`build --manifest "$MANIFEST" --push --assign-tag --yes`). Brian's point: since the
 automated path assigns it anyway, opt-in on the manual path only buys the interval between

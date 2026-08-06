@@ -5,8 +5,8 @@ mechanically, so nobody has to hand-reason through which entries to move, hand-w
 
 Run from the project root, or point --root elsewhere:
 
-    python tools/changelog_rotate.py --dry-run   # report what would move, change nothing
-    python tools/changelog_rotate.py             # do it
+    python ai/tools/changelog_rotate.py --dry-run   # report what would move, change nothing
+    python ai/tools/changelog_rotate.py             # do it
 
 Structural assumption this script depends on (true of every entry in the file today): each
 dated entry is a block starting with a `## <YYYY-MM-DD> ...` header, and consecutive entries

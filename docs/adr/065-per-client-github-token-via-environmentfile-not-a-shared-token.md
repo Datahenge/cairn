@@ -87,6 +87,6 @@ fix lives entirely outside `github_auth.py`.
   corrected model.
 - `github_auth.py`, `resolve.py`, `build.py` — **no changes**. This is the whole point: the
   fix is systemd wiring, not a token-resolution redesign.
-- `open/OPEN_QUESTIONS.md`'s `OQ-002` resolved.
+- `docs/open/OPEN_QUESTIONS.md`'s `OQ-002` resolved.
 
 *(BR-BUILD-016, BR-CLI-022, BR-CLI-023, ADR-017, ADR-047, ADR-062)*

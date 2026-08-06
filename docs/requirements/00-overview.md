@@ -79,10 +79,10 @@ added below as they are drafted.
 ## Related documents
 
 - `/CLAUDE.md` — Scribe Coding ground-rules contract (binds the workflow).
-- `../../CURRENT_CONTEXT.md` — session router; read first in a fresh session.
+- `../../ai/CURRENT_CONTEXT.md` — session router; read first in a fresh session.
 - `../technical/25-documentation-authority.md` — which document owns which topic, and reading order.
-- `../adr/`, `../../decisions/` — decision register (`ADR-NNN`), split by consequential vs. lightweight.
-- `../../open/` — live queues: open questions, pending decisions, outstanding work.
+- `../adr/`, `../decisions/` — decision register (`ADR-NNN`), split by consequential vs. lightweight.
+- `../open/` — live queues: open questions, pending decisions, outstanding work.
 - `../discussions/discussion-log.md` — narrative design record.
 - `../technical/04-lessons-learned.md` — durable findings about the tools cairn builds on.
 - `../CHANGELOG.md` — living-documentation revision history.

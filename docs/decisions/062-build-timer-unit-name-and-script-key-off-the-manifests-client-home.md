@@ -62,7 +62,7 @@ not reinvented.
 - `BR-CLI-023` (`docs/requirements/06-cli.md`) is rewritten to describe the corrected
   naming and location rule.
 - No migration path is needed: `setup-timer`'s build script has not yet been run against a
-  real host (`open/OPEN_WORK.md`'s `W-013`) — this corrects the rule before its first live
+  real host (`docs/open/OPEN_WORK.md`'s `W-013`) — this corrects the rule before its first live
   use, not after.
 
 **Amended same day (`ADR-064`):** this decision's script-location fix was incomplete — the

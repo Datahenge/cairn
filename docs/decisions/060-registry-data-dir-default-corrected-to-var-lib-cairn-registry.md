@@ -35,5 +35,5 @@ actually means — not bulk runtime data. `ADR-053`'s split between "low-churn s
 assigns that role.
 
 **Scope.** No migration tooling and no `userdocs/` procedure — pre-1.0 (`0.4.x`), and the one
-live deployment (`open/OPEN_WORK.md`) is being moved by hand. New installs simply get the
+live deployment (`docs/open/OPEN_WORK.md`) is being moved by hand. New installs simply get the
 corrected default. *(BR-REG-002, BR-REG-003, `ADR-053`)*

@@ -36,7 +36,7 @@ first place — `docker.io` is exactly as much a fact as `ghcr.io` is when the r
 
 **Consequences.** Not backward compatible in the strict sense — a descriptor missing
 `registry_host` now fails to load, where `ADR-057`'s version accepted it. No live client has
-installed a descriptor yet (`open/OPEN_WORK.md`), so nothing is actually broken by this; it is
+installed a descriptor yet (`docs/open/OPEN_WORK.md`), so nothing is actually broken by this; it is
 still a clean schema addition, not a migration of installed state.
 
 **Scope.** `src/cairn/descriptor.py`, `src/cairn/registry.py` (`split_host`), `src/cairn/adopt.py`

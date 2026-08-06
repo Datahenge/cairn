@@ -9,13 +9,13 @@ ground rules for how the human and the AI collaborate here. They bind the AI.
 ## The One Rule
 
 Docs precede code. If a behavior is not described in `docs/`, it is not implemented. If a
-requirement is ambiguous, check `open/OPEN_QUESTIONS.md` and `open/OPEN_DECISIONS.md` — do not
-infer behavior from an unstated preference. If the question is new, add it there and ask Brian
-before writing code.
+requirement is ambiguous, check `docs/open/OPEN_QUESTIONS.md` and `docs/open/OPEN_DECISIONS.md`
+— do not infer behavior from an unstated preference. If the question is new, add it there and
+ask Brian before writing code.
 
 ## Before Any Task
 
-1. Read `CURRENT_CONTEXT.md` first — it routes to the smallest relevant document.
+1. Read `ai/CURRENT_CONTEXT.md` first — it routes to the smallest relevant document.
 2. Consult `docs/technical/25-documentation-authority.md` to find which document owns the topic
    in scope.
 3. Load only the document(s) the index points to. Do not scan the full `docs/` tree by default.
@@ -41,7 +41,7 @@ before writing code.
   of *what* the system does. Referenced by code docstrings and tests.
 - **`ADR-NNN` = decisions** (Architecture Decision Records) — "we chose X because…".
   The rationale/architecture record, split by weight into `docs/adr/` (consequential) and
-  `decisions/` (lightweight). Requirements cite the decisions that shaped them.
+  `docs/decisions/` (lightweight). Requirements cite the decisions that shaped them.
 
 Both systems are kept (as in `cofferdam-app`, which uses `BR-API-001` alongside ADRs).
 
@@ -69,7 +69,7 @@ traceability.
 - Update the relevant requirement, technical, or decision document in the same change that
   alters behavior, scope, or design.
 - Record consequential decisions in `docs/adr/`; lighter, easily-reversible decisions in
-  `decisions/`.
+  `docs/decisions/`.
 - Record completion judgments in `docs/technical/05-implementation-index.md`'s `Completion
   Judgment` column the moment they're reached, including sessions with no code change.
 
@@ -77,16 +77,17 @@ traceability.
 
 | Path | Purpose | IDs |
 | --- | --- | --- |
-| `CURRENT_CONTEXT.md` | Session router; read first in a fresh session | — |
+| `ai/CURRENT_CONTEXT.md` | Session router; read first in a fresh session | — |
+| `ai/tools/` | Documentation-hygiene scripts (`docs_check.py`, `changelog_rotate.py`) | — |
 | `docs/00-project-scope.md` | Purpose, pillars, what it is/isn't, principles | — |
 | `docs/requirements/` | Numbered requirement docs + ToC (`00-overview.md`, then per-area) | `BR-<AREA>-NNN` |
 | `docs/technical/` | Coding standards, doc conventions, lessons learned, implementation index, documentation-authority map, plus ad-hoc reference docs | — |
 | `docs/adr/` | Consequential decisions, one file per `ADR-NNN` | `ADR-NNN` |
-| `decisions/` | Lightweight dated decisions, one file per `ADR-NNN` | `ADR-NNN` |
+| `docs/decisions/` | Lightweight dated decisions, one file per `ADR-NNN` | `ADR-NNN` |
 | `docs/archive/` | Fully-retired ADRs/decisions, with a forwarding stub left at the original path | — |
 | `docs/discussions/discussion-log.md` | Narrative design record | — |
-| `open/OPEN_QUESTIONS.md`, `open/OPEN_DECISIONS.md`, `open/OPEN_WORK.md` | Live queues: unresolved questions, pending/deferred decisions, outstanding work | — |
-| `scratch/` | Temporary working notes; promote or delete | — |
+| `docs/open/OPEN_QUESTIONS.md`, `docs/open/OPEN_DECISIONS.md`, `docs/open/OPEN_WORK.md` | Live queues: unresolved questions, pending/deferred decisions, outstanding work | — |
+| `docs/scratch/` | Temporary working notes; promote or delete | — |
 | `docs/CHANGELOG.md` | Living-documentation revisions (requirements + decisions + discussion) | — |
 | `CHANGELOG.md` (root) | Software release history | — |
 | `docs/plans/` | Narrative implementation plans, downstream of requirements | — |
@@ -108,16 +109,16 @@ traceability.
 
 ## When Something Is Ambiguous
 
-1. Check `open/OPEN_QUESTIONS.md` and `open/OPEN_DECISIONS.md` — the question may already be
-   tracked.
+1. Check `docs/open/OPEN_QUESTIONS.md` and `docs/open/OPEN_DECISIONS.md` — the question may
+   already be tracked.
 2. If unresolved, add it and ask Brian. Do not implement speculative behavior while waiting
    for an answer.
 
 ## Documentation Hygiene
 
 Follow `docs/technical/01-documentation-conventions.md` for status headers and sprawl control
-before creating a new Markdown document. Use `scratch/` for notes that aren't yet worth
-keeping. Run `tools/docs_check.py` before considering a documentation change complete.
+before creating a new Markdown document. Use `docs/scratch/` for notes that aren't yet worth
+keeping. Run `ai/tools/docs_check.py` before considering a documentation change complete.
 
 If Brian asks for a "Dorwin Analysis," see
 `docs/technical/02-dorwin-analysis-and-hardin-version.md` and produce a Hardin Version.

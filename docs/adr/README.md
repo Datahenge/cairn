@@ -9,20 +9,20 @@ purpose: Index and governance rules for cairn's Architectural Decision Records.
 This folder holds cairn's **consequential** decisions — ones where implementation would be
 materially different depending on the outcome, that cross a boundary, or that are hard to
 reverse once implementation begins. Lighter, easily-reversible decisions belong in
-[../../decisions/](../../decisions/) instead.
+[../decisions/](../decisions/) instead.
 
 Stable IDs (`ADR-NNN`) persist even if a decision reopens or is amended. When a still-open
-question in `open/OPEN_DECISIONS.md` is decided, it's promoted here (or to `decisions/`),
+question in `docs/open/OPEN_DECISIONS.md` is decided, it's promoted here (or to `docs/decisions/`),
 carrying its original ID into the new file's `origin` field so a citation made while it was
 open still resolves.
 
 `status: exploratory` in a file's frontmatter means the decision is **not yet settled** — the
-question is tracked live in [../../open/OPEN_DECISIONS.md](../../open/OPEN_DECISIONS.md) and
+question is tracked live in [../open/OPEN_DECISIONS.md](../open/OPEN_DECISIONS.md) and
 the full analysis lives here so nothing is lost while it's pending.
 
 ## Lifecycle
 
-**Promotion threshold:** an entry graduates here (rather than `decisions/`) when multiple
+**Promotion threshold:** an entry graduates here (rather than `docs/decisions/`) when multiple
 reasonable options exist or the decision carries significant reversibility cost.
 
 **Retirement:** when an ADR is **fully** superseded or struck (not merely amended), its full
@@ -87,7 +87,7 @@ unarchived.
 | [ADR-065](065-per-client-github-token-via-environmentfile-not-a-shared-token.md) | `authoritative` | Build timer authenticates private `github.com` apps via a per-client `EnvironmentFile`, not a single shared token |
 | [ADR-067](067-doctor-and-setup-timer-probe-github-reachability-before-trusting-it.md) | `authoritative` | `doctor`/`setup-timer` probe `github.com` reachability live, instead of only naming the token file as a possibility |
 
-`ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../../decisions/](../../decisions/)
+`ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../decisions/](../decisions/)
 instead, as lightweight decisions.
 
 ## Design vocabulary (first-class concepts)

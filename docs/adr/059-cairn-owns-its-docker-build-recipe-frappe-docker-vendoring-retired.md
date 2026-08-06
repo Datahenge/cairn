@@ -113,7 +113,7 @@ maintenance.
   `read_pin`, the drift check inside `assert_clean`, `_tree_hash`), `src/cairn/project.py`
   entirely, the `vendor` Typer sub-app in `src/cairn/cli_build.py`, and `pyproject.toml`'s
   `[tool.ventwig]` section and `ventwig` dev dependency are all dead code once the migration
-  lands. **Not touched by this decision** — queued as separate, later `open/OPEN_WORK.md` items,
+  lands. **Not touched by this decision** — queued as separate, later `docs/open/OPEN_WORK.md` items,
   reviewed on their own once the documentation cascade this ADR triggers has settled, per this
   project's own "documentation precedes code" discipline.
 - `userdocs/builder/index.md` cites `(ADR-001)` directly in user-facing text — already a standing

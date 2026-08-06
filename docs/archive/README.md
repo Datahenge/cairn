@@ -7,7 +7,7 @@ purpose: Defines the archive area for superseded or historical material.
 # Archive
 
 Historical material only — fully superseded ADRs and decisions, moved here in full once
-retired, with a forwarding stub left at their original `docs/adr/` or `decisions/` path so
+retired, with a forwarding stub left at their original `docs/adr/` or `docs/decisions/` path so
 existing citations keep resolving. Also holds archived tails of otherwise-live documents
 (e.g. `docs/CHANGELOG.md`) split off purely for size, not because the content is superseded.
 
@@ -20,11 +20,11 @@ needed.
 |---|---|---|
 | [023-opt-in-bench-install-app-never-automatic.md](023-opt-in-bench-install-app-never-automatic.md) | `ADR-023` | `ADR-037` |
 | [028-cairn-doctor-is-role-aware-detected-from-context.md](028-cairn-doctor-is-role-aware-detected-from-context.md) | `ADR-028` | `ADR-046` |
-| [041-the-machine-build-config-file-is-named-builder-toml-not-config.md](041-the-machine-build-config-file-is-named-builder-toml-not-config.md) | `ADR-041` (in `decisions/`) | `ADR-042` |
+| [041-the-machine-build-config-file-is-named-builder-toml-not-config.md](041-the-machine-build-config-file-is-named-builder-toml-not-config.md) | `ADR-041` (in `docs/decisions/`) | `ADR-042` |
 | [033-the-declared-environment-list-is-a-cairn-environments-table-in.md](033-the-declared-environment-list-is-a-cairn-environments-table-in.md) | `ADR-033` | `ADR-052` |
-| [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `ADR-049` (in `decisions/`) | `ADR-052` |
+| [049-the-declared-environment-list-is-cairn-declared-environments-not.md](049-the-declared-environment-list-is-cairn-declared-environments-not.md) | `ADR-049` (in `docs/decisions/`) | `ADR-052` |
 | [050-new-tag-and-retag-merge-into-assign-tag.md](050-new-tag-and-retag-merge-into-assign-tag.md) | `ADR-050` | `ADR-052` |
-| [057-target-descriptor-splits-registry-host-from-image.md](057-target-descriptor-splits-registry-host-from-image.md) | `ADR-057` (in `decisions/`) | `ADR-058` |
+| [057-target-descriptor-splits-registry-host-from-image.md](057-target-descriptor-splits-registry-host-from-image.md) | `ADR-057` (in `docs/decisions/`) | `ADR-058` |
 | [001-wrap-frappe-docker-never-modify-it.md](001-wrap-frappe-docker-never-modify-it.md) | `ADR-001` | `ADR-059` |
 | [007-vendoring-via-ventwig-committed-drift-checked.md](007-vendoring-via-ventwig-committed-drift-checked.md) | `ADR-007` | `ADR-059` |
 | [020-strengthen-upstream-pin-immutability-ventwig-enhancement.md](020-strengthen-upstream-pin-immutability-ventwig-enhancement.md) | `ADR-020` | `ADR-059` (moot) |
@@ -42,10 +42,10 @@ needed.
 
 | File | Archived from | Covers |
 |---|---|---|
-| [OPEN_WORK-done.md](OPEN_WORK-done.md) | `open/OPEN_WORK.md` | `done` rows swept out once their completion judgment was recorded in `docs/technical/05-implementation-index.md` |
+| [OPEN_WORK-done.md](OPEN_WORK-done.md) | `docs/open/OPEN_WORK.md` | `done` rows swept out once their completion judgment was recorded in `docs/technical/05-implementation-index.md` |
 
 ## Index — archived plans
 
 | File | Archived from | Covers |
 |---|---|---|
-| [next-steps.md](next-steps.md) | `docs/plans/next-steps.md` | Session-resumption plan, `status: archived` since 2026-08-03 — its live-backlog role was absorbed into `open/OPEN_WORK.md`; moved here 2026-08-05 purely to stop it loading for ordinary "what's done, what remains" questions, which `docs/technical/05-implementation-index.md` + `open/OPEN_WORK.md` already answer |
+| [next-steps.md](next-steps.md) | `docs/plans/next-steps.md` | Session-resumption plan, `status: archived` since 2026-08-03 — its live-backlog role was absorbed into `docs/open/OPEN_WORK.md`; moved here 2026-08-05 purely to stop it loading for ordinary "what's done, what remains" questions, which `docs/technical/05-implementation-index.md` + `docs/open/OPEN_WORK.md` already answer |

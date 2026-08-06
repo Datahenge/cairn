@@ -9,7 +9,7 @@ Adapted from the generic checker in brian-pond/scribe_coding. Checks:
 
 Run from the project root, or point --root elsewhere:
 
-    python tools/docs_check.py --root /path/to/cairn
+    python ai/tools/docs_check.py --root /path/to/cairn
 """
 
 from __future__ import annotations
@@ -156,10 +156,10 @@ def check_links_and_word_count(
 
 
 def check_index_status_drift(root: Path) -> list[DocIssue]:
-    """Check decisions/README.md and docs/adr/README.md index tables against
+    """Check docs/decisions/README.md and docs/adr/README.md index tables against
     the `status` frontmatter of each file they link to."""
     issues: list[DocIssue] = []
-    for index_rel in (Path("decisions/README.md"), Path("docs/adr/README.md")):
+    for index_rel in (Path("docs/decisions/README.md"), Path("docs/adr/README.md")):
         index_path = root / index_rel
         if not index_path.exists():
             continue

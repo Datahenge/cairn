@@ -83,6 +83,6 @@ is reuse and orchestration, not a token-resolution redesign.
   existing `BuildConfig`, so the new check can reuse it without a second parse.
 - `BR-CLI-007` and `BR-CLI-023` (`docs/requirements/`) rewritten to describe the check and
   the gate.
-- A new `open/OPEN_QUESTIONS.md` entry records this, resolved, pointing here.
+- A new `docs/open/OPEN_QUESTIONS.md` entry records this, resolved, pointing here.
 
 *(BR-CLI-007, BR-CLI-023, BR-BUILD-016, BR-DEPLOY-021, ADR-065)*

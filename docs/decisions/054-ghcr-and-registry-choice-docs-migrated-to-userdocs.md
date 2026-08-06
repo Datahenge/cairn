@@ -6,7 +6,7 @@ purpose: ADR-054 — `ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; content migr
 
 # ADR-054 — `ABOUT_GHCR.md`/`ABOUT_REGISTRIES.md` retired; content migrated into `userdocs/registry/`
 
-**Decided:** 2026-08-04 · **Origin:** `DOCS-01` (`open/OPEN_DECISIONS.md`)
+**Decided:** 2026-08-04 · **Origin:** `DOCS-01` (`docs/open/OPEN_DECISIONS.md`)
 
 **Problem.** `docs/technical/ABOUT_GHCR.md` and `docs/technical/ABOUT_REGISTRIES.md` were
 user-facing reference material sitting in the internal `docs/technical/` tree — explicitly

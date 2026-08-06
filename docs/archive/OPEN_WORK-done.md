@@ -1,12 +1,12 @@
 ---
 status: authoritative
 owner: project
-purpose: Archived `done` rows swept from `open/OPEN_WORK.md`, preserved for historical reference.
+purpose: Archived `done` rows swept from `docs/open/OPEN_WORK.md`, preserved for historical reference.
 ---
 
 # Open Work — Completed
 
-Rows removed from [`open/OPEN_WORK.md`](../../open/OPEN_WORK.md) once `done` and their
+Rows removed from [`docs/open/OPEN_WORK.md`](../open/OPEN_WORK.md) once `done` and their
 completion judgment was recorded in
 [`docs/technical/05-implementation-index.md`](../technical/05-implementation-index.md), per
 `OPEN_WORK.md`'s own rule: "Sweep `done` rows out on the next cleanup pass... This file tracks

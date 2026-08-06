@@ -10,7 +10,7 @@ purpose: ADR-048 — `cairn-registry`, a third CLI entry point for local-registr
 **Amends:** `ADR-046` (the same way `ADR-046` amended `ADR-018`). **Relates to:** `ADR-009`,
 `ADR-036`, `ADR-038`, `ADR-039`.
 
-Raised ahead of the first live client deployment (`open/OPEN_WORK.md`'s `W-001`), which plans
+Raised ahead of the first live client deployment (`docs/open/OPEN_WORK.md`'s `W-001`), which plans
 to use cairn's self-hosted local-registry option (`userdocs/registry/choosing-a-registry.md`,
 "Registry on the client's own VPS"). Two problems surfaced together:
 

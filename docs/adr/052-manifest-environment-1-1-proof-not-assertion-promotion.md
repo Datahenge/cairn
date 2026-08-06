@@ -116,7 +116,7 @@ still takes `--manifest` per the rule above.
   `UnknownEnvironmentError` is reviewed for whether anything still raises it under a
   `--manifest`-only model.
 - No live client deployment has used any of `new-tag`/`retag`/`assign-tag`'s selector interface
-  yet (`open/OPEN_WORK.md`'s `W-001` is still open) — this is a clean cut, not a deprecation
+  yet (`docs/open/OPEN_WORK.md`'s `W-001` is still open) — this is a clean cut, not a deprecation
   shim, consistent with every other pre-1.0 change this session.
 *(BR-BUILD-001, BR-BUILD-002, BR-BUILD-008, BR-CLI-004, BR-CLI-009, BR-CLI-010, BR-CLI-022,
 BR-CLI-023, BR-DEPLOY-004, BR-DEPLOY-009, BR-DEPLOY-009a, ADR-010, ADR-033, ADR-047, ADR-049,

@@ -35,7 +35,7 @@ here.
 | `ruff check` | Linting (`E`, `F`, `I`, `UP`, `B`, `SIM`, `RUF` rule sets; line length 100) | `ruff check .` |
 | `pytest` (+ `pytest-cov`) | Test suite and coverage | `pytest` |
 
-These must pass before a change is considered done — see `open/OPEN_WORK.md`'s `done` status
+These must pass before a change is considered done — see `docs/open/OPEN_WORK.md`'s `done` status
 definition. No `mypy` or other type checker is wired in yet.
 
 ## Requirement-ID Leakage Guard

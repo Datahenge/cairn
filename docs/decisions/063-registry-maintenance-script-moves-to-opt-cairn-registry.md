@@ -49,6 +49,6 @@ determines where anything is written.
 - `BR-REG-010`/`BR-CLI-027` (`docs/requirements/08-registry.md`/`06-cli.md`) updated to
   state this.
 - No migration path needed: `cairn-registry setup-timer` has not yet been run against a real
-  host (`open/OPEN_WORK.md`'s `W-015` covers `prune`/`gc` themselves, not the timer).
+  host (`docs/open/OPEN_WORK.md`'s `W-015` covers `prune`/`gc` themselves, not the timer).
 
 *(BR-CLI-027, BR-REG-010, ADR-048, ADR-053, ADR-060, ADR-062)*

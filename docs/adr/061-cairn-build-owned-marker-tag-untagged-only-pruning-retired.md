@@ -15,7 +15,7 @@ needs to stay safe once it does more than clean up duplicate rebuilds).
 Two things surfaced together while examining colocation, both traced against real code rather
 than assumed:
 
-1. **`cairn-build images --local` (`BR-CLI-005`, `OQ-001`, `open/OPEN_QUESTIONS.md`) couldn't
+1. **`cairn-build images --local` (`BR-CLI-005`, `OQ-001`, `docs/open/OPEN_QUESTIONS.md`) couldn't
    distinguish "cairn built this" from "cairn built this on *this* host."** `BR-BUILD-011`'s
    provenance labels are OCI image config, baked in at build time — they survive a `docker
    pull` intact. So on a host where `cairn-adopt reconcile` pulls a deploy image
@@ -23,7 +23,7 @@ than assumed:
    carry full cairn provenance and both showed up in `--local`'s report, with no way to tell
    which is which.
 2. **`cairn-build prune` (`BR-CLI-018`) and the target's future GC (`BR-DEPLOY-006`,
-   `open/OPEN_WORK.md`'s `W-003`, not yet implemented) are two independently-computed local
+   `docs/open/OPEN_WORK.md`'s `W-003`, not yet implemented) are two independently-computed local
    image GCs that would share one image store on a colocated host, with no way for either to
    know what the other still needs.** Tracing today's actual prune logic
    (`prune.select()`) showed its blast radius is narrower than it first looks — the

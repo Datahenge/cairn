@@ -12,7 +12,7 @@ Three kinds of document answer three different questions:
 |---|---|
 | `docs/requirements/` | WHAT the system must do (`BR-<AREA>-NNN`) |
 | **`docs/technical/`** (this tree) | HOW it's built, configured, and operated |
-| `docs/adr/`, `decisions/` | WHY a consequential or lightweight choice was made (`ADR-NNN`) |
+| `docs/adr/`, `docs/decisions/` | WHY a consequential or lightweight choice was made (`ADR-NNN`) |
 
 ## Contents
 

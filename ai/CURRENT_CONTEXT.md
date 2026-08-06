@@ -15,13 +15,13 @@ Phase 4 (modular code) is under way, on the three-binary split (`cairn-build` / 
 separate `cairn-provision` installer. Most recently landed: `ADR-052` (manifest:environment is
 1:1; promotion is proof, found in the registry, not an assertion). `cairn-registry setup` was
 verified live on the client's test VPS 2026-08-04; active work narrowed to `prune`/`gc`
-against a real registry (`W-015`) — see `open/OPEN_WORK.md`. Newly decided:
+against a real registry (`W-015`) — see `docs/open/OPEN_WORK.md`. Newly decided:
 `ADR-059` retires `frappe_docker` vendoring in favor of cairn owning its Docker build recipe
 outright, superseding `ADR-001`/`ADR-007`; both the documentation cascade and the code
 migration (`src/cairn/vendored/` renamed to `src/cairn/recipe/`, the `ventwig`-backed `vendor`
 command surface retired, `W-023`..`W-031`) are done as of 2026-08-05. The docs tree itself
 finished its migration onto the canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) —
-this file, `open/`, `scratch/`, `docs/technical/`, `docs/adr/`, `decisions/`, and
+this file, `docs/open/`, `docs/scratch/`, `docs/technical/`, `docs/adr/`, `docs/decisions/`, and
 `docs/discussions/` are the result. Also 2026-08-05: `ADR-060` corrected the registry's default
 `data_dir` (`/opt/cairn-registry/data` → `/var/lib/cairn-registry`, `ADR-053`'s FHS citation was
 wrong); `ADR-061`/`BR-BUILD-018` added a `cairn-build-owned` marker tag, stripped on push, so
@@ -54,6 +54,9 @@ Also 2026-08-05: `ADR-066` resolves `W-021` — `cairn-build build --push` now a
 manifest's declared environment by default (`--no-assign-tag` opts out; a manifest with none
 is silently skipped, not errored); the `:production` gate needed no new wiring since it was
 already keyed off the target environment rather than how assignment was requested.
+2026-08-06: `ADR-068` nested `decisions/`/`open/`/`scratch/` under `docs/` and moved this file
+plus `tools/` into a new root-level `ai/` directory, closing the scaffold-vs-`docs/` anomaly the
+canonical Scribe Coding migration left in place.
 
 ## Read First
 
@@ -61,11 +64,11 @@ already keyed off the target environment rather than how assignment was requeste
 | --- | --- |
 | General project work | `docs/requirements/00-overview.md`, `AGENTS.md` |
 | Writing or changing code | `docs/technical/00-coding-standards.md` |
-| Requirements or scope work | `docs/requirements/00-overview.md`, `open/OPEN_QUESTIONS.md` |
-| "What's done, what remains?" / implementation status | `docs/technical/05-implementation-index.md`, `open/OPEN_WORK.md` |
-| Architecture rationale | `docs/adr/README.md`, `decisions/README.md` |
-| Pending decisions needing sign-off | `open/OPEN_DECISIONS.md` |
-| Outstanding implementation or cleanup work | `open/OPEN_WORK.md` |
+| Requirements or scope work | `docs/requirements/00-overview.md`, `docs/open/OPEN_QUESTIONS.md` |
+| "What's done, what remains?" / implementation status | `docs/technical/05-implementation-index.md`, `docs/open/OPEN_WORK.md` |
+| Architecture rationale | `docs/adr/README.md`, `docs/decisions/README.md` |
+| Pending decisions needing sign-off | `docs/open/OPEN_DECISIONS.md` |
+| Outstanding implementation or cleanup work | `docs/open/OPEN_WORK.md` |
 | Documentation ownership / what to read for topic X | `docs/technical/25-documentation-authority.md` |
 
 ## Standing Rules

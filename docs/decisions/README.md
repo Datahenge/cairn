@@ -8,7 +8,7 @@ purpose: Index for lightweight dated decisions in cairn.
 
 Short decision records for durable choices that affect design, data handling, naming, or scope,
 but do not need full ADR-style alternatives analysis. Consequential decisions instead live in
-[../docs/adr/](../docs/adr/).
+[../adr/](../adr/).
 
 Pending approvals belong in [../open/OPEN_DECISIONS.md](../open/OPEN_DECISIONS.md). Once
 approved and implemented, durable decisions are promoted into a numbered record here, carrying
@@ -17,8 +17,8 @@ resolves.
 
 These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`, `ADR-054`,
 `ADR-055`, `ADR-056`, `ADR-057`, `ADR-058`, `ADR-060`, `ADR-062`, `ADR-063`, `ADR-064`,
-`ADR-066`) continue the same `ADR-NNN` sequence as `docs/adr/` — they were simply judged
-lightweight rather than consequential, not a separate numbering track.
+`ADR-066`, `ADR-068`) continue the same `ADR-NNN` sequence as `docs/adr/` — they were simply
+judged lightweight rather than consequential, not a separate numbering track.
 
 ## Records
 
@@ -40,3 +40,4 @@ lightweight rather than consequential, not a separate numbering track.
 | [063-registry-maintenance-script-moves-to-opt-cairn-registry.md](063-registry-maintenance-script-moves-to-opt-cairn-registry.md) | `authoritative` | Registry maintenance script moves from the invoking shell's `cwd` to `/opt/cairn-registry` — the `ADR-062` fix's second half, amends `BR-CLI-027`/`BR-REG-010` |
 | [064-build-timer-workingdirectory-and-workdir-flag-both-corrected.md](064-build-timer-workingdirectory-and-workdir-flag-both-corrected.md) | `authoritative` | Build timer's `WorkingDirectory=` and script `cd` corrected off `options.workdir`, which `ADR-062` missed; `--workdir` dropped from `cairn-build setup-timer` |
 | [066-build-push-defaults-to-assign-tag.md](066-build-push-defaults-to-assign-tag.md) | `authoritative` | `cairn-build build --push` assigns the manifest's declared environment by default; `--no-assign-tag` opts out; a manifest with no environment is skipped, not errored |
+| [068-nest-decisions-open-scratch-under-docs-add-ai-directory.md](068-nest-decisions-open-scratch-under-docs-add-ai-directory.md) | `authoritative` | `decisions/`, `open/`, `scratch/` nested under `docs/`; `CURRENT_CONTEXT.md`/`tools/` moved into a new root-level `ai/` directory |

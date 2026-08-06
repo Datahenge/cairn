@@ -8,7 +8,7 @@ purpose: ADR-055 — docs_check.py's default word-count ceiling raised from 1800
 
 **Decided:** 2026-08-04
 
-**Problem.** `tools/docs_check.py`'s DOC002 check (`DEFAULT_MAX_WORDS = 1800`) had, in practice,
+**Problem.** `ai/tools/docs_check.py`'s DOC002 check (`DEFAULT_MAX_WORDS = 1800`) had, in practice,
 become a check that always failed on the project's three most substantial requirement docs
 (`02-build.md`, `03-deploy.md`, `06-cli.md`) and was "fixed" by bumping their
 `.docs_check_allowlist` entries — repeatedly, same-day, by just enough to clear the next
@@ -37,5 +37,5 @@ the question. The problem wasn't that the check fires; it's that 1800 was calibr
 different shape of document than this project's requirement docs actually take, so it fired on
 routine, legitimate growth instead of on the cases actually worth a pause.
 
-**Scope.** `tools/docs_check.py` (`DEFAULT_MAX_WORDS`), `.docs_check_allowlist`. No requirement
+**Scope.** `ai/tools/docs_check.py` (`DEFAULT_MAX_WORDS`), `.docs_check_allowlist`. No requirement
 or code behavior changed — tooling/convention only.

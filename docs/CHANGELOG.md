@@ -9,6 +9,26 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 — `ADR-068`: `decisions/`/`open/`/`scratch/` nest under `docs/`; `ai/` added for `CURRENT_CONTEXT.md`/`tools/`
+
+Brian asked for a root-directory cleanup: `decisions/`, `open/`, and `scratch/` were the only
+documentation trees still sitting as siblings of `docs/` at the repo root, an artifact of the
+canonical Scribe Coding scaffold rather than a deliberate split — every other tree
+(`docs/adr/`, `docs/technical/`, `docs/requirements/`, `docs/discussions/`, `docs/plans/`,
+`docs/archive/`) already lived under `docs/`.
+
+`decisions/` → `docs/decisions/`, `open/` → `docs/open/`, `scratch/` → `docs/scratch/`.
+`CURRENT_CONTEXT.md` and `tools/` (the docs-hygiene scripts) moved into a new root-level `ai/`
+directory, separating the AI-agent-facing session router and tooling from `docs/` itself.
+Every relative Markdown link whose depth changed was corrected in the same pass;
+`ai/tools/docs_check.py` confirms none are broken. `AGENTS.md`'s artifact table,
+`ai/CURRENT_CONTEXT.md`, and `docs/technical/25-documentation-authority.md` (Doc Trees table,
+Authority table, Reading Orders, and a new entry in "Deviations From The Canonical Scribe
+Coding Template") were updated to match. Historical narrative in this file and in
+`docs/archive/**` was left as originally written, except where it held an actual link that
+would otherwise break. Full rationale in
+`docs/decisions/068-nest-decisions-open-scratch-under-docs-add-ai-directory.md`.
+
 ## 2026-08-06 — `ADR-067`: `doctor`/`setup-timer` probe `github.com` reachability live, `OQ-003` resolved
 
 Brian, reviewing `ADR-065`'s `EnvironmentFile=-` path, flagged that it wires a missing token
