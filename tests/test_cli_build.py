@@ -259,7 +259,9 @@ def pointers(project, monkeypatch) -> PointerStubs:
 
 
 def test_success_exits_zero(project, monkeypatch):
-    monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 0)
+    monkeypatch.setattr(
+        doctor, "run_build", lambda preferred_engine=None, manifest_path=None, walk_all=False: 0
+    )
 
     result = runner.invoke(cli_build.app, ["doctor"])
 
@@ -268,7 +270,9 @@ def test_success_exits_zero(project, monkeypatch):
 
 def test_exit_code_is_the_actions_own_return_value(project, monkeypatch):
     """BR-CLI-012: a failed check must be detectable, so the code is forwarded, not flattened."""
-    monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 1)
+    monkeypatch.setattr(
+        doctor, "run_build", lambda preferred_engine=None, manifest_path=None, walk_all=False: 1
+    )
 
     result = runner.invoke(cli_build.app, ["doctor"])
 
@@ -279,7 +283,7 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
     """BR-CLI-015: an expected failure names the fix; exit 2 distinguishes it from a check
     that merely reported a problem."""
 
-    def _fail(preferred_engine=None, manifest_path=None):
+    def _fail(preferred_engine=None, manifest_path=None, walk_all=False):
         raise PushError("No registry configured, so images remain local.")
 
     monkeypatch.setattr(doctor, "run_build", _fail)
@@ -295,7 +299,7 @@ def test_cairn_error_is_a_clean_message_not_a_traceback(project, monkeypatch):
 def test_interrupt_exits_130(project, monkeypatch):
     """The shell's convention for SIGINT — a cancelled build is not a failed build."""
 
-    def _interrupt(preferred_engine=None, manifest_path=None):
+    def _interrupt(preferred_engine=None, manifest_path=None, walk_all=False):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(doctor, "run_build", _interrupt)
@@ -310,7 +314,7 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
     """An internal error must never be mistaken for silent success, so it is announced
     and then allowed to print its traceback."""
 
-    def _bug(preferred_engine=None, manifest_path=None):
+    def _bug(preferred_engine=None, manifest_path=None, walk_all=False):
         raise ValueError("off by one")
 
     monkeypatch.setattr(doctor, "run_build", _bug)
@@ -325,11 +329,41 @@ def test_unexpected_exception_is_named_and_reraised(project, monkeypatch):
 def test_doctor_needs_no_project_root(tmp_path, monkeypatch):
     """The recipe tree is package-relative — doctor works from anywhere."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(doctor, "run_build", lambda preferred_engine=None, manifest_path=None: 0)
+    monkeypatch.setattr(
+        doctor, "run_build", lambda preferred_engine=None, manifest_path=None, walk_all=False: 0
+    )
 
     result = runner.invoke(cli_build.app, ["doctor"])
 
     assert result.exit_code == 0
+
+
+def test_doctor_manifest_and_all_are_mutually_exclusive(project, monkeypatch):
+    """`ADR-070`: an operator should never have to guess which scope flag doctor honored."""
+    monkeypatch.setattr(
+        doctor, "run_build", lambda preferred_engine=None, manifest_path=None, walk_all=False: 0
+    )
+
+    result = runner.invoke(cli_build.app, ["doctor", "--manifest", "cairn.toml", "--all"])
+
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.stderr
+
+
+def test_doctor_all_flag_reaches_run_build(project, monkeypatch):
+    seen: dict[str, object] = {}
+
+    def _run_build(preferred_engine=None, manifest_path=None, walk_all=False):
+        seen["manifest_path"] = manifest_path
+        seen["walk_all"] = walk_all
+        return 0
+
+    monkeypatch.setattr(doctor, "run_build", _run_build)
+
+    result = runner.invoke(cli_build.app, ["doctor", "--all"])
+
+    assert result.exit_code == 0
+    assert seen == {"manifest_path": None, "walk_all": True}
 
 
 # --- build (BR-CLI-002, BR-CLI-016, BR-CLI-017) -----------------------------

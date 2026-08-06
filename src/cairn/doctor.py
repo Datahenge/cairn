@@ -17,6 +17,15 @@ informationally only, which client manifests already exist under `/srv/cairn/`
 unauthenticated `github.com` app, or any other unreachable/moved ref, fails here rather
 than mid-build.
 
+Also reports **build-timer status** — whether the systemd units `cairn-build setup-timer`
+installs (`BR-CLI-023`) exist and, for the timer, are enabled and active. Scope is explicit,
+never inferred from `$CAIRN_MANIFEST`: the literal `--manifest` flag checks one manifest;
+`--all` walks every manifest under `/srv/cairn/*/*.toml`, one result per manifest, so
+confirming every client/environment's timer is actually running doesn't require an operator
+to script their own enumeration (`ADR-070`). Neither flag given reports one WARN reminder
+row rather than silently omitting the check — unlike `github reachability`, the manifests to
+check are always knowable from a static directory, even with nothing named explicitly.
+
 **`cairn-adopt doctor` checks:** the descriptor itself parses; Docker is installed and its
 daemon reachable (`DEPLOY` is Docker-only, `ADR-002`/`ADR-027`); `docker compose` is
 present; the reconcile timer, if installed, is active; and the descriptor's watched tag
@@ -52,8 +61,14 @@ from .errors import (
     ManifestNotFoundError,
     RegistryError,
 )
-from .provision import MANIFEST_ROOT
-from .setup_runner import MINIMUM_DISK_GB, MINIMUM_MEMORY_GB, read_available_memory_gb
+from .provision import MANIFEST_ROOT, client_from_manifest, unit_name_for
+from .setup_runner import (
+    MINIMUM_DISK_GB,
+    MINIMUM_MEMORY_GB,
+    SYSTEMD_DIR,
+    Aborted,
+    read_available_memory_gb,
+)
 
 _LABEL_WIDTH = 21
 
@@ -95,9 +110,13 @@ class CheckResult:
         return cls(label, Status.OK if ok else Status.FAIL, detail)
 
 
-def run_build(preferred_engine: str | None = None, manifest_path: Path | None = None) -> int:
+def run_build(
+    preferred_engine: str | None = None,
+    manifest_path: Path | None = None,
+    walk_all: bool = False,
+) -> int:
     """Run `cairn-build doctor`'s checks, report the results, and return the exit code."""
-    return report(run_build_checks(preferred_engine, manifest_path))
+    return report(run_build_checks(preferred_engine, manifest_path, walk_all))
 
 
 def run_target() -> int:
@@ -106,7 +125,9 @@ def run_target() -> int:
 
 
 def run_build_checks(
-    preferred_engine: str | None = None, manifest_path: Path | None = None
+    preferred_engine: str | None = None,
+    manifest_path: Path | None = None,
+    walk_all: bool = False,
 ) -> list[CheckResult]:
     """Run the build/control preflight checks in order and return their results.
 
@@ -136,6 +157,7 @@ def run_build_checks(
             check_known_manifests(),
         ]
     )
+    results.extend(check_build_timers(manifest_path, walk_all))
     if manifest is not None:
         results.append(check_github_reachability(manifest))
     return results
@@ -290,6 +312,123 @@ def check_known_manifests() -> CheckResult:
     if not names:
         return CheckResult(label, Status.OK, f"none found under {MANIFEST_ROOT}")
     return CheckResult(label, Status.OK, f"{', '.join(names)} (under {MANIFEST_ROOT})")
+
+
+def check_build_timers(manifest_path: Path | None, walk_all: bool) -> list[CheckResult]:
+    """Report build-timer status for `cairn-build setup-timer`'s systemd units
+    (`BR-CLI-007`, `BR-CLI-023`, `ADR-070`).
+
+    Scope is explicit, never inferred from `$CAIRN_MANIFEST`: *walk_all* walks every
+    manifest under `MANIFEST_ROOT` (the same enumeration `check_known_manifests` performs)
+    and reports one result per manifest; *manifest_path* — the literal `--manifest` flag,
+    not its environment-variable fallback — reports just that one. With neither, this
+    returns a single WARN reminder rather than silently omitting the check the way
+    `check_github_reachability` does with no manifest: unlike that check, the manifests to
+    report on are always knowable from a static directory, even with nothing named
+    explicitly, so silence here would hide that the option exists.
+    """
+    label = "build timer"
+    if walk_all:
+        manifests = _known_manifest_paths()
+        if not manifests:
+            return [CheckResult(label, Status.OK, f"no manifests found under {MANIFEST_ROOT}")]
+        return [_check_one_build_timer(path) for path in manifests]
+    if manifest_path is not None:
+        return [_check_one_build_timer(manifest_path)]
+    return [
+        CheckResult(
+            label,
+            Status.WARN,
+            "not checked — pass --manifest <path> or --all to audit build-timer status",
+        )
+    ]
+
+
+def _known_manifest_paths() -> list[Path]:
+    """Every manifest under `MANIFEST_ROOT`, client directories and files both sorted for
+    stable output — the same set `check_known_manifests` lists, computed independently
+    since that function returns a single summarizing `CheckResult`, not the paths.
+    """
+    if not MANIFEST_ROOT.is_dir():
+        return []
+    paths: list[Path] = []
+    for client_dir in sorted(p for p in MANIFEST_ROOT.iterdir() if p.is_dir()):
+        paths.extend(sorted(client_dir.glob("*.toml")))
+    return paths
+
+
+def _check_one_build_timer(manifest_path: Path) -> CheckResult:
+    """Report one manifest's build-timer status: unit files present, timer enabled/active.
+
+    Never FAILs on the timer's own state — an enabled-but-inactive timer is `setup-timer`'s
+    own deliberate steady state until an operator confirms the first manual build (see
+    `stage_timers_build`), the same reasoning `check_reconcile_timer` already applies to
+    `cairn-adopt`'s timer. Only a structurally broken install (the `.timer` present without
+    its `.service`) fails.
+    """
+    label = "build timer"
+    try:
+        client = client_from_manifest(manifest_path)
+    except Aborted as exc:
+        return CheckResult(label, Status.FAIL, _first_line(str(exc)))
+
+    try:
+        manifest = config.load_manifest(manifest_path)
+    except CairnError as exc:
+        return CheckResult(label, Status.FAIL, f"{manifest_path.name}: {_first_line(str(exc))}")
+
+    display = f"{client}/{manifest_path.name}"
+    if manifest.environment is None:
+        return CheckResult(
+            label, Status.WARN, f"{display}: declares no environment — setup-timer needs one"
+        )
+
+    unit = unit_name_for(client, manifest.image_name, manifest.environment)
+    timer_file = SYSTEMD_DIR / f"{unit}.timer"
+    service_file = SYSTEMD_DIR / f"{unit}.service"
+
+    if not timer_file.exists():
+        return CheckResult(
+            label,
+            Status.WARN,
+            f"{display}: {unit}.timer not installed — run `cairn-build setup-timer "
+            f"--manifest {manifest_path}`",
+        )
+    if not service_file.exists():
+        return CheckResult(
+            label, Status.FAIL, f"{display}: {unit}.timer exists but {unit}.service is missing"
+        )
+
+    enabled_state = _systemctl_state(["systemctl", "is-enabled", f"{unit}.timer"])
+    active_state = _systemctl_state(["systemctl", "is-active", f"{unit}.timer"])
+
+    if enabled_state == "enabled" and active_state == "active":
+        return CheckResult(label, Status.OK, f"{display}: {unit}.timer enabled & active")
+    if enabled_state != "enabled":
+        return CheckResult(
+            label,
+            Status.WARN,
+            f"{display}: {unit}.timer is {enabled_state} — run `systemctl enable {unit}.timer`",
+        )
+    return CheckResult(
+        label,
+        Status.WARN,
+        f"{display}: {unit}.timer enabled but {active_state} — start it once the first "
+        f"manual `cairn-build build` has been verified: `systemctl start {unit}.timer`",
+    )
+
+
+def _systemctl_state(command: list[str]) -> str:
+    """Run a `systemctl is-enabled`/`is-active` probe and return the state it reports.
+
+    Both subcommands print the state to stdout regardless of their exit code (a nonzero
+    exit is the normal, documented result for "disabled"/"inactive"), so the interpretation
+    lives here rather than in `_run`'s generic return.
+    """
+    result = _run(command)
+    if result is None:
+        return "unknown"
+    return result.stdout.strip() or result.stderr.strip() or "unknown"
 
 
 def check_descriptor() -> tuple[CheckResult, Descriptor | None]:

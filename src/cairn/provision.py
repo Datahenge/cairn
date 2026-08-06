@@ -334,19 +334,30 @@ def client_from_manifest(manifest_path: Path) -> str:
     return relative.parts[0]
 
 
-def build_unit_name(options: SetupOptions) -> str:
-    """The unit basename for *options* (`ADR-052`, `ADR-062`) —
-    e.g. ``cairn-build-acmecorp-erpnext-v16-production``.
+def unit_name_for(client: str, image_name: str, environment: str) -> str:
+    """The build-timer unit basename for *(client, image_name, environment)* (`ADR-052`,
+    `ADR-062`) — e.g. ``cairn-build-acmecorp-erpnext-v16-production``.
 
-    Parameterized on the full `(client, image_name, environment)` uniqueness key so more
-    than one manifest's build timer can coexist on one machine: two `setup-timer` calls for
-    two different manifests write two different, independently manageable units, rather than
-    the second silently colliding with a name the first also produces. `client` and
-    `image_name` come from the manifest's own location and content (`BR-DEPLOY-009a`), never
-    a flag, so this can never disagree with what the script it names actually builds.
+    Parameterized on the full uniqueness key so more than one manifest's build timer can
+    coexist on one machine: two `setup-timer` calls for two different manifests write two
+    different, independently manageable units, rather than the second silently colliding
+    with a name the first also produces. Pure and manifest-agnostic so `doctor`'s
+    build-timer check (`BR-CLI-007`, `ADR-070`) can compute the same name `setup-timer`
+    would install for any manifest it walks, without duplicating this string or risking
+    drift from what actually got written to disk.
+    """
+    return f"cairn-build-{client}-{image_name}-{environment}"
+
+
+def build_unit_name(options: SetupOptions) -> str:
+    """The unit basename for *options* (`ADR-052`, `ADR-062`).
+
+    `client` and `image_name` come from the manifest's own location and content
+    (`BR-DEPLOY-009a`), never a flag, so this can never disagree with what the script it
+    names actually builds.
     """
     client = client_from_manifest(options.manifest)
-    return f"cairn-build-{client}-{options.image_name}-{options.environment}"
+    return unit_name_for(client, options.image_name, options.environment)
 
 
 def stage_timers_build(runner: Runner, options: SetupOptions) -> None:

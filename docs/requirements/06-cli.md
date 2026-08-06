@@ -288,8 +288,8 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
 - **`cairn-build doctor`** — the selected build engine present and capable of secret-mount
   builds (Docker Engine v23+, or podman v4+ — `ADR-027`); free disk under its data root and
   available memory, `setup`'s own preflight floors (`BR-DEPLOY-021`), reported here too;
-  **`git`**, which cairn resolves every manifest ref with (`BR-BUILD-005`); `ventwig status`
-  clean; config valid; `/etc/cairn`'s current group, permissions, and the invoking user's
+  **`git`**, which cairn resolves every manifest ref with (`BR-BUILD-005`); config valid;
+  `/etc/cairn`'s current group, permissions, and the invoking user's
   membership, reported only, never mutated (`BR-CFG-015`, `ADR-043`); and, extending the
   existing known-manifests listing (`BR-CLI-022`), a **duplicate-declaration check**
   (`ADR-052`): every `.toml` found under a client's directory is read for its `image_name` +
@@ -302,13 +302,17 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
   on any failure, including an unauthenticated `github.com` app. Uses whichever
   `$CAIRN_GITHUB_TOKEN` the invoking shell has exported, mirroring `build`'s own interactive
   path. Skipped, not failed, when no manifest was found.
+
+  Also reports **build-timer status** (`setup-timer`'s units, `BR-CLI-023`), scoped by
+  mutually exclusive `--manifest` (one) or `--all` (every manifest under `/srv/cairn/`,
+  `BR-CLI-022`) — neither given reports the check as skipped, not omitted (`ADR-070`).
 - **`cairn-adopt doctor`** — Docker Engine + Compose, systemd, registry reachability;
   `/etc/cairn`'s current group, permissions, and membership, reported only, as above.
 - **`cairn-registry doctor`** — reachable over HTTPS, cert validity, disk headroom under
   `data_dir` (`BR-REG-011`).
 
-*(BR-VEND-003, BR-BUILD-005, BR-BUILD-016, BR-CFG-015, BR-CLI-014, BR-REG-011, ADR-027,
-ADR-043, ADR-046, ADR-048, ADR-067)*
+*(BR-VEND-003, BR-BUILD-005, BR-BUILD-016, BR-CFG-015, BR-CLI-014, BR-CLI-022, BR-CLI-023,
+BR-REG-011, ADR-027, ADR-043, ADR-046, ADR-048, ADR-067, ADR-070)*
 
 **`BR-CLI-021`** *(setup — the privileged installer, nested per role)* — Each CLI carries its own
 `setup` (`cairn-build setup`, `cairn-adopt setup`, `cairn-registry setup`), replacing the

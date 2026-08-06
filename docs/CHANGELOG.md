@@ -9,6 +9,39 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (`cairn-build doctor` reports build-timer status; `--all` walks every manifest)
+
+Brian suggested `doctor` mention whether `setup-timer`'s systemd units exist and are
+enabled/started — currently only checkable by hand, one `systemctl` call at a time.
+`cairn-adopt doctor` already had this for the reconcile timer (`check_reconcile_timer`); the
+build side had no equivalent.
+
+Design settled through a short back-and-forth: single-manifest scope (mirroring `github
+reachability`) was the obvious first cut, but Brian rejected it — `/srv/cairn/` is a static,
+known directory (`BR-CLI-022`), and a build host commonly serves more than one client, so
+scoping to one manifest at a time would force an operator to script their own enumeration to
+be sure every timer on the host is actually running. Settled on two mutually exclusive scope
+flags: `--manifest <path>` (one manifest) and `--all` (every manifest under
+`/srv/cairn/*/*.toml`, one result per manifest) — recorded as `ADR-070`. A further question —
+whether `--all` should also broaden `config`/`github reachability` into a full per-manifest
+host audit — was deliberately deferred rather than folded in; tracked as `ADR-071`
+(`docs/open/OPEN_DECISIONS.md`). Bare `cairn-build doctor` (neither flag) is unchanged and
+still runs every host-level check, but now reports the build-timer check as skipped, with the
+fix, rather than omitting it silently the way `github reachability` does.
+
+**`BR-CLI-007`** (`docs/requirements/06-cli.md`) amended in place: the `cairn-build doctor`
+bullet documents the new check and its two scope flags.
+
+**Code:** `provision.build_unit_name`'s naming logic extracted into a pure
+`unit_name_for(client, image_name, environment)` so `doctor.py` can compute the same unit name
+`setup-timer` would install for any manifest it walks, without duplicating the f-string.
+`doctor.py` gains `check_build_timers`/`_check_one_build_timer`/`_known_manifest_paths`; wired
+into `run_build_checks`. `cli_build.py`'s `doctor_command` gains `--all`, checked against
+`--manifest` via `typer.BadParameter` before either check family runs. Tests added to
+`tests/test_doctor.py` and `tests/test_cli_build.py`.
+
+---
+
 ## 2026-08-06 (`images` splits by role: `cairn-build` local-only, `cairn-registry` gains `--host`/`--namespace`/`--image`)
 
 Brian flagged `cairn-build images`'s help text as inaccurate — "reads the registry by default"

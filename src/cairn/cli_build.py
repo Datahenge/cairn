@@ -568,13 +568,26 @@ def doctor_command(
         Path | None,
         typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
     ] = None,
+    all_manifests: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            help="Report build-timer status for every manifest under /srv/cairn/, "
+            "not just --manifest.",
+        ),
+    ] = False,
 ) -> None:
     """Check that this machine can build: Docker Engine v23+/buildx, build inputs present.
 
     Reports every check before exiting non-zero on any failure (BR-CLI-007, BR-CLI-012).
     A missing manifest only warns here (`doctor` legitimately runs before one exists).
+    `--manifest` and `--all` both scope the build-timer check (`ADR-070`) and are mutually
+    exclusive; neither given still runs every other check, but reports the build-timer
+    check as skipped rather than omitting it silently.
     """
-    run(lambda: doctor.run_build(manifest_path=manifest_path))
+    if manifest_path is not None and all_manifests:
+        raise typer.BadParameter("--manifest and --all are mutually exclusive.")
+    run(lambda: doctor.run_build(manifest_path=manifest_path, walk_all=all_manifests))
 
 
 @app.command(

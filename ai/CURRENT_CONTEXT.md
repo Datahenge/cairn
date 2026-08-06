@@ -95,6 +95,18 @@ source of truth for `resolve.py`'s generic "set it and retry" sentence, which `p
 one fix instead of two that disagreed about which environment (shell vs. token file) mattered.
 `BR-CLI-023` in `docs/requirements/06-cli.md` amended in place; `W-013` stays open (the happy
 path — a working token file — is still unexercised against a real host).
+Later still, Brian suggested `cairn-build doctor` should surface `setup-timer`'s systemd unit/
+timer status, currently only checkable by hand. Design settled through dialogue rather than
+mirroring `github reachability`'s single-manifest scope outright: Brian wanted every manifest
+under `/srv/cairn/` auditable in one call, not just the one named by `--manifest` — otherwise an
+operator serving several clients has to script their own enumeration to be sure every timer is
+actually running. `ADR-070`: `doctor` gains `--manifest`/`--all`, mutually exclusive; bare
+invocation is unchanged but now reports the check as skipped-with-a-fix rather than silently
+omitting it. Whether `--all` should later widen to a full per-manifest `config`/`github
+reachability` audit too was deliberately deferred, not folded in — tracked as `ADR-071`.
+`provision.build_unit_name`'s naming logic extracted into a pure `unit_name_for` so `doctor.py`
+reuses it without duplication risk. `BR-CLI-007` amended in place; new build-timer check is
+unverified against a real `setup-timer` install (`docs/technical/05-implementation-index.md`).
 
 ## Read First
 

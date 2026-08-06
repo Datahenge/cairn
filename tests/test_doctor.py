@@ -13,6 +13,7 @@ import pytest
 
 from cairn import config as config_module
 from cairn import doctor, engine
+from cairn import provision as provision_module
 from cairn.descriptor import Descriptor
 from cairn.errors import (
     BuildEngineError,
@@ -279,6 +280,206 @@ def test_known_manifests_lists_client_directories(monkeypatch, tmp_path):
     assert "no-manifest-yet" not in result.detail
 
 
+# --- build timer (BR-CLI-007, BR-CLI-023, ADR-070) --------------------------
+
+_MANIFEST_WITH_ENVIRONMENT = """\
+[cairn]
+image_name = "erpnext-btu-v16"
+environment = "production"
+
+[cairn.frappe]
+url = "https://github.com/frappe/frappe"
+ref = "version-16"
+
+[[cairn.apps]]
+name = "erpnext"
+url = "https://github.com/frappe/erpnext"
+ref = "version-16"
+"""
+
+
+def _set_manifest_root(monkeypatch, root):
+    """Both `doctor.MANIFEST_ROOT` (the enumeration checks read) and
+    `provision.MANIFEST_ROOT` (what `client_from_manifest` validates against internally)
+    must move together, or a test manifest that's canonical under one reads as stray
+    under the other."""
+    monkeypatch.setattr(doctor, "MANIFEST_ROOT", root)
+    monkeypatch.setattr(provision_module, "MANIFEST_ROOT", root)
+
+
+def _write_client_manifest(root, client, filename, text=_MANIFEST_WITH_ENVIRONMENT):
+    client_dir = root / client
+    client_dir.mkdir(parents=True, exist_ok=True)
+    path = client_dir / filename
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_build_timer_warns_when_neither_flag_given():
+    """Unlike `github reachability`, silence isn't an option — the manifests to report on
+    are always knowable from a static directory, even with nothing named (`ADR-070`)."""
+    results = doctor.check_build_timers(None, walk_all=False)
+
+    assert len(results) == 1
+    assert results[0].status is doctor.Status.WARN
+    assert "--manifest" in results[0].detail
+    assert "--all" in results[0].detail
+
+
+def test_build_timer_all_reports_ok_when_no_manifests(monkeypatch, tmp_path):
+    _set_manifest_root(monkeypatch, tmp_path / "does-not-exist")
+
+    results = doctor.check_build_timers(None, walk_all=True)
+
+    assert len(results) == 1
+    assert results[0].status is doctor.Status.OK
+    assert "no manifests found" in results[0].detail
+
+
+def test_build_timer_single_manifest_warns_when_not_installed(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
+    _set_manifest_root(monkeypatch, root)
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", tmp_path / "systemd-does-not-exist")
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert len(results) == 1
+    result = results[0]
+    assert result.status is doctor.Status.WARN
+    assert "not installed" in result.detail
+    assert "cairn-build-acme-erpnext-btu-v16-production" in result.detail
+
+
+def test_build_timer_single_manifest_fails_when_service_missing(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
+    _set_manifest_root(monkeypatch, root)
+    systemd_dir = tmp_path / "systemd"
+    systemd_dir.mkdir()
+    (systemd_dir / "cairn-build-acme-erpnext-btu-v16-production.timer").touch()
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", systemd_dir)
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert results[0].status is doctor.Status.FAIL
+    assert ".service is missing" in results[0].detail
+
+
+def test_build_timer_single_manifest_ok_when_enabled_and_active(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
+    _set_manifest_root(monkeypatch, root)
+    systemd_dir = tmp_path / "systemd"
+    systemd_dir.mkdir()
+    unit = "cairn-build-acme-erpnext-btu-v16-production"
+    (systemd_dir / f"{unit}.timer").touch()
+    (systemd_dir / f"{unit}.service").touch()
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", systemd_dir)
+
+    def _run_stub(command):
+        state = "enabled" if command[1] == "is-enabled" else "active"
+        return _completed(0, stdout=f"{state}\n")
+
+    monkeypatch.setattr(doctor, "_run", _run_stub)
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert results[0].status is doctor.Status.OK
+    assert "enabled & active" in results[0].detail
+
+
+def test_build_timer_single_manifest_warns_when_enabled_but_inactive(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
+    _set_manifest_root(monkeypatch, root)
+    systemd_dir = tmp_path / "systemd"
+    systemd_dir.mkdir()
+    unit = "cairn-build-acme-erpnext-btu-v16-production"
+    (systemd_dir / f"{unit}.timer").touch()
+    (systemd_dir / f"{unit}.service").touch()
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", systemd_dir)
+
+    def _run_stub(command):
+        if command[1] == "is-enabled":
+            return _completed(0, stdout="enabled\n")
+        return _completed(3, stdout="inactive\n")
+
+    monkeypatch.setattr(doctor, "_run", _run_stub)
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert results[0].status is doctor.Status.WARN
+    assert "systemctl start" in results[0].detail
+
+
+def test_build_timer_single_manifest_warns_when_disabled(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    manifest = _write_client_manifest(root, "acme", "cairn_production.toml")
+    _set_manifest_root(monkeypatch, root)
+    systemd_dir = tmp_path / "systemd"
+    systemd_dir.mkdir()
+    unit = "cairn-build-acme-erpnext-btu-v16-production"
+    (systemd_dir / f"{unit}.timer").touch()
+    (systemd_dir / f"{unit}.service").touch()
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", systemd_dir)
+
+    def _run_stub(command):
+        if command[1] == "is-enabled":
+            return _completed(1, stdout="disabled\n")
+        return _completed(3, stdout="inactive\n")
+
+    monkeypatch.setattr(doctor, "_run", _run_stub)
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert results[0].status is doctor.Status.WARN
+    assert "systemctl enable" in results[0].detail
+
+
+def test_build_timer_manifest_with_no_environment_is_warned(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    text = _MANIFEST_WITH_ENVIRONMENT.replace('environment = "production"\n', "")
+    manifest = _write_client_manifest(root, "acme", "cairn.toml", text)
+    _set_manifest_root(monkeypatch, root)
+
+    results = doctor.check_build_timers(manifest, walk_all=False)
+
+    assert results[0].status is doctor.Status.WARN
+    assert "declares no environment" in results[0].detail
+
+
+def test_build_timer_all_walks_every_manifest(monkeypatch, tmp_path):
+    root = tmp_path / "cairn"
+    _write_client_manifest(root, "acme", "cairn_production.toml")
+    _write_client_manifest(
+        root,
+        "contoso",
+        "cairn_staging.toml",
+        _MANIFEST_WITH_ENVIRONMENT.replace('environment = "production"', 'environment = "staging"'),
+    )
+    _set_manifest_root(monkeypatch, root)
+    monkeypatch.setattr(doctor, "SYSTEMD_DIR", tmp_path / "systemd-does-not-exist")
+
+    results = doctor.check_build_timers(None, walk_all=True)
+
+    assert len(results) == 2
+    details = "; ".join(r.detail for r in results)
+    assert "acme/cairn_production.toml" in details
+    assert "contoso/cairn_staging.toml" in details
+
+
+def test_build_timer_rejects_a_manifest_outside_manifest_root(monkeypatch, tmp_path):
+    _set_manifest_root(monkeypatch, tmp_path / "cairn")
+    stray = tmp_path / "cairn.toml"
+    stray.write_text(_MANIFEST_WITH_ENVIRONMENT, encoding="utf-8")
+
+    results = doctor.check_build_timers(stray, walk_all=False)
+
+    assert results[0].status is doctor.Status.FAIL
+    assert "client-scoped" in results[0].detail
+
+
 # --- git (BR-CLI-007, BR-BUILD-005) -----------------------------------------
 
 
@@ -459,6 +660,7 @@ def test_buildx_checked_only_for_docker(
         "build inputs",
         "shared config",
         "known manifests",
+        "build timer",
         "github reachability",
     ]
 
@@ -487,6 +689,7 @@ def test_buildx_not_checked_for_podman(
         "build inputs",
         "shared config",
         "known manifests",
+        "build timer",
         "github reachability",
     ]
 
@@ -548,6 +751,7 @@ def test_all_checks_run_even_after_a_failure(
         doctor.Status.FAIL,
         doctor.Status.OK,  # shared config
         doctor.Status.OK,  # known manifests
+        doctor.Status.WARN,  # build timer — no --manifest/--all given
         doctor.Status.OK,  # github reachability
     ]
 
@@ -604,7 +808,9 @@ def test_report_exit_code(results, expected_code):
 def test_run_build_reports_and_returns_the_exit_code(monkeypatch):
     """`cairn-build doctor` always runs the build checks — nothing to detect."""
     monkeypatch.setattr(
-        doctor, "run_build_checks", lambda preferred_engine=None, manifest_path=None: []
+        doctor,
+        "run_build_checks",
+        lambda preferred_engine=None, manifest_path=None, walk_all=False: [],
     )
     monkeypatch.setattr(doctor, "report", lambda results: 0)
 
