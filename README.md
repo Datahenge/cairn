@@ -19,7 +19,7 @@ else for a Frappe stack:
 Push to a tracked branch. That's the whole workflow:
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[git push] -. poll .-> B[cairn-build]
     B -->|build + push image| C[(registry)]
     C -. poll .-> D[cairn-adopt]
