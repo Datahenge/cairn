@@ -75,7 +75,9 @@ nav:
   - Target:
       - Overview: target/index.md
       - Reconcile Automation: target/automation.md
-  - Guides: guides/index.md
+  - Guides:
+      - Overview: guides/index.md
+      - Docker Storage on a Multi-Volume Host: guides/docker-storage-layout.md
   - Reference:
       - Overview: reference/index.md
       - "cairn.toml (manifest)": reference/manifest.md

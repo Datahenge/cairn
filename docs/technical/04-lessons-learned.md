@@ -24,7 +24,7 @@ Split by topic (2026-08-03) once the single file grew past the point of being lo
 a narrow task. Add new findings to the topic file they belong to; add a new topic file here
 only when a finding doesn't fit any existing one.
 
-_Last updated: 2026-08-03_
+_Last updated: 2026-08-06_
 
 ## Topics
 
@@ -33,3 +33,4 @@ _Last updated: 2026-08-03_
 | [04a-lessons-build-engines.md](04a-lessons-build-engines.md) | BuildKit, buildx, buildah — what each is and how they relate |
 | [04b-lessons-caching-and-provenance.md](04b-lessons-caching-and-provenance.md) | Cache invalidation (`CACHE_BUST`), provenance capture, image labelling, dangling/stage images |
 | [04c-lessons-process-notes.md](04c-lessons-process-notes.md) | Method and process — sandbox constraints, convention enforcement, corrections worth remembering |
+| [04d-lessons-docker-and-host-storage.md](04d-lessons-docker-and-host-storage.md) | Docker Engine vs. containerd storage, host disk layout, diagnosing a live VPS disk-space incident |

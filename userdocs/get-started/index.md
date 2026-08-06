@@ -23,6 +23,12 @@ docker --version
 git --version
 ```
 
+**On a host with more than one volume** — a small root disk plus a larger secondary volume for
+Docker, common on a VPS — set both Docker's and containerd's storage locations before your
+first `docker pull`, not after. Redirecting only Docker's own `data-root` is a common way to
+fill the small volume anyway; see **[Docker Storage on a Multi-Volume
+Host](../guides/docker-storage-layout.md)**.
+
 ## Install
 
 cairn is distributed as **`datahenge-cairn`** on PyPI. On a machine anything else depends on —

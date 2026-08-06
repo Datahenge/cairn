@@ -348,8 +348,8 @@ def _check_certificate() -> tuple[str, bool, str]:
 
 def _check_disk_headroom(config: registry_config.RegistryConfig) -> tuple[str, bool, str]:
     label = "disk headroom"
-    path = config.data_dir if config.data_dir.exists() else config.data_dir.parent
     try:
+        path = config.data_dir if config.data_dir.exists() else config.data_dir.parent
         free_gb = shutil.disk_usage(path).free / 1_000_000_000
     except OSError as exc:
         return label, False, f"{config.data_dir} cannot be checked ({exc})"

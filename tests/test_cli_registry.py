@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import runpy
 import sys
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -492,6 +493,24 @@ def test_doctor_reports_every_check(monkeypatch):
     assert "certificate" in result.stdout
     assert "disk headroom" in result.stdout
     assert "1 of 3 checks failed" in result.stderr
+
+
+def test_check_disk_headroom_reports_permission_error_as_fail(monkeypatch):
+    """`Path.exists()` can itself raise `PermissionError` (EACCES on an unreadable parent,
+    e.g. `data_dir` relocated under a locked-down directory) — not just `disk_usage()`.
+    Both must surface as a `FAIL` row, not an unhandled crash (`BR-REG-011`)."""
+    config = registry_config.RegistryConfig(data_dir=Path("/var/lib/docker/cairn-registry"))
+
+    def _raise_eacces(self):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "exists", _raise_eacces)
+
+    label, ok, detail = cli_registry._check_disk_headroom(config)
+
+    assert label == "disk headroom"
+    assert ok is False
+    assert "cannot be checked" in detail
 
 
 def test_doctor_exits_zero_when_everything_passes(monkeypatch):

@@ -55,6 +55,7 @@ ENTRY_SEP = "\n\n---\n\n"
 HEADER_DATE_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b")
 ARCHIVE_ROW_RE = re.compile(r"^\| \[([^\]]+)\]\(([^)]+)\) \| `([^`]+)` \| (.+) \|$", re.MULTILINE)
 ARCHIVE_TABLE_HEADING = "## Index — archived-for-size"
+FOOTER_HEADING = "## Archived entries"
 
 
 @dataclass
@@ -93,8 +94,10 @@ def parse_changelog(text: str) -> tuple[str, list[Entry]]:
     entries: list[Entry] = []
     for block in blocks[1:]:
         if not block.startswith("## "):
-            continue  # the footer block, if this file has one
+            continue  # a footer block with no heading of its own, if this file has one
         header_line, _, rest = block.partition("\n")
+        if header_line == FOOTER_HEADING:
+            continue  # the machine-generated footer this same tool writes — see render_footer
         match = HEADER_DATE_RE.match(header_line)
         if not match:
             raise ValueError(
@@ -130,7 +133,7 @@ def render_footer(archive_index_path: Path) -> str:
         "contiguous range, newest-first within it same as here.",
         width=88,
     )
-    lines = ["## Archived entries", "", paragraph, ""]
+    lines = [FOOTER_HEADING, "", paragraph, ""]
     lines += [f"- [{name}](archive/{path})" for name, path in rows]
     return "\n".join(lines)
 

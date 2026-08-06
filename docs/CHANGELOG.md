@@ -9,6 +9,74 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (new lessons-learned topic: Docker & host storage)
+
+Closing out the same client-VPS disk-space incident as the two entries below: six durable
+findings recorded in new **`docs/technical/04d-lessons-docker-and-host-storage.md`** —
+Docker's `data-root` vs. containerd's independent `root`; disproving a plausible-looking
+double-counting theory with `stat -f` rather than trusting matching sizes/timestamps; not
+nesting one service's data inside another's managed tree; `sudo`'s glob-expansion-happens-
+first gotcha; verifying a device explicitly rather than trusting an implicit `mount
+<path>` → `/etc/fstab` lookup on a live migration; and when collapsing to one shared
+volume beats textbook per-service isolation. `docs/technical/04-lessons-learned.md`'s
+topic index updated to route to it.
+
+## 2026-08-06 (`changelog_rotate.py` could not parse its own generated footer)
+
+Found immediately after writing the entry below: `docs/CHANGELOG.md` tripped `DOC002`'s word
+budget, and running the prescribed fix (`ai/tools/changelog_rotate.py --dry-run`) crashed
+instead of archiving anything. `render_footer` writes the footer heading as `## Archived
+entries`; `parse_changelog`'s block loop only skips a trailing block that does *not* start with
+`## ` — so the tool's own output, fed back in on a later run, hit the "not a dated entry"
+branch and raised. Bug found and fixed, no requirement redesign: both sites now reference one
+`FOOTER_HEADING` constant, and `parse_changelog` explicitly recognizes and discards that exact
+block rather than only the no-heading case. Rotation re-run after the fix; archived the five
+oldest entries (2026-08-04 through 2026-08-05) to `docs/archive/CHANGELOG-2026-08-04-to-
+2026-08-05.md`, confirmed against `docs_check.py` and the full test suite.
+
+## 2026-08-06 (new userdocs guide: Docker storage on a multi-volume host)
+
+Same VPS relocation session that surfaced the `disk-headroom` doctor bug (below): after fixing
+`cairn-registry`'s `data_dir`, Brian tried to solve the client VPS's small-root-disk problem
+generally by pointing containerd at the big Docker volume too — nesting a directory inside
+`/var/lib/docker` and moving files there. That doesn't work: containerd's `root` setting
+(`/etc/containerd/config.toml`) is completely independent of Docker's own `data-root`
+(`/etc/docker/daemon.json`), and on a host with Docker's containerd image store enabled
+(`driver-type: io.containerd.snapshotter.v1`), containerd — not Docker's own graphdriver — is
+what actually holds the growing image/container layer bytes. Redirecting only `data-root`
+leaves containerd silently defaulting to `/var/lib/containerd`, on whatever volume holds
+ordinary `/var/lib` — the small one. Brian: "a huge footgun for anyone running multiple volumes
+on a VPS," and asked for it in published docs before it bites someone else.
+
+Not a cairn requirement — this is host-level Docker/containerd configuration, nothing cairn's
+own code touches (confirmed: no reference to `containerd` anywhere in `src/` or `docs/`) — so no
+`BR`/`ADR` ID, just a new userdocs page: **`userdocs/guides/docker-storage-layout.md`**,
+covering how to tell which daemon actually holds the space (`ncdu`, `docker info`, the `moby`
+namespace check on containerd's shims) and how to relocate containerd's `root` onto its own
+volume rather than nesting it inside `/var/lib/docker` (the same data-root-blast-radius caution
+`ADR-060` already applied to `cairn-registry`'s own `data_dir`, here generalized to any
+Docker host). Linked from `userdocs/guides/index.md` and, since this needs deciding *before*
+first use, from `userdocs/get-started/index.md`'s Prerequisites section. `mkdocs.yml` nav gained
+a `Guides` submenu (previously a single flat page) to hold it.
+
+## 2026-08-06 (`cairn-registry doctor`: a `PermissionError` on `data_dir` no longer crashes the disk-headroom check)
+
+Found live while helping Brian relocate a client VPS's `data_dir` off a disk-space-constrained
+root filesystem: he'd pointed `[registry] data_dir` at a path under `/var/lib/docker`, which
+Docker keeps locked down against non-root traversal by design. `cairn-registry doctor` crashed
+with an unhandled `PermissionError` instead of reporting a normal `FAIL` row.
+
+Bug found and fixed, no requirement redesign — `BR-REG-011` already requires `doctor` to report
+three checks, not throw: `_check_disk_headroom` (`cli_registry.py`) called `config.data_dir.
+exists()` *outside* the function's own `try`/`except OSError` block, so an `EACCES` on an
+unreadable parent directory (raised by `exists()` itself, not just the `shutil.disk_usage()`
+call two lines below that was already guarded) propagated as an internal-error crash. Fixed by
+moving the `.exists()` call inside the existing `try` block — one-line fix, same error-message
+shape the `disk_usage()` path already used. New test
+(`test_check_disk_headroom_reports_permission_error_as_fail`, `test_cli_registry.py`) exercises
+the exact failure mode by monkeypatching `Path.exists` to raise `PermissionError`. Full suite
+passes.
+
 ## 2026-08-06 (`cairn-build doctor` reports build-timer status; `--all` walks every manifest)
 
 Brian suggested `doctor` mention whether `setup-timer`'s systemd units exist and are
@@ -423,258 +491,6 @@ deployment, moved by hand).
 
 ---
 
-## 2026-08-05 — correction: `cairn-registry setup` was already verified live 2026-08-04; `W-015` narrowed
-
-`docs/technical/05-implementation-index.md`'s Registry row and `open/OPEN_WORK.md`'s `W-015`
-both understated progress already made: a real (non-`--dry-run`) `cairn-registry setup` had
-already completed cleanly against the client's test VPS on 2026-08-04, alongside that day's
-`--dry-run` pass that found and fixed the two dry-run-contract bugs — the index's own prose
-already described both, but its "Known Next Gap" cell and `W-015`'s own description still
-read as if the real run hadn't happened. Corrected per Brian, 2026-08-05.
-
-- **`docs/technical/05-implementation-index.md`** — Registry row's "Known Next Gap" narrowed
-  from "first real-host `setup` run past `--dry-run`, and first `prune`/`gc` run" to just the
-  `prune`/`gc` half.
-- **`open/OPEN_WORK.md`** — `W-015`'s description rewritten to state plainly that
-  implementation and live `setup` verification are both done; only `prune`/`gc` against a
-  real registry remain.
-- **`CURRENT_CONTEXT.md`** — "Active work" line updated to match.
-
-## 2026-08-05 (`BR-DEPLOY-003b`: convergence verified against the running container, `W-022` closed)
-
-`W-022`, found live the same day (fork-pressure register item 4, `ADR-021`): a target whose
-compose file hardcoded `image:` per service, rather than parameterizing it with
-`${CUSTOM_IMAGE}`/`${CUSTOM_TAG}`, let `reconcile` report `Converged` while every
-erpnext-app container kept running the old image — `running_digest()` only asked the local
-image store whether a matching image existed, never what the running container was actually
-using.
-
-- **`docs/requirements/03-deploy.md`** — new `BR-DEPLOY-003b`: convergence MUST be
-  determined by reading the digest off the **running** `backend` container's own image, not
-  merely whether a matching image exists in the local store; a mismatch MUST be treated as
-  a convergence failure (`BR-DEPLOY-018`), not a silent `Converged`. Allowlist ceiling for
-  the file bumped 2450 → 2600 to fit it (`.docs_check_allowlist`).
-- **`src/cairn/reconcile.py`** — `running_digest()` rewritten: `compose ps -q backend` →
-  `docker inspect <container> --format {{.Image}}` → `docker image inspect <image>
-  --format {{json .RepoDigests}}`, instead of inspecting `descriptor.reference` directly
-  against the local store. `tests/test_reconcile.py` updated and extended, including a
-  regression test for the exact live failure (a stale container reporting its own older
-  digest, not whatever else the store holds).
-- **`open/OPEN_WORK.md`** — `W-022` swept to `docs/archive/OPEN_WORK-done.md`.
-  **`docs/technical/05-implementation-index.md`** — Reconcile/deploy row's status changed
-  from "Verified live (with a caveat)" to "Verified live."
-
-## 2026-08-05 (`ADR-059` code migration: `W-023`..`W-031` landed)
-
-The deferred code migration from the entry below landed same-day: `src/cairn/vendored/` is
-now `src/cairn/recipe/`, and every ventwig-era code path it depended on is gone.
-
-- **`src/cairn/vendor.py`** — trimmed to `assert_build_inputs` (`BR-VEND-003`) plus the
-  Containerfile-reading helpers it needs; `status`/`sync`/`_refresh_pin_file`/`read_pin`/
-  `_tree_hash`/`assert_clean`/`assert_no_nested_git` all removed. New `recipe_commit()`
-  reads cairn's own git history for `BR-BUILD-011` provenance, degrading to `""` in an
-  installed wheel (no `.git`).
-- **`src/cairn/project.py`** — deleted entirely; **`src/cairn/errors.py`** —
-  `ProjectRootNotFoundError`/`VendorToolError`/`VendorDriftError` removed as unused.
-- **`src/cairn/cli_build.py`** — the `vendor` Typer sub-app, `_run_in_project`, and the
-  `find_project_root` import are gone; help text and step messages reworded.
-- **`src/cairn/build.py`** — `plan()` drops the `assert_clean`/`assert_no_nested_git`
-  calls; `provenance_labels()` stamps `com.datahenge.cairn.frappe-docker.ref`/`.commit`
-  from cairn's own `__version__` and `vendor.recipe_commit()` instead of a
-  `frappe_docker.pin.toml` read. **`src/cairn/images.py`** follows suit — `vendor_pin`
-  became `recipe_commit`, and the local/registry reports now print "built from recipe
-  `<commit>`" instead of "built with vendored base `<ref>`".
-- **`src/cairn/doctor.py`** — the `vendored tree`/`vendor .git` guards are gone; `build
-  inputs` stays.
-- **`pyproject.toml`** — `[tool.ventwig]` and the `ventwig` dev dependency removed; the
-  `description` field and the ruff `extend-exclude` path updated to match.
-- Tests updated alongside each change (`test_vendor.py` rewritten, `test_project.py`
-  deleted, `test_build.py`/`test_doctor.py`/`test_cli_build.py`/`test_images.py`/
-  `test_timing.py`/`test_cli_adopt.py` adjusted); `tools/docs_check.py`'s hardcoded
-  exclusion path fixed (found stale by its own check); `userdocs/index.md`,
-  `userdocs/reference/index.md`, and `userdocs/builder/index.md` swept of the `ventwig`/
-  `vendor status|sync` walkthrough and the `(ADR-001)` ID leak.
-- **`open/OPEN_WORK.md`** — `W-023`..`W-031` swept to
-  `docs/archive/OPEN_WORK-done.md`. **`docs/technical/05-implementation-index.md`** — the
-  Owned Docker recipe row updated from "code migration pending" to `Implemented`.
-
-## 2026-08-05 (`ADR-059`: cairn owns its Docker build recipe; frappe_docker vendoring retired)
-
-Working through the fork-pressure register's item 4 (below) with Brian surfaced a bigger
-question than forking `frappe_docker`: since `cairn-adopt reconcile` never composes against
-cairn's own vendored copy at deploy time (it reads the compose directory/filename off the
-*target's* descriptor — `descriptor.py`'s `Compose.directory`/`Compose.file`), and since
-`BR-DEPLOY-007` already scopes cairn to existing environments only, cairn will always face a
-pre-existing compose file regardless. The vendored `compose.yaml` inside cairn's own repo
-serves no purpose there. Combined with a direct read of `images/custom/Containerfile`
-(~130 lines, one Debian base, six version `ARG`s — smaller and more legible than assumed) and
-the observation that `BR-VEND-009` already made upstream delivery to a real VPS a deliberate,
-manual act (never automatic), the conclusion reached was: **own the recipe outright, rather
-than fork-and-still-track-upstream.**
-
-- **`docs/adr/059-...md`** (new, authoritative) — decision record: cairn owns its Docker
-  build recipe and compose YAML permanently, at `src/cairn/recipe/frappe_docker/` (renamed
-  from `src/cairn/vendored/`), bootstrapped as a byte-for-byte copy. No `ventwig`, no pin, no
-  drift check, no sync obligation — upstream `frappe_docker` becomes an informal, at-will
-  reference. Supersedes `ADR-001` (wrap, never modify) and `ADR-007` (vendoring via ventwig);
-  resolves `ADR-020` (ventwig pin immutability — moot) and `ADR-021` (fork escape hatch —
-  superseded, ownership grants everything a fork would without forking). All four archived
-  to `docs/archive/` with forwarding stubs left in place.
-- **`docs/00-project-scope.md`** — Purpose, "Is not," and guiding-principle prose rewritten:
-  "Never own what we don't own" becomes "Own what we depend on."
-- **`docs/requirements/01-vendoring.md`** — full rewrite. The ten `BR-VEND-001..010`
-  (ventwig mechanism, tag pin, lock anchor, read-only, drift hard-stop, build-input
-  completeness, no upstream `.git`, no package markers, deliberate-upgrades-only, git working
-  tree) replaced by four ownership-era requirements: recipe ownership, no tracking obligation,
-  build-input completeness (kept, reframed), no nested VCS metadata.
-- **`docs/requirements/02-build.md`, `06-cli.md`** — `BR-BUILD-009`/`011`/`013` reworded for
-  ownership (provenance labels now stamp the recipe's own git commit/cairn version, not a
-  `frappe_docker.pin.toml` upstream pin); `BR-CLI-006` (`vendor status`/`sync`) struck — no
-  replacement command ships.
-- **`AGENTS.md`, `CURRENT_CONTEXT.md`** — `VEND` area glossary redefined from "vendoring" to
-  "the owned Docker build recipe"; artifacts table and Standing Rules updated to the new path.
-- Citation touch-ups in `docs/adr/015-...md`, `018-...md`, `029-...md`, `030-...md`,
-  `044-...md`, `046-...md`, and `decisions/008-...md` where they referenced the retired
-  vendoring model, plus `docs/technical/05-implementation-index.md`'s Vendoring row.
-- **`open/OPEN_DECISIONS.md`** — `ADR-020`/`ADR-021` rows removed (resolved). **`open/OPEN_WORK.md`**
-  — `W-010` closed (superseded); `W-023`..`W-031` added for the deferred **code** migration
-  (renaming `src/cairn/vendored/` → `src/cairn/recipe/`, retiring `vendor.py`/`project.py`/the
-  `vendor` CLI sub-app, redesigning `build.py`'s provenance labels, updating tests, fixing a
-  pre-existing `(ADR-001)` ID leak in `userdocs/builder/index.md`) — **not executed this pass**,
-  per this project's own documentation-precedes-code discipline. Code still lives at the old
-  vendored/ventwig paths until that work lands.
-
-## 2026-08-05 (first real target converged; fork-pressure register item 4; `W-001`/`W-002` closed)
-
-The client VPS adopt reached the finish line: `cairn-adopt reconcile` ran against a real target
-for the first time ever, and — after one genuine surprise — the site is now actually running the
-client's own build, not the pre-existing public image.
-
-- **The surprise:** `reconcile` reported `Converged`, but nothing had changed. The target's
-  existing compose file (deployed from something structurally identical to frappe_docker's
-  `pwd.yml` quick-start, not its `compose.yaml`) hardcoded the image on every service — no
-  `${CUSTOM_IMAGE}`/`${CUSTOM_TAG}` anywhere. `reconcile.running_digest()` only confirms a local
-  image exists under the desired tag, not that any container is running it, so the false
-  convergence went unnoticed until checked by hand (`docker inspect` vs. the pulled digest).
-  Recorded as fork-pressure register item 4 (`docs/adr/021-...md`) and as `W-022` (`reconcile`'s
-  own robustness gap, independent of the fork question).
-- **The fix, on the client's side:** the compose file's hardcoded `frappe/erpnext:v16.26.1`
-  replaced with `${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-v16.26.1}` per service (matching
-  frappe_docker's own `compose.yaml` convention); a one-time manual `compose up`/`migrate`
-  (bypassing `reconcile`'s now-satisfied short-circuit) brought `backend`'s actual running image
-  ID to match the desired digest — confirmed by `docker inspect`. A subsequent real
-  `cairn-adopt reconcile` correctly reported `Already running`.
-- **`W-001`/`W-002` closed** in `open/OPEN_WORK.md` — first live deployment sequence and
-  `cairn-adopt doctor`'s target-role checks both verified against real infrastructure.
-  `docs/technical/05-implementation-index.md`'s Reconcile/deploy, Examine, and Doctor rows
-  updated with completion judgments, including the caveat.
-- **`W-007` closed** — `USAGE.md` was never written; superseded by the published user-facing
-  docs on GitHub Pages (`userdocs/` → `https://datahenge.github.io/cairn/`, `ADR-045`), which
-  already cover installation and per-role walkthroughs. `README.md`'s "How to use" section
-  trimmed to match: the inline target walkthrough (stale — it predated `userdocs/target/`)
-  replaced with a one-line pointer to the published [Target](https://datahenge.github.io/cairn/target/)
-  walkthrough, matching how Builder and Registry already link out instead of duplicating.
-
----
-
-## 2026-08-04 (`registry_host` made required; `"docker.io"` names Docker Hub, `ADR-058`)
-
-Same thread, hours later: Brian asked whether `ADR-057`'s reasoning for making `registry_host`
-optional ("no value would exist for Docker Hub") was actually true. It wasn't — `registry.py`
-already had `_DOCKER_HUB_NAMES = frozenset({"docker.io", "index.docker.io"})`, unrelated to this
-session, recognizing exactly this. `docker.io` is the canonical name, and precisely what `docker`
-itself normalizes a hostless reference to.
-
-- **`ADR-058`** supersedes `ADR-057` the same day — `Descriptor.registry_host` changes from
-  `str | None = None` to `str` (required, same as `image`/`tag`/`site`); `registry.split_host()`'s
-  hostless fallback changes from `(None, base)` to `("docker.io", base)`; `render()` prints
-  `registry_host` unconditionally instead of only when present. `ADR-057` archived in full to
-  `docs/archive/057-...md`, forwarding stub left at its original `decisions/` path, matching this
-  project's established same-day-supersession pattern (`ADR-049`/`050` → `ADR-052`).
-- Every fixture across `test_descriptor.py`, `test_adopt.py`, `test_reconcile.py`,
-  `test_provision.py`, `test_doctor.py`, `test_cli_adopt.py`, `test_registry.py` that built a
-  `Descriptor`/`Survey`/minimal TOML without `registry_host` updated to include it — the schema
-  tightening surfaced every place a test had been implicitly relying on the old default.
-  `userdocs/reference/target-descriptor.md` and `userdocs/target/index.md` updated to match.
-  Full suite (774) + lint + docs-check + `mkdocs build --strict` all pass.
-
----
-
-## 2026-08-04 (target descriptor splits `registry_host` from `image`, `ADR-057`, superseded)
-
-Same live-VPS thread: fixing `cairn-registry images`'s missing host (previous entry) prompted
-Brian to ask why the descriptor's `image` field was a combined `<host>/<repo>` string at all —
-"a key named `image` that's actually 2 things combined into one" — rather than a separate field,
-the way the manifest's own `[cairn.registry] host` already is.
-
-- **`descriptor.py`**: `Descriptor` gains `registry_host: str | None = None`. `image` now holds
-  the repository path alone. New `repository` property (`registry_host/image`, or `image` alone
-  if absent) and `reference` now built from it. Optional, not required — mirroring the
-  manifest's own optional `registry` — because a hostless reference is a real case this exact
-  session already hit: a pre-cairn deployment running the public `frappe/erpnext:v16.26.1`,
-  which genuinely names no host. Requiring one would force a fabricated value onto a fact.
-- **`registry.py`**: new `split_host()`, `parse_ref`'s lenient sibling — same host-detection
-  heuristic (factored into `_looks_like_host`), but a missing host isn't an error, since this is
-  recording what's actually running, not asserting where cairn should push or pull.
-- **`adopt.py`**: `Survey.registry_host`, populated by `_survey_image` via `split_host`;
-  `render()` prints `registry_host` (when present) and realigned every top-level key to match;
-  `report()`'s "Running image" line reassembles the split for display.
-- **`reconcile.py`**: `CUSTOM_IMAGE` and the `RepoDigests` match now use `descriptor.repository`
-  instead of the bare `.image`, since those need the full pull reference either way.
-- **`cairn-registry images`, same session**: repository line split too — `Registry <host>`
-  printed once, `Repository <name>` per line, instead of one glued string repeated per
-  repository (the shape that made the host easy to miss copying by hand in the first place).
-- Backward compatible: an existing descriptor with `registry_host` absent and a full
-  `host/namespace/name` string in `image` behaves exactly as before. No live client has
-  installed one yet (`open/OPEN_WORK.md`), so this is a clean addition, not a migration.
-- New tests across `test_descriptor.py`, `test_adopt.py`, `test_reconcile.py`,
-  `test_registry.py`, `test_cli_registry.py`; `userdocs/reference/target-descriptor.md` and
-  `userdocs/target/index.md` updated. Full suite (770) + lint pass.
-
----
-
-## 2026-08-04 (`cairn-registry images`'s repository line was still not copy-pasteable)
-
-Immediate real-world fallout from the previous entry's fix: Brian used `cairn-registry images`
-to find the value for a target descriptor's `image`, hand-copied the repository line
-(`lifescientific/erpnext-v16`), and `cairn-adopt doctor`'s registry check failed —
-`registry.parse_ref` refuses a reference with no registry host, and the printed line never had
-one. The grouping fix labeled the line `Repository <name>`, but *name* was always the bare
-repository, never `config.host/<name>` — the exact string a descriptor's `image` field needs.
-
-- `images_command` now prints `Repository {base.base}` — the full `<host>/<repository>`
-  reference, via `ImageRef.base`, which already existed and was simply unused here. `--json` is
-  untouched (`registry` and `name` are already separate, structured fields there; a scripting
-  consumer joins them itself rather than needing a third, pre-joined string).
-  `userdocs/registry/cli.md`'s example updated to show a host in the repository line. New test
-  `test_the_repository_line_is_the_full_copy_pasteable_reference`; full suite + lint pass.
-
----
-
-## 2026-08-04 (`cairn-registry images` grouped by digest, not one row per tag; `.docs_check_allowlist` fix, `ADR-056`)
-
-Two unrelated items, same session.
-
-- **`BR-REG-005`**: Brian, still mid-adopt, reached for `cairn-registry images` to find the
-  right `image`/`tag` for the target descriptor and found the output unlabeled — a bare
-  repository name, unheaded tag/digest columns — and structured one row per tag, so three tags
-  sharing a build (a content-hash tag, `latest`, and any environment pointer) repeated the same
-  digest three times instead of appearing together. Restructured to group by digest: a
-  `Repository <name>` header, a `DIGEST`/`TAGS` column header, and one row per unique digest
-  listing every tag that names it. `--json`'s shape changed to match (`images: [{digest, tags}]`
-  replacing the flat `tags: [{tag, digest}]`) — the full, untruncated digest, since `--json` is
-  for scripting and needs precision the human-readable short digest doesn't. `_grouped_tags()`
-  is the new shared helper both output paths call. `BR-REG-005` updated to require the grouping.
-  `userdocs/registry/cli.md` and `userdocs/target/index.md` (the `image`/`tag` gotcha, now also
-  covering the "running a pre-cairn public image" case found earlier this session) updated and
-  cross-linked. New tests in `test_cli_registry.py`; full suite + lint pass.
-- **`.docs_check_allowlist`** (`ADR-056`): this file's own 2000-word override — dropped that
-  low the same day specifically to force frequent archiving — re-tripped within hours,
-  mid-session, forcing an archive pass that interrupts the work generating the entries. Tripled
-  to 6000 per Brian; no archiving performed, next pass happens on its own schedule.
-
----
-
 ## Archived entries
 
 Older entries are moved out once this file grows past its word-count budget
@@ -685,3 +501,4 @@ contiguous range, newest-first within it same as here.
 - [CHANGELOG-2026-08-03.md](archive/CHANGELOG-2026-08-03.md)
 - [CHANGELOG-2026-08-04-early.md](archive/CHANGELOG-2026-08-04-early.md)
 - [CHANGELOG-2026-08-04.md](archive/CHANGELOG-2026-08-04.md)
+- [CHANGELOG-2026-08-04-to-2026-08-05.md](archive/CHANGELOG-2026-08-04-to-2026-08-05.md)
