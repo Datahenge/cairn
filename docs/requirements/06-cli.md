@@ -32,13 +32,19 @@ ADR-048)*
 [--dry-run]` — build the image from `cairn.toml` (resolve refs → apps.json → tagged image +
 provenance labels). **Default is build-only**; `--push` also uploads. *(BR-BUILD-*)*
 
-**`BR-CLI-002a`** *(build's optional `--assign-tag`, `ADR-052`)* — `build` MAY be given
-`--assign-tag` (boolean, no value): after a successful `--push` (or a no-op short-circuit,
-`BR-BUILD-014`/`014a`), it performs the same retag step `assign-tag` (`BR-CLI-004`) does,
-reusing the digest `build` already resolved rather than re-running `assign-tag`'s own
-resolve-and-check from scratch. `--assign-tag` without `--push` MUST be refused as a
-contradiction — nothing was pushed to retag. The `:production` gate (`BR-CLI-010`) applies the
-same as it does to standalone `assign-tag`. *(BR-BUILD-014a, BR-CLI-004, BR-CLI-010, ADR-052)*
+**`BR-CLI-002a`** *(build's `--assign-tag`, on by default with `--push`, `ADR-052`,
+`ADR-066`)* — `build --push` MUST also assign the manifest's declared environment by
+default, unless `--no-assign-tag` is given: after a successful push (or a no-op
+short-circuit, `BR-BUILD-014`/`014a`), it performs the same retag step `assign-tag`
+(`BR-CLI-004`) does, reusing the digest `build` already resolved rather than re-running
+`assign-tag`'s own resolve-and-check from scratch. A manifest declaring **no** environment
+is silently skipped under the default — most manifests don't participate in the environment
+model at all, and that is not an error. Passing `--assign-tag` explicitly asks for it and
+MUST still error if the manifest declares none (`BR-CLI-009`), and MUST be refused as a
+contradiction if `--push` is absent — nothing was pushed to retag. The `:production` gate
+(`BR-CLI-010`) applies identically whether the assignment came from the default or from an
+explicit `--assign-tag`. *(BR-BUILD-014a, BR-CLI-004, BR-CLI-009, BR-CLI-010, ADR-052,
+ADR-066)*
 
 **`BR-CLI-003`** *(push)* — `cairn-build push [--id <tag>]` — upload a built image to the
 registry (default: the current manifest's just-built image). *(BR-BUILD-*, BR-CFG-011)*

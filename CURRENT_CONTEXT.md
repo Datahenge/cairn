@@ -50,6 +50,10 @@ serve more than one client and a single shared `CAIRN_GITHUB_TOKEN` can't be ass
 every client's private repos. `ADR-065`: `github_auth.py` stays unchanged — the generated
 `.service` now carries a per-client, optional `EnvironmentFile=-/etc/cairn/<client>/
 github-token.env`, never written by cairn, referenced only by that client's own unit.
+Also 2026-08-05: `ADR-066` resolves `W-021` — `cairn-build build --push` now assigns the
+manifest's declared environment by default (`--no-assign-tag` opts out; a manifest with none
+is silently skipped, not errored); the `:production` gate needed no new wiring since it was
+already keyed off the target environment rather than how assignment was requested.
 
 ## Read First
 

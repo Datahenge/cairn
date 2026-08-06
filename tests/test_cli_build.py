@@ -885,6 +885,55 @@ def test_build_assign_tag_gates_production(stubs, monkeypatch):
     assert "retag" not in seen
 
 
+# --- build --push defaults to --assign-tag (ADR-066) --------------------------
+
+
+def test_build_push_assigns_by_default_when_an_environment_is_declared(stubs, monkeypatch):
+    """`--push` alone, with no `--assign-tag`/`--no-assign-tag` given, now also retags —
+    the whole point of `ADR-066`."""
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("staging"))
+    monkeypatch.setattr(registry, "digest_of", _raise_not_found)
+    seen = {}
+    monkeypatch.setattr(
+        registry, "retag", lambda source, tag: seen.setdefault("retag", (str(source), tag))
+    )
+
+    result = runner.invoke(cli_build.app, ["build", "--push", "--yes"])
+
+    assert result.exit_code == 0
+    assert seen["retag"][1] == "staging"
+
+
+def test_build_push_skips_assignment_silently_with_no_declared_environment(stubs):
+    """A manifest declaring no environment is the common case, not a mistake — the implicit
+    default MUST NOT raise `BR-CLI-009`'s "declares no environment" error the way an explicit
+    `--assign-tag` would (`ADR-066`)."""
+    result = runner.invoke(cli_build.app, ["build", "--push"])
+
+    assert result.exit_code == 0
+    assert "add `[cairn] environment" not in result.stderr
+    assert "nothing to point" in result.stderr
+
+
+def test_build_no_assign_tag_opts_out_of_the_default(stubs, monkeypatch):
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("staging"))
+    seen = {}
+    monkeypatch.setattr(registry, "retag", lambda source, tag: seen.setdefault("retag", tag))
+
+    result = runner.invoke(cli_build.app, ["build", "--push", "--no-assign-tag"])
+
+    assert result.exit_code == 0
+    assert "retag" not in seen
+
+
+def test_build_no_assign_tag_without_push_is_not_a_contradiction(stubs):
+    """Unlike explicit `--assign-tag`, `--no-assign-tag` alone is always consistent — it's
+    the same as doing nothing extra, whether or not `--push` was given."""
+    result = runner.invoke(cli_build.app, ["build", "--no-assign-tag"])
+
+    assert result.exit_code == 0
+
+
 # --- push (BR-CLI-003) -----------------------------------------------------
 
 

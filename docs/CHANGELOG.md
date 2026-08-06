@@ -9,6 +9,23 @@ code changes live in git history.
 
 ---
 
+## 2026-08-05 — `ADR-066`: `build --push` assigns the declared environment by default, `W-021` resolved
+
+Brian resolved `W-021` (raised and deferred 2026-08-04): since `setup-timer`'s generated
+script already assigns the environment tag unconditionally on every poll, opt-in
+`--assign-tag` on the manual path only bought the interval between polls of explicitness
+before the tag got set regardless.
+
+`build --push` now assigns by default; the CLI flag becomes a tri-state
+`--assign-tag/--no-assign-tag`. Unset (the default): assign if `--push` was given and the
+manifest declares an environment, silently skipping one that declares none — most manifests
+don't participate in the environment model, and that's not a mistake. Explicit
+`--assign-tag` still errors on a manifest with no environment (`BR-CLI-009`) and still
+requires `--push`. `--no-assign-tag` always skips. `BR-CLI-010`'s `:production` gate needed
+no new wiring — it already keys off the target environment, not how assignment was
+requested. `BR-CLI-002a` rewritten; full rationale in
+`decisions/066-build-push-defaults-to-assign-tag.md`.
+
 ## 2026-08-05 — `ADR-065`: per-client `EnvironmentFile=` supplies the build timer's GitHub PAT, `OQ-002` resolved
 
 Brian raised this in two parts. First: the unattended build timer had no path to a GitHub

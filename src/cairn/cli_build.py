@@ -109,12 +109,16 @@ def build_command(
         ),
     ] = False,
     assign_tag: Annotated[
-        bool,
+        bool | None,
         typer.Option(
-            "--assign-tag",
-            help="Also point this manifest's declared environment at the pushed image.",
+            "--assign-tag/--no-assign-tag",
+            help=(
+                "Also point this manifest's declared environment at the pushed image. "
+                "Defaults to on whenever --push is given and the manifest declares one; "
+                "--no-assign-tag opts out."
+            ),
         ),
-    ] = False,
+    ] = None,
     assume_yes: Annotated[
         bool, typer.Option("--yes", help="Do not ask for confirmation before --assign-tag.")
     ] = False,
@@ -123,9 +127,13 @@ def build_command(
 
     Default is **build-only**; `--push` also uploads, and is checked for a configured
     registry up front so a long build cannot succeed only to fail at the last step.
-    `--assign-tag` additionally points this manifest's declared environment at whatever image
-    resulted — freshly built or found already published — reusing the digest this command
-    already resolved rather than re-checking from scratch (`ADR-052`).
+    `--push` additionally points this manifest's declared environment at whatever image
+    resulted — freshly built or found already published — by default, reusing the digest
+    this command already resolved rather than re-checking from scratch (`ADR-052`,
+    `ADR-066`). A manifest declaring no environment is silently skipped, not an error, since
+    most manifests don't participate in the environment model at all; `--assign-tag` asks for
+    it explicitly and still errors if there is none to assign (`BR-CLI-009`).
+    `--no-assign-tag` opts out of the default outright.
 
     At a terminal the whole run is also saved to a transcript, because nothing else is
     keeping it (`ADR-031`); under CI or systemd it is not, because something already is.
@@ -253,7 +261,17 @@ def build_command(
                         done(f"Pushed {reference}")
                     push.release_ownership(plan.image_base, plan.engine_name)
 
-        if assign_tag:
+        if assign_tag is None:
+            # Implicit default (ADR-066): --push also assigns unless told otherwise, but a
+            # manifest that declares no environment at all is the common case, not a
+            # mistake — silently skip rather than raise the error an explicit ask deserves.
+            should_assign = push_after and manifest.environment is not None
+            if push_after and not should_assign:
+                step("  This manifest declares no environment — nothing to point.")
+        else:
+            should_assign = assign_tag
+
+        if should_assign:
             environment = environments.require(manifest, build_config)
             source_ref = registry.parse_ref(plan.references[0])
             assignment = environments.check_known(environment, source_ref, digest)
