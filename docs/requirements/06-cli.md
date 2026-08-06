@@ -331,7 +331,7 @@ NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report manifests found under
 never for selection — `BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-009,
 BR-DEPLOY-021, ADR-043, ADR-047, ADR-052)*
 
-**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-051`, `ADR-052`, `ADR-062`)* — Both CLIs carry
+**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-051`, `ADR-052`, `ADR-062`, `ADR-064`)* — Both CLIs carry
 a `setup-timer` subcommand, separate from `setup`, installing only the build/reconcile
 systemd timer — enabled, not started, unchanged in substance from `ADR-046`'s
 `setup --only timers`. Split out for discoverability in `--help`, where a first-time reader
@@ -352,11 +352,14 @@ collision-prone name. The generated build script is written to that same client 
 `/srv/cairn/<client>/<unit>.sh`, never to the invoking shell's working directory: the
 directory is already the group-shared, non-user-specific home `ADR-047` established, and a
 script build automation depends on MUST NOT live somewhere a retired operator account or a
-cleaned-up home directory can take it down. `cairn-build`'s script runs
+cleaned-up home directory can take it down. **Every host-specific value the generated `.service`
+carries follows the same rule** (`ADR-064`): `WorkingDirectory=` is the script's own directory,
+not the operator's `cwd` at the moment `setup-timer` ran — `cairn-build setup-timer` takes no
+`--workdir` at all, since nothing in the stage reads one. `cairn-build`'s script runs
 `build --push --assign-tag --yes`, then `prune --keep 1 --yes` — disk cleanup rides the same
 script rather than a separate timer (`ADR-051`), and the retag step rides `build`'s own
 `--assign-tag` flag (`BR-CLI-002a`) rather than a second command. *(ADR-046, ADR-047,
-ADR-051, ADR-052, ADR-062)*
+ADR-051, ADR-052, ADR-062, ADR-064)*
 
 ## E. Shared conventions (all three CLIs)
 

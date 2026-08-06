@@ -9,6 +9,20 @@ code changes live in git history.
 
 ---
 
+## 2026-08-05 — `ADR-064`: build timer's `WorkingDirectory=` and script `cd` corrected; `--workdir` dropped from `cairn-build setup-timer`
+
+Brian caught that `ADR-062`'s fix was incomplete: the rendered `.service`'s
+`WorkingDirectory=` and the generated script's own `cd` line both still read
+`options.workdir` — the exact `cwd`-at-invocation dependency `ADR-062` was meant to
+eliminate, just in two spots the first fix missed. Both now derive from the script's own
+(now durable) location instead. Once nothing in the build-timer stage read
+`options.workdir` any longer, `--workdir` was dropped from `cairn-build setup-timer`
+entirely, matching the precedent `cairn-registry setup` already set for dropping an unused
+flag rather than keeping one that's silently ignored. `cairn-adopt setup-timer` was
+confirmed unaffected — it never read `options.workdir` for its unit in the first place.
+`BR-CLI-023` updated; full rationale in
+`decisions/064-build-timer-workingdirectory-and-workdir-flag-both-corrected.md`.
+
 ## 2026-08-05 — `ADR-063`: registry maintenance script moves from `cwd` to `/opt/cairn-registry`
 
 Companion review after `ADR-062`, checking `cairn-adopt`/`cairn-registry` for the same class

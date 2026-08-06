@@ -660,14 +660,16 @@ def test_a_timer_is_enabled_but_never_started(sandbox, stage, monkeypatch):
     assert any("NOT started" in note for note in runner.report.warnings)
 
 
-def test_the_build_service_sets_a_working_directory():
-    """Required, not decoration: cairn finds a manifest not given explicitly by searching
-    upward from the working directory."""
+def test_the_build_service_sets_a_working_directory_from_the_script_not_workdir():
+    """`WorkingDirectory` must track *script*'s own directory — the manifest's durable
+    `/srv/cairn/<client>/` home — never `options.workdir`, which a retired operator account
+    can take with it (`ADR-062`, `ADR-064`)."""
     rendered = provision.build_service(
-        _options(workdir=Path("/opt/cairn")), Path("/opt/cairn/build.sh")
+        _options(workdir=Path("/home/alice")), Path("/srv/cairn/acme/build.sh")
     )
 
-    assert "WorkingDirectory=/opt/cairn" in rendered
+    assert "WorkingDirectory=/srv/cairn/acme" in rendered
+    assert "/home/alice" not in rendered
 
 
 def test_the_build_service_does_not_restart_on_failure():
@@ -711,6 +713,22 @@ def test_the_build_script_builds_and_assign_tags_then_prunes():
     assert "--environment" not in rendered
     assert "prune --keep 1 --yes" in rendered
     assert rendered.index("--push --assign-tag") < rendered.index("prune --keep")
+
+
+def test_the_build_script_cds_to_the_manifest_directory_not_workdir():
+    """The script's own `cd` must not depend on `options.workdir` either — the same
+    `$HOME`-dependency bug `ADR-064` fixed in the unit's `WorkingDirectory=`."""
+    rendered = provision.build_script(
+        _options(
+            workdir=Path("/home/alice"),
+            manifest=Path("/srv/cairn/acme/cairn_test.toml"),
+            environment="test",
+        ),
+        Path("/opt/cairn-venv/bin/cairn-build"),
+    )
+
+    assert "cd /srv/cairn/acme" in rendered
+    assert "/home/alice" not in rendered
 
 
 def test_a_manifest_path_with_spaces_is_quoted_in_the_script():

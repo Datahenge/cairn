@@ -690,15 +690,11 @@ def setup_timer_command(
     force: Annotated[
         bool, typer.Option("--force", help="Replace existing files (the old ones are kept).")
     ] = False,
-    workdir: Annotated[
-        Path,
-        typer.Option("--workdir", help="Directory to record in reported paths."),
-    ] = Path.cwd(),  # noqa: B008 - Typer evaluates defaults once, by design
     build_interval: Annotated[
         str, typer.Option("--build-interval", help="Build poll interval.")
     ] = "15min",
 ) -> None:
-    """Install the build-automation timer only (BR-CLI-023, ADR-047, ADR-052, ADR-062).
+    """Install the build-automation timer only (BR-CLI-023, ADR-047, ADR-052, ADR-062, ADR-064).
 
     Root-gated the same way `setup` is — writing to `/etc/systemd/system` needs it, and
     this command has no preceding `preflight` stage of its own to have already checked. Takes
@@ -708,7 +704,11 @@ def setup_timer_command(
     name also folds in `client` (derived from *manifest_path*'s own `/srv/cairn/<client>/`
     home) and `image_name`, matching `ADR-052`'s full uniqueness key rather than environment
     alone (`ADR-062`) — *manifest_path* MUST resolve under `MANIFEST_ROOT/<client>/` or the
-    run stops rather than falling back to a collision-prone name.
+    run stops rather than falling back to a collision-prone name. No `--workdir` either
+    (`ADR-064`): everything the generated script and unit need — where the script lives, its
+    `cd`, the unit's `WorkingDirectory=` — comes from *manifest_path*'s own directory now, so
+    a flag naming a second, possibly-disagreeing directory would be accepted and quietly
+    ignored, exactly the kind of dead surface `cairn-registry setup` already avoids.
     """
     manifest = config.load_manifest(manifest_path)
     if manifest.environment is None:
@@ -719,7 +719,6 @@ def setup_timer_command(
     options = SetupOptions(
         dry_run=dry_run,
         force=force,
-        workdir=workdir,
         manifest=manifest_path,
         image_name=manifest.image_name,
         environment=manifest.environment,
@@ -735,6 +734,7 @@ def setup_timer_command(
             None,
             program="cairn-build",
             verb="setup-timer",
+            show_workdir=False,
         )
     )
 

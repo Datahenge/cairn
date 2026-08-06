@@ -441,12 +441,14 @@ def execute(
     doesn't claim "setup" while a `setup-timer` run is what's underway.
 
     *show_workdir* prints the `workdir` line, on by default since `cairn-build`/`cairn-adopt
-    setup` (manifest resolution) and `cairn-build setup-timer` (the build unit's
-    `WorkingDirectory=`, `ADR-062` — no longer where the script itself is written; that's the
-    manifest's own client directory now) both read `options.workdir`. `cairn-registry setup`
-    passes ``False``: its three stages (`preflight`, `admin-group`, `registry`) never touch it
-    (`BR-REG-001` — no manifest to resolve relative to it), so printing it would claim a
-    relevance it doesn't have.
+    setup` (manifest resolution) read `options.workdir`. `cairn-build setup-timer` passes
+    ``False`` (`ADR-064`): the generated script's location, its `cd`, and the unit's
+    `WorkingDirectory=` all come from the manifest's own client directory now, not
+    `options.workdir` — printing a `workdir` line for it would claim a relevance the value no
+    longer has (indeed, `cairn-build setup-timer` no longer even accepts `--workdir`).
+    `cairn-registry setup` passes ``False`` too: its three stages (`preflight`, `admin-group`,
+    `registry`) never touch it (`BR-REG-001` — no manifest to resolve relative to it), so
+    printing it would claim a relevance it doesn't have.
     """
     runner.say(f"{program} {verb}" + (" (dry run)" if runner.dry_run else ""))
     if show_workdir:

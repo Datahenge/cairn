@@ -39,6 +39,15 @@ hard-stops if `--manifest` isn't canonically homed. A companion review of `cairn
 `cairn-registry` found `cairn-adopt` clean but `cairn-registry` carrying the same cwd-dependent
 script bug (no naming counterpart needed — one registry per host); `ADR-063` moved
 `cairn-registry setup-timer`'s generated script to `PROJECT_DIR` (`/opt/cairn-registry`).
+Brian then caught that `ADR-062`'s fix was incomplete: the rendered `.service`'s
+`WorkingDirectory=` and the script's own `cd` line still read `options.workdir`. `ADR-064`
+corrected both to derive from the script's own (now durable) location, and dropped
+`--workdir` from `cairn-build setup-timer` entirely once nothing in the stage read it —
+`cairn-adopt setup-timer` confirmed unaffected (it never set `WorkingDirectory=` at all).
+Separately raised and still open: how an unattended build timer authenticates against a
+private `github.com` app — `CAIRN_GITHUB_TOKEN` (`BR-BUILD-016`) is read purely from the
+process environment, which a systemd unit never inherits from an operator's shell; no
+mechanism yet exists to supply it to the generated `.service`. Tracked as `OQ-002`.
 
 ## Read First
 

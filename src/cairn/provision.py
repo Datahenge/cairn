@@ -394,7 +394,7 @@ def build_script(options: SetupOptions, cairn_build: Path) -> str:
 #!/bin/bash -e
 # Written by `cairn-build setup-timer`. `cairn-build build --push` is idempotent: with no new
 # commits it resolves refs, sees the input hash is already built, and exits without building.
-cd {options.workdir}
+cd {options.manifest.parent}
 MANIFEST={shlex.quote(str(options.manifest))}
 {cairn_build} build --manifest "$MANIFEST" --push --assign-tag --yes
 {cairn_build} prune --keep 1 --yes
@@ -405,9 +405,12 @@ def build_service(options: SetupOptions, script: Path) -> str:
     """The build unit.
 
     The script itself always passes `--manifest` explicitly (`ADR-042` — cairn never
-    searches for one); ``WorkingDirectory`` is set so relative paths inside the script,
-    and the deployment directory the operator finds if they inspect the unit, still land
-    in the right place.
+    searches for one); ``WorkingDirectory`` is *script*'s own directory — the manifest's
+    canonical `/srv/cairn/<client>/` home (`ADR-047`, `ADR-062`), never `options.workdir`.
+    `options.workdir` defaults to the invoking shell's `cwd`, which a retired operator
+    account can take with it (`ADR-062`'s whole point) — a unit whose `WorkingDirectory`
+    still pointed there would fail to start once that directory is gone, even though the
+    script itself had already been relocated to safety.
     """
     return f"""\
 [Unit]
@@ -418,7 +421,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-WorkingDirectory={options.workdir}
+WorkingDirectory={script.parent}
 ExecStart={script}
 # A build that cannot finish in 90 minutes is stuck, not slow.
 TimeoutStartSec=5400

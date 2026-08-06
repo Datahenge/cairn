@@ -50,9 +50,7 @@ installable somewhere that location can't be derived from.
 **Script location:** written to the manifest's own directory,
 `/srv/cairn/<client>/<unit>.sh`, instead of `options.workdir`. This is already the
 group-shared, non-user-specific home `ADR-047` established for exactly this purpose — reused,
-not reinvented. `options.workdir` keeps its narrower job (the systemd unit's
-`WorkingDirectory=`, and the reported `workdir` line); it no longer determines where
-anything is written.
+not reinvented.
 
 ## Consequences
 
@@ -66,5 +64,11 @@ anything is written.
 - No migration path is needed: `setup-timer`'s build script has not yet been run against a
   real host (`open/OPEN_WORK.md`'s `W-013`) — this corrects the rule before its first live
   use, not after.
+
+**Amended same day (`ADR-064`):** this decision's script-location fix was incomplete — the
+rendered unit's `WorkingDirectory=` and the script's own `cd` line both still read
+`options.workdir`, the exact dependency this decision was meant to eliminate. Corrected to
+derive from the script's own (now durable) location instead; `--workdir` dropped from
+`cairn-build setup-timer` entirely once nothing in the stage read it any longer.
 
 *(BR-CLI-022, BR-CLI-023, BR-DEPLOY-009a, ADR-043, ADR-047, ADR-052)*
