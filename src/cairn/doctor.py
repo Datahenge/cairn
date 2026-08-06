@@ -55,7 +55,7 @@ from .errors import (
 from .provision import MANIFEST_ROOT
 from .setup_runner import MINIMUM_DISK_GB, MINIMUM_MEMORY_GB, read_available_memory_gb
 
-_LABEL_WIDTH = 16
+_LABEL_WIDTH = 21
 
 #: Ceiling on a systemctl/compose probe — these are local, so slow means hung, not busy.
 _PROBE_TIMEOUT_SECONDS = 15
