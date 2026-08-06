@@ -41,6 +41,8 @@ EXCLUDED_PATHS = {
 }
 DEFAULT_MAX_WORDS = 2200
 ALLOWLIST_FILENAME = ".docs_check_allowlist"
+#: Colocated with the scripts that read/write it, not the repo root — nothing else looks here.
+ALLOWLIST_REL = Path("ai/tools") / ALLOWLIST_FILENAME
 
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
@@ -106,7 +108,7 @@ def should_skip_link(target: str) -> bool:
 
 
 def load_word_count_allowlist(root: Path) -> dict[Path, int]:
-    allowlist_path = root / ALLOWLIST_FILENAME
+    allowlist_path = root / ALLOWLIST_REL
     if not allowlist_path.exists():
         return {}
     overrides: dict[Path, int] = {}
@@ -231,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_MAX_WORDS,
         help=f"Default per-document word-count limit (default {DEFAULT_MAX_WORDS}). "
-        f"Override per file via {ALLOWLIST_FILENAME}.",
+        f"Override per file via {ALLOWLIST_REL}.",
     )
     return parser
 

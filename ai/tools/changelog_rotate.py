@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from docs_check import (
+    ALLOWLIST_REL,
     DEFAULT_MAX_WORDS,
     check_links_and_word_count,
     load_word_count_allowlist,
@@ -258,7 +259,7 @@ def apply_plan(root: Path, plan: Plan, run_date: str) -> None:
         render_changelog(preamble, plan.remaining, footer), encoding="utf-8"
     )
 
-    _append_allowlist_entry(root / ".docs_check_allowlist", plan.archive_path, root)
+    _append_allowlist_entry(root / ALLOWLIST_REL, plan.archive_path, root)
 
 
 def _update_archive_index(index_path: Path, plan: Plan) -> None:

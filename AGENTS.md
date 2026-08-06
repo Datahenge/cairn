@@ -78,7 +78,7 @@ traceability.
 | Path | Purpose | IDs |
 | --- | --- | --- |
 | `ai/CURRENT_CONTEXT.md` | Session router; read first in a fresh session | — |
-| `ai/tools/` | Documentation-hygiene scripts (`docs_check.py`, `changelog_rotate.py`) | — |
+| `ai/tools/` | Documentation-hygiene scripts (`docs_check.py`, `changelog_rotate.py`) and their `.docs_check_allowlist` data file | — |
 | `docs/00-project-scope.md` | Purpose, pillars, what it is/isn't, principles | — |
 | `docs/requirements/` | Numbered requirement docs + ToC (`00-overview.md`, then per-area) | `BR-<AREA>-NNN` |
 | `docs/technical/` | Coding standards, doc conventions, lessons learned, implementation index, documentation-authority map, plus ad-hoc reference docs | — |

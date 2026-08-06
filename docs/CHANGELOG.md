@@ -9,6 +9,20 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (`.docs_check_allowlist` relocated into `ai/tools/`)
+
+Brian pointed out the allowlist lived at the repo root while everything that reads or writes
+it — `docs_check.py`, `changelog_rotate.py` — lives in `ai/tools/`. Moved the file to
+`ai/tools/.docs_check_allowlist` (`git mv`, preserving history) and added `docs_check.py`'s
+`ALLOWLIST_REL = Path("ai/tools") / ALLOWLIST_FILENAME`, resolved as `root / ALLOWLIST_REL` so
+`--root` still targets the checked project's own copy rather than the script's location.
+`changelog_rotate.py` already imported `load_word_count_allowlist` from `docs_check`, so its one
+hardcoded write path (`_append_allowlist_entry`) just switched to the same constant. `AGENTS.md`'s
+artifact table updated to note `ai/tools/` now also holds the data file, not just the two
+scripts. Process/tooling-only per the rule above — this entry, no new ID.
+
+---
+
 ## 2026-08-06 (Scribe Coding rules tightened; four process-only decisions and a misfiled plan pruned)
 
 Prompted by the same-day directory reorg (below) touching 46 files just to relocate three
