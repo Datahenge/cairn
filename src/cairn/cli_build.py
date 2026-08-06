@@ -698,13 +698,17 @@ def setup_timer_command(
         str, typer.Option("--build-interval", help="Build poll interval.")
     ] = "15min",
 ) -> None:
-    """Install the build-automation timer only (BR-CLI-023, ADR-047, ADR-052).
+    """Install the build-automation timer only (BR-CLI-023, ADR-047, ADR-052, ADR-062).
 
     Root-gated the same way `setup` is — writing to `/etc/systemd/system` needs it, and
     this command has no preceding `preflight` stage of its own to have already checked. Takes
     no `--environment` — the manifest declares at most one (`BR-DEPLOY-009a`), so the timer's
     unit names and the environment its script advances are both read from *manifest_path*
-    itself rather than typed a second time somewhere they could disagree with it.
+    itself rather than typed a second time somewhere they could disagree with it. The unit
+    name also folds in `client` (derived from *manifest_path*'s own `/srv/cairn/<client>/`
+    home) and `image_name`, matching `ADR-052`'s full uniqueness key rather than environment
+    alone (`ADR-062`) — *manifest_path* MUST resolve under `MANIFEST_ROOT/<client>/` or the
+    run stops rather than falling back to a collision-prone name.
     """
     manifest = config.load_manifest(manifest_path)
     if manifest.environment is None:
@@ -717,6 +721,7 @@ def setup_timer_command(
         force=force,
         workdir=workdir,
         manifest=manifest_path,
+        image_name=manifest.image_name,
         environment=manifest.environment,
         build_interval=build_interval,
     )

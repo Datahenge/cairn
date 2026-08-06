@@ -503,26 +503,111 @@ def test_manifest_stage_dry_run_writes_nothing(sandbox, monkeypatch):
 # --- timers -------------------------------------------------------------
 
 
+def _manifest_at(root: Path, client: str, name: str = "cairn_test.toml") -> Path:
+    """A manifest file at its canonical `MANIFEST_ROOT/<client>/` home (`ADR-047`)."""
+    path = root / client / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    return path
+
+
 def test_stage_timers_build_writes_only_the_build_timer(sandbox, monkeypatch):
     runner = Recorder()
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
 
-    provision.stage_timers_build(runner, _options(workdir=sandbox, environment="test"))
+    provision.stage_timers_build(
+        runner,
+        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+    )
 
-    assert (provision.SYSTEMD_DIR / "cairn-build-test.timer").exists()
+    assert (provision.SYSTEMD_DIR / "cairn-build-acme-erpnext-v16-test.timer").exists()
     assert not (provision.SYSTEMD_DIR / "cairn-reconcile.timer").exists()
 
 
 def test_stage_timers_build_unit_names_are_parameterized_per_environment(sandbox, monkeypatch):
-    """Two `setup-timer` calls for two different environments must coexist on one machine,
-    not collide on a shared fixed unit name (`ADR-052`)."""
+    """Two `setup-timer` calls for the same client and image, but two different environments,
+    must coexist on one machine, not collide on a shared fixed unit name (`ADR-052`,
+    `ADR-062`)."""
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    staging = _manifest_at(provision.MANIFEST_ROOT, "acme", "cairn_staging.toml")
+    production = _manifest_at(provision.MANIFEST_ROOT, "acme", "cairn_production.toml")
 
-    provision.stage_timers_build(Recorder(), _options(workdir=sandbox, environment="staging"))
-    provision.stage_timers_build(Recorder(), _options(workdir=sandbox, environment="production"))
+    provision.stage_timers_build(
+        Recorder(),
+        _options(
+            workdir=sandbox, manifest=staging, image_name="erpnext-v16", environment="staging"
+        ),
+    )
+    provision.stage_timers_build(
+        Recorder(),
+        _options(
+            workdir=sandbox, manifest=production, image_name="erpnext-v16", environment="production"
+        ),
+    )
 
-    assert (provision.SYSTEMD_DIR / "cairn-build-staging.timer").exists()
-    assert (provision.SYSTEMD_DIR / "cairn-build-production.timer").exists()
+    assert (provision.SYSTEMD_DIR / "cairn-build-acme-erpnext-v16-staging.timer").exists()
+    assert (provision.SYSTEMD_DIR / "cairn-build-acme-erpnext-v16-production.timer").exists()
+
+
+def test_stage_timers_build_unit_names_do_not_collide_across_clients(sandbox, monkeypatch):
+    """Two different clients sharing the same environment and image name must not resolve to
+    the same unit — `environment` alone was the bug `ADR-062` fixes; uniqueness is
+    `(client, image_name, environment)` (`ADR-052`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    acme = _manifest_at(provision.MANIFEST_ROOT, "acme", "cairn_production.toml")
+    globex = _manifest_at(provision.MANIFEST_ROOT, "globex", "cairn_production.toml")
+
+    provision.stage_timers_build(
+        Recorder(),
+        _options(
+            workdir=sandbox, manifest=acme, image_name="erpnext-v16", environment="production"
+        ),
+    )
+    provision.stage_timers_build(
+        Recorder(),
+        _options(
+            workdir=sandbox, manifest=globex, image_name="erpnext-v16", environment="production"
+        ),
+    )
+
+    assert (provision.SYSTEMD_DIR / "cairn-build-acme-erpnext-v16-production.timer").exists()
+    assert (provision.SYSTEMD_DIR / "cairn-build-globex-erpnext-v16-production.timer").exists()
+
+
+def test_stage_timers_build_writes_the_script_beside_the_manifest_not_the_workdir(
+    sandbox, monkeypatch
+):
+    """The generated script must live in the manifest's own, non-user-specific client
+    directory — not wherever `setup-timer` happened to be invoked from, which could be a
+    personal home directory that later disappears (`ADR-062`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+
+    provision.stage_timers_build(
+        Recorder(),
+        _options(workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"),
+    )
+
+    script = manifest.parent / "cairn-build-acme-erpnext-v16-test.sh"
+    assert script.exists()
+    assert not (sandbox / "cairn-build-acme-erpnext-v16-test.sh").exists()
+
+
+def test_stage_timers_build_requires_a_manifest_under_the_client_directory(sandbox, monkeypatch):
+    """A manifest outside `MANIFEST_ROOT/<client>/` must stop the run, not silently fall back
+    to a collision-prone name (`ADR-062`)."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = sandbox / "cairn.toml"
+    manifest.touch()
+
+    with pytest.raises(provision.Aborted, match="srv/cairn"):
+        provision.stage_timers_build(
+            Recorder(),
+            _options(
+                workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"
+            ),
+        )
 
 
 def test_stage_timers_adopt_writes_only_the_reconcile_timer(sandbox, tmp_path, monkeypatch):
@@ -560,8 +645,15 @@ def test_a_timer_is_enabled_but_never_started(sandbox, stage, monkeypatch):
     into a wrong deploy every quarter of an hour."""
     runner = Recorder()
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    if stage is provision.stage_timers_build:
+        manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+        options = _options(
+            workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"
+        )
+    else:
+        options = _options(workdir=sandbox)
 
-    stage(runner, _options(workdir=sandbox))
+    stage(runner, options)
 
     assert runner.ran("systemctl enable")
     assert not runner.ran("systemctl start")
@@ -588,9 +680,15 @@ def test_the_build_service_does_not_restart_on_failure():
     assert "Restart=" not in rendered
 
 
-def test_the_build_timer_measures_from_the_end_of_the_last_run():
+def test_the_build_timer_measures_from_the_end_of_the_last_run(sandbox):
     """A build takes tens of minutes; the next one must not already be due when it finishes."""
-    rendered = provision.build_timer(_options(build_interval="15min"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+
+    rendered = provision.build_timer(
+        _options(
+            manifest=manifest, image_name="erpnext-v16", environment="test", build_interval="15min"
+        )
+    )
 
     assert "OnUnitInactiveSec=15min" in rendered
     assert "OnCalendar=" not in rendered

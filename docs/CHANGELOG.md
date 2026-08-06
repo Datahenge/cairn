@@ -9,6 +9,24 @@ code changes live in git history.
 
 ---
 
+## 2026-08-05 — `ADR-062`: build-automation timer unit name and script both keyed off the manifest's client home
+
+Raised by Brian: `cairn-build setup-timer`'s unit name, `cairn-build-<environment>`, could
+collide across two different clients sharing an environment or image name — `ADR-052`,
+decided the day after this naming was introduced (`ADR-047`), had already settled uniqueness
+as `(client, image_name, environment)`, but the unit name was never updated to match. Second
+bug: the generated build script was written to `options.workdir`, defaulting to the invoking
+shell's `cwd` — typically an operator's home directory, so a retired account could silently
+break build automation with nothing to do with it.
+
+Both are now derived from the manifest's own canonical home, `/srv/cairn/<client>/`
+(`ADR-047`): the unit becomes `cairn-build-<client>-<image_name>-<environment>`, the script
+is written to `/srv/cairn/<client>/<unit>.sh`, and `setup-timer` hard-stops if the given
+`--manifest` doesn't resolve under that layout. `BR-CLI-023` (`06-cli.md`) rewritten
+accordingly. Full rationale in `decisions/062-build-timer-unit-name-and-script-key-off-the-manifests-client-home.md`.
+No live migration needed — `setup-timer`'s build script has not yet run against a real host
+(`W-013`).
+
 ## 2026-08-05 — `BR-BUILD-018`/`ADR-061`: a `cairn-build-owned` marker tag, `cairn-build
 prune` rewritten around it, `OQ-001` resolved
 

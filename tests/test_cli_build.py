@@ -1049,8 +1049,10 @@ def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
 
     monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
     monkeypatch.setattr(provision, "find_executable", lambda name: tmp_path / name)
+    monkeypatch.setattr(provision, "MANIFEST_ROOT", tmp_path / "srv" / "cairn")
     monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("test"))
-    manifest_path = tmp_path / "cairn_test.toml"
+    manifest_path = tmp_path / "srv" / "cairn" / "acme" / "cairn_test.toml"
+    manifest_path.parent.mkdir(parents=True)
     manifest_path.touch()
 
     result = runner.invoke(
@@ -1061,6 +1063,27 @@ def test_setup_timer_runs_only_the_timer_stage(tmp_path, monkeypatch):
     assert "[timers]" in result.stderr
     assert "[preflight]" not in result.stderr
     assert "[admin-group]" not in result.stderr
+
+
+def test_setup_timer_requires_the_manifest_under_a_client_directory(tmp_path, monkeypatch):
+    """A manifest outside `MANIFEST_ROOT/<client>/` can't yield a safe, collision-free unit
+    name (`ADR-052`, `ADR-062`), so `setup-timer` stops rather than guessing."""
+    monkeypatch.chdir(tmp_path)
+    from cairn import provision, setup_runner
+
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    monkeypatch.setattr(provision, "find_executable", lambda name: tmp_path / name)
+    monkeypatch.setattr(provision, "MANIFEST_ROOT", tmp_path / "srv" / "cairn")
+    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment("test"))
+    manifest_path = tmp_path / "cairn_test.toml"
+    manifest_path.touch()
+
+    result = runner.invoke(
+        cli_build.app, ["setup-timer", "--manifest", str(manifest_path), "--dry-run"]
+    )
+
+    assert result.exit_code == 2
+    assert "srv" in result.stderr and "cairn" in result.stderr
 
 
 # --- surfaces every command shares (BR-CLI-015) ----------------------------

@@ -307,16 +307,46 @@ def stage_manifest(runner: Runner, options: SetupOptions) -> None:
     runner.report.done.append(f"scaffolded a starter manifest at {manifest_path}")
 
 
-def build_unit_name(options: SetupOptions) -> str:
-    """The unit basename for *options*' environment (`ADR-052`) — e.g. ``cairn-build-production``.
+def client_from_manifest(manifest_path: Path) -> str:
+    """The client segment of *manifest_path*'s canonical home (`ADR-047`, `ADR-062`).
 
-    Parameterized so more than one manifest's build timer can coexist on one machine: two
-    `setup-timer` calls for two different manifests write two different, independently
-    manageable units, rather than the second silently colliding with the fixed name the first
-    used. The environment always comes from the manifest itself (`BR-DEPLOY-009a`), never a
-    flag, so this can never disagree with what the script it names actually builds.
+    `ADR-052` settled uniqueness as `(client, image_name, environment)`, not environment
+    alone — a build host serving more than one client (`BR-CLI-022`) can otherwise produce
+    two unrelated builds that resolve to the same unit name. Client is derived from where the
+    manifest actually lives, the same way `doctor`'s duplicate-declaration check already
+    groups manifests by client directory, rather than a second `--client` flag that could
+    disagree with it.
     """
-    return f"cairn-build-{options.environment}"
+    try:
+        relative = manifest_path.resolve().relative_to(MANIFEST_ROOT.resolve())
+    except (ValueError, OSError) as exc:
+        raise Aborted(
+            f"{manifest_path} is not under {MANIFEST_ROOT}/<client>/ — setup-timer needs a "
+            "manifest at its canonical, client-scoped home to name the build timer safely "
+            "and to give the generated script a shared, non-user-specific location. See "
+            "`cairn-build setup --client <name> --environment <name>`."
+        ) from exc
+    if len(relative.parts) < 2:
+        raise Aborted(
+            f"{manifest_path} sits directly under {MANIFEST_ROOT}, not inside a client "
+            "directory. See `cairn-build setup --client <name> --environment <name>`."
+        )
+    return relative.parts[0]
+
+
+def build_unit_name(options: SetupOptions) -> str:
+    """The unit basename for *options* (`ADR-052`, `ADR-062`) —
+    e.g. ``cairn-build-acmecorp-erpnext-v16-production``.
+
+    Parameterized on the full `(client, image_name, environment)` uniqueness key so more
+    than one manifest's build timer can coexist on one machine: two `setup-timer` calls for
+    two different manifests write two different, independently manageable units, rather than
+    the second silently colliding with a name the first also produces. `client` and
+    `image_name` come from the manifest's own location and content (`BR-DEPLOY-009a`), never
+    a flag, so this can never disagree with what the script it names actually builds.
+    """
+    client = client_from_manifest(options.manifest)
+    return f"cairn-build-{client}-{options.image_name}-{options.environment}"
 
 
 def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
@@ -330,7 +360,7 @@ def stage_timers_build(runner: Runner, options: SetupOptions) -> None:
     require_root(runner)
     cairn_build = find_executable("cairn-build")
     unit = build_unit_name(options)
-    script = options.workdir / f"{unit}.sh"
+    script = options.manifest.parent / f"{unit}.sh"
     runner.write(
         script, build_script(options, cairn_build), mode=0o755, what=f"build script at {script}"
     )

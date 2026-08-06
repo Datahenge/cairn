@@ -27,6 +27,15 @@ this file, `open/`, `scratch/`, `docs/technical/`, `docs/adr/`, `decisions/`, an
 wrong); `ADR-061`/`BR-BUILD-018` added a `cairn-build-owned` marker tag, stripped on push, so
 `cairn-build prune` can safely reach a never-shared stale build (not just duplicate-hash
 rebuilds) on a host colocating build/registry/target roles — resolved `OQ-001` in the process.
+Same day, `ADR-062` fixed two bugs Brian found in `cairn-build setup-timer`, both corrected to
+key off the manifest's own `/srv/cairn/<client>/` home rather than `environment` alone or the
+invoking shell's `cwd`: the build timer's unit name is now
+`cairn-build-<client>-<image_name>-<environment>` (matching `ADR-052`'s own uniqueness key,
+which the old `cairn-build-<environment>` name never did — collision risk across clients
+sharing an environment or image name), and the generated script now writes to
+`/srv/cairn/<client>/` instead of `options.workdir` (previously the operator's cwd at
+invocation, often a personal home directory that could later disappear). `setup-timer` now
+hard-stops if `--manifest` isn't canonically homed.
 
 ## Read First
 

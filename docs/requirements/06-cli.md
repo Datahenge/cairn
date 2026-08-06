@@ -329,17 +329,32 @@ NOT be modified (`BR-DEPLOY-021`). `doctor` MAY report manifests found under
 never for selection — `BR-CLI-014` is unchanged. *(BR-BUILD-003, BR-CLI-014, BR-DEPLOY-009,
 BR-DEPLOY-021, ADR-043, ADR-047, ADR-052)*
 
-**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-052`)* — Both CLIs carry a `setup-timer`
-subcommand, separate from `setup`, installing only the build/reconcile systemd timer —
-enabled, not started, unchanged in substance from `ADR-046`'s `setup --only timers`. Split out
-for discoverability in `--help`, where a first-time reader would otherwise miss the flag
-before their first manual build or reconcile. Takes `--manifest <path>` only — no
-`--environment` flag; the unit names are parameterized from the manifest's own declared
-environment (`cairn-build-<environment>.service`/`.timer`), so `setup-timer` for two different
-manifests coexists on one host. `cairn-build`'s script runs `build --push --assign-tag --yes`,
-then `prune --keep 1 --yes` — disk cleanup rides the same script rather than a separate timer
-(`ADR-051`), and the retag step rides `build`'s own `--assign-tag` flag (`BR-CLI-002a`) rather
-than a second command. *(ADR-046, ADR-047, ADR-051, ADR-052)*
+**`BR-CLI-023`** *(setup-timer, `ADR-047`, `ADR-051`, `ADR-052`, `ADR-062`)* — Both CLIs carry
+a `setup-timer` subcommand, separate from `setup`, installing only the build/reconcile
+systemd timer — enabled, not started, unchanged in substance from `ADR-046`'s
+`setup --only timers`. Split out for discoverability in `--help`, where a first-time reader
+would otherwise miss the flag before their first manual build or reconcile. Takes
+`--manifest <path>` only — no `--environment` flag; the environment `cairn-build`'s script
+advances is read from the manifest itself, per `ADR-052`.
+
+**`cairn-build setup-timer`'s unit name is `cairn-build-<client>-<image_name>-<environment>`**
+(`.service`/`.timer`) — every part of `ADR-052`'s uniqueness key
+`(client, image_name, environment)`, not `environment` alone. `environment` and `image_name`
+alone would collide across two different clients that happen to share either name — the exact
+situation a build host serving more than one client (`BR-CLI-022`) can produce. `client` and
+`image_name` are derived from the manifest's own location and content, never a second flag
+that could disagree with it. The manifest given to `setup-timer` MUST resolve to
+`/srv/cairn/<client>/<file>.toml` — the layout `cairn-build setup --client <name>` provisions
+(`BR-CLI-022`) — or the command MUST stop, reporting why, rather than fall back to a weaker,
+collision-prone name. The generated build script is written to that same client directory,
+`/srv/cairn/<client>/<unit>.sh`, never to the invoking shell's working directory: the
+directory is already the group-shared, non-user-specific home `ADR-047` established, and a
+script build automation depends on MUST NOT live somewhere a retired operator account or a
+cleaned-up home directory can take it down. `cairn-build`'s script runs
+`build --push --assign-tag --yes`, then `prune --keep 1 --yes` — disk cleanup rides the same
+script rather than a separate timer (`ADR-051`), and the retag step rides `build`'s own
+`--assign-tag` flag (`BR-CLI-002a`) rather than a second command. *(ADR-046, ADR-047,
+ADR-051, ADR-052, ADR-062)*
 
 ## E. Shared conventions (all three CLIs)
 
