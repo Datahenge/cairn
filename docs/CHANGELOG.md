@@ -9,6 +9,58 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (`05-implementation-index.md` trimmed — Completion Judgment cells are verdicts, not incident narratives)
+
+Brian flagged the file as wordy/busy right after the `setup-timer` entry below added yet another
+paragraph to an already-long cell. Looking at it directly: the "Completion Judgment" column had
+drifted from its own stated purpose (a judgment) into full incident retelling — which functions
+were renamed, exactly how each bug happened, ADR-by-ADR blow-by-blow — duplicating
+`docs/CHANGELOG.md`, which already owns that narrative. The file had grown to 2,271 words,
+repeatedly bumping into `docs_check.py`'s word ceiling.
+
+Trimmed every bloated cell to a terse verdict plus a `docs/CHANGELOG.md` pointer for the story
+(2,271 → ~1,450 words); table structure, code locations, and test/owner-doc columns untouched.
+Process/documentation-hygiene work, not a product decision — no new Decision/ADR file
+(`01-documentation-conventions.md`'s own rule). Two guardrails added so this doesn't recur
+unnoticed: a short note directly in `05-implementation-index.md`'s intro ("a cell is a verdict,
+not a narrative"), and a new "Completion Judgment Cells Stay Terse" section in
+`01-documentation-conventions.md` recording this as a cautionary tale, with a checkable rule of
+thumb (>~3 sentences in a cell means narrative crept back in) for future documentation review
+sessions to catch.
+
+## 2026-08-06 (`setup-timer` output: quieter empty-stop summary, one non-contradictory error message)
+
+Brian's first live `cairn-build setup-timer` run on the Life Scientific test VPS (`W-013`)
+refused correctly — a private `erp-lifescientific` repo with no `github-token.env` populated
+yet — but the output had two rough edges he flagged as worth polishing while true, not a design
+mistake needing a redesign: a `--- summary ---`/`nothing to do` block printed under `Stopped:
+...` even though the run had done nothing at all, and the error text gave two remedies that
+disagreed — `resolve.py`'s generic hint ("No `$CAIRN_GITHUB_TOKEN` is set — set it and retry")
+assumes an interactive build reading the invoking shell, while `setup-timer`'s own check
+(`ADR-067`) deliberately reads only the client's token file, never the shell. "Set it and
+retry" is actively wrong advice on that path.
+
+Two in-place fixes, no requirement redesign — bugs found and fixed, not a rejected alternative
+worth a Decision/ADR file (`01-documentation-conventions.md`'s own rule):
+
+- **`setup_runner.py`**: `execute()`'s `Aborted`/`KeyboardInterrupt` handlers now skip the
+  `--- summary ---` block entirely when `Report.is_empty()` — new method, also now the single
+  source of truth `_summarize()`'s own "nothing to do" fallback reuses (previously that check
+  omitted `report.revert`, a latent inconsistency fixed as a side effect). A stage header
+  (`[timers]`, `[preflight]`, …) stays as-is: three existing tests
+  (`test_cli_build.py`/`test_cli_adopt.py`/`test_cli_registry.py`) assert on it as proof that
+  `setup-timer` runs only its own stage, not `setup`'s — genuinely informative, not noise.
+- **`github_auth.py`** gained `missing_token_hint()`, the single source of truth for the
+  generic "set it and retry" sentence `resolve.py`'s `_run()` now calls instead of inlining.
+  `provision.py`'s `_check_timer_github_reachability` strips that exact sentence
+  (`str.removesuffix`) before appending its own file-based remedy, so the operator sees one
+  fix, not two. `resolve.py`'s own message is unchanged for every other caller (a plain build
+  failure still correctly points at the operator's own shell, per `BR-BUILD-016` point 5).
+
+`docs/requirements/06-cli.md`'s `BR-CLI-023` paragraph amended in place to describe the
+stripped hint. `docs/open/OPEN_WORK.md`'s `W-013` row updated; still open (`setup-timer`'s
+happy path — a working token file — remains unexercised against a real host).
+
 ## 2026-08-06 (recipe tree flattened — no more nested `frappe_docker/`, `images/custom/`, or `resources/core/`)
 
 Follow-on to the same-day trim below: Brian asked to flatten what remained. The nested

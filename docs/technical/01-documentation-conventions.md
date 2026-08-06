@@ -62,6 +62,27 @@ rather than hand-writing another `docs/archive/CHANGELOG-*.md`; it archives the 
 down to a comfortable margin under `.docs_check_allowlist`'s budget and keeps
 `docs/archive/README.md`'s index in sync mechanically.
 
+## Completion Judgment Cells Stay Terse
+
+`05-implementation-index.md`'s "Completion Judgment" column is an inventory field, not a
+changelog — but it has repeatedly drifted the other way: each session that lands a real fix
+adds "just one more sentence" of context (the bug, the ADR, the exact function renamed), and by
+the next session that cell is a full incident narrative, duplicated almost verbatim from
+`docs/CHANGELOG.md`. A 2026-08-06 pass found the file had grown to 2,271 words this way — several
+cells were multi-paragraph postmortems — and trimmed it back to a terse verdict-plus-pointer
+shape (~1,450 words) in one sitting.
+
+**The rule going forward:** a Completion Judgment cell states what's true *now* — implemented,
+verified live, still-unexercised gap — in one or two sentences, with a `docs/CHANGELOG.md`
+pointer for the story. It does not re-narrate which functions changed, which bug caused what, or
+which ADR superseded which. That narrative already lives in `docs/CHANGELOG.md` (or the ADR/
+decision itself); repeating it here is duplicate-maintenance debt, not extra safety, and it was
+exactly this duplication (plus the resulting `docs_check.py` word-limit fights) that forced the
+2026-08-06 trim.
+
+Catch this in documentation review sessions (below): if a cell needs more than ~3 sentences to
+say what's true now, the extra is narrative — cut it and point at the changelog instead.
+
 ## When A Decision Earns A Decision/ADR File
 
 `docs/adr/` and `docs/decisions/` are the same kind of artifact — rationale for a choice, split

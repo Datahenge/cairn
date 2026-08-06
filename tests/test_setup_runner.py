@@ -381,6 +381,46 @@ def test_a_failed_gate_exits_two_and_changes_nothing(monkeypatch):
     assert code == 2
 
 
+def test_a_stop_with_nothing_recorded_skips_the_empty_summary(capsys):
+    """`Stopped: ...` already says the run did nothing — a `--- summary ---`/`nothing to do`
+    block under it is filler, not a record (`BR-DEPLOY-021` rule 6: report what happened)."""
+    runner = setup_runner.Runner(dry_run=False, force=False)
+    stage_funcs = {"a": lambda r, o: (_ for _ in ()).throw(setup_runner.Aborted("boom"))}
+
+    code = setup_runner.execute(
+        runner, _options(), stage_funcs, ("a",), None, program="cairn-build"
+    )
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "Stopped: boom" in err
+    assert "--- summary ---" not in err
+    assert "nothing to do" not in err
+
+
+def test_a_stop_after_partial_progress_still_summarizes_it(capsys):
+    """A stage that recorded something before a later stage fails MUST still report it —
+    only a genuinely empty report is filler."""
+    runner = setup_runner.Runner(dry_run=False, force=False)
+
+    def _first(r, o):
+        r.report.done.append("created thing")
+
+    def _second(r, o):
+        raise setup_runner.Aborted("boom")
+
+    stage_funcs = {"a": _first, "b": _second}
+
+    code = setup_runner.execute(
+        runner, _options(), stage_funcs, ("a", "b"), None, program="cairn-build"
+    )
+
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "--- summary ---" in err
+    assert "did: created thing" in err
+
+
 def test_a_dry_run_of_a_whole_setup_reports_and_exits_zero():
     stub_funcs = {"a": lambda r, o: None, "b": lambda r, o: None}
     runner = setup_runner.Runner(dry_run=True, force=False)

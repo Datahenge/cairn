@@ -241,9 +241,6 @@ def _run(command: list[str], name: str, url: str) -> subprocess.CompletedProcess
             f"are configured."
         )
         if token is None and github_auth.targets_github(url):
-            message += (
-                f" No ${github_auth.GITHUB_TOKEN_ENV_VAR} is set — if this is a private "
-                f"repository, set it and retry."
-            )
+            message += github_auth.missing_token_hint()
         raise RefResolutionError(message)
     return result

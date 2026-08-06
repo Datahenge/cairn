@@ -83,3 +83,18 @@ def test_redacted_is_a_no_op_without_a_token():
 )
 def test_targets_github(url, expected):
     assert github_auth.targets_github(url) is expected
+
+
+def test_missing_token_hint_names_the_env_var():
+    hint = github_auth.missing_token_hint()
+
+    assert github_auth.GITHUB_TOKEN_ENV_VAR in hint
+    assert hint.startswith(" ")  # appended straight onto an existing sentence, no leading gap
+
+
+def test_missing_token_hint_is_stable_for_callers_to_strip():
+    """A caller (e.g. `setup-timer`'s wrapper, `provision.py`) strips this exact sentence to
+    substitute its own remedy — it must round-trip via `removesuffix`."""
+    message = f"cannot read u — fatal: nope.{github_auth.missing_token_hint()}"
+
+    assert message.removesuffix(github_auth.missing_token_hint()) == "cannot read u — fatal: nope."

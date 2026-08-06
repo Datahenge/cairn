@@ -84,6 +84,17 @@ nothing else shares the parent). `frappe_docker/LICENSE` folded into
 Containerfile's `COPY` lines, `pyproject.toml`'s ruff `extend-exclude`, and every doc citing the
 old paths (`01-vendoring.md`, `02-build.md`, `00-coding-standards.md`, lessons-learned 04b/04c,
 `userdocs/builder/index.md`, `userdocs/reference/index.md`) updated to match.
+Also 2026-08-06: Brian's first live `cairn-build setup-timer` run (Life Scientific test VPS,
+`W-013`) correctly refused on a private repo with no `github-token.env` populated yet, but
+flagged the output as noisy and self-contradicting. Fixed, no requirement redesign — bugs
+found and fixed, not a new Decision/ADR: `setup_runner.execute()`'s `Aborted`/
+`KeyboardInterrupt` handlers now skip the `--- summary ---` block when the run recorded
+nothing at all (new `Report.is_empty()`); `github_auth.missing_token_hint()` is now the single
+source of truth for `resolve.py`'s generic "set it and retry" sentence, which `provision.py`'s
+`setup-timer` wrapper strips before appending its own file-based remedy, so the operator sees
+one fix instead of two that disagreed about which environment (shell vs. token file) mattered.
+`BR-CLI-023` in `docs/requirements/06-cli.md` amended in place; `W-013` stays open (the happy
+path — a working token file — is still unexercised against a real host).
 
 ## Read First
 

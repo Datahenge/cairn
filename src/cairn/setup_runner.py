@@ -66,6 +66,10 @@ class Report:
     revert: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
+    def is_empty(self) -> bool:
+        """Whether the run has recorded anything at all, of any kind."""
+        return not any((self.done, self.skipped, self.revert, self.warnings))
+
 
 class Aborted(Exception):
     """A stage could not proceed. Reported, never a traceback."""
@@ -449,6 +453,10 @@ def execute(
     `cairn-registry setup` passes ``False`` too: its three stages (`preflight`, `admin-group`,
     `registry`) never touch it (`BR-REG-001` — no manifest to resolve relative to it), so
     printing it would claim a relevance it doesn't have.
+
+    An `Aborted`/`KeyboardInterrupt` stop that recorded nothing (`Report.is_empty()`) skips the
+    `--- summary ---` block entirely — `Stopped: ...`/`Interrupted.` already says the run did
+    nothing; a summary of nothing under it is filler, not a record.
     """
     runner.say(f"{program} {verb}" + (" (dry run)" if runner.dry_run else ""))
     if show_workdir:
@@ -464,12 +472,14 @@ def execute(
     except Aborted as exc:
         runner.say("")
         runner.say(f"Stopped: {exc}")
-        _summarize(runner)
+        if not runner.report.is_empty():
+            _summarize(runner)
         return 2
     except KeyboardInterrupt:
         runner.say("")
         runner.say("Interrupted.")
-        _summarize(runner)
+        if not runner.report.is_empty():
+            _summarize(runner)
         return 130
 
     _summarize(runner)
@@ -489,5 +499,5 @@ def _summarize(runner: Runner) -> None:
     ):
         for entry in entries:
             runner.say(f"  {label}: {entry}")
-    if not any((runner.report.done, runner.report.skipped, runner.report.warnings)):
+    if runner.report.is_empty():
         runner.say("  nothing to do")

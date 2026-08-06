@@ -648,6 +648,38 @@ def test_stage_timers_build_refuses_when_a_ref_wont_resolve(sandbox, monkeypatch
     assert not (manifest.parent / "cairn-build-acme-erpnext-v16-test.sh").exists()
 
 
+def test_stage_timers_build_replaces_the_generic_hint_with_the_file_specific_one(
+    sandbox, monkeypatch
+):
+    """`resolve.py`'s generic hint ("set it and retry") assumes an interactive build reading
+    the operator's own shell — wrong here, since this gate (and the unit itself) only ever
+    reads the client's token file. The wrapped message must give one remedy, not two that
+    disagree with each other."""
+    monkeypatch.setattr(setup_runner, "_check_root", lambda: setup_runner.Check("root", True, "ok"))
+    manifest = _manifest_at(provision.MANIFEST_ROOT, "acme")
+
+    def _boom(m):
+        raise RefResolutionError(
+            f"frappe: cannot read u — fatal: could not read Username."
+            f"{github_auth.missing_token_hint()}"
+        )
+
+    monkeypatch.setattr(provision.resolve, "resolve_manifest", _boom)
+
+    with pytest.raises(provision.Aborted) as excinfo:
+        provision.stage_timers_build(
+            Recorder(),
+            _options(
+                workdir=sandbox, manifest=manifest, image_name="erpnext-v16", environment="test"
+            ),
+        )
+
+    message = str(excinfo.value)
+    assert "set it and retry" not in message
+    assert "github-token.env" in message
+    assert "fatal: could not read Username." in message
+
+
 def test_stage_timers_build_ignores_the_operators_own_shell_token(sandbox, monkeypatch):
     """A systemd unit never inherits the invoking shell's environment (`ADR-065`) — the gate
     must not let the operator's own exported token mask a unit that would actually have

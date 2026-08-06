@@ -387,9 +387,10 @@ supply — the token parsed from `github_token_env_file(client)` if that file ex
 otherwise none — deliberately **not** the invoking operator's own exported
 `$CAIRN_GITHUB_TOKEN`, since the unit never inherits that either. A failure refuses the
 whole run (script, service, and timer all unwritten) and reports the same actionable
-message `BR-BUILD-016` point 5 gives a failed build, naming the expected file. A pass
-means the manifest already resolves under exactly the credentials the timer will have, so
-no separate warning is printed.
+message `BR-BUILD-016` point 5 gives a failed build, naming the expected file — minus its
+generic "set it and retry" hint (assumes a shell), replaced by the file-based remedy so the
+operator sees one fix, not two. A pass means the manifest already resolves under the
+credentials the timer will have, so no separate warning is printed.
 *(ADR-046, ADR-047, ADR-051, ADR-052, ADR-062, ADR-064, ADR-065, ADR-067)*
 
 ## E. Shared conventions (all three CLIs)

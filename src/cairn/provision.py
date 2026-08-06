@@ -417,8 +417,12 @@ def _check_timer_github_reachability(manifest_path: Path, client: str) -> None:
         resolve.resolve_manifest(manifest)
     except CairnError as exc:
         token_file = github_token_env_file(client)
+        # resolve.py's own hint assumes an interactive build, where "set it and retry" means
+        # the operator's shell — wrong here, since this check (and the unit itself) only ever
+        # reads token_file. Strip it so the operator sees one remedy, not two disagreeing ones.
+        detail = str(exc).removesuffix(github_auth.missing_token_hint())
         raise Aborted(
-            f"{exc} The build timer's own environment ({token_file}) gave it no way past "
+            f"{detail} The build timer's own environment ({token_file}) gave it no way past "
             f"this. Fix the ref, or populate that file (mode 600, root-owned, one line: "
             f"{env_var}=<token>), then rerun."
         ) from exc

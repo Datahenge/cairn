@@ -66,6 +66,20 @@ def authenticated(url: str, token: str | None) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
+def missing_token_hint() -> str:
+    """The sentence appended to a failed `github.com` lookup when no token is configured
+    (`BR-BUILD-016` point 5).
+
+    A single source of truth, so a caller that supplies its own, more specific remedy (e.g.
+    `setup-timer`'s token-file check, `ADR-067`) can strip exactly this sentence rather than
+    duplicate its wording or leave both in the same message.
+    """
+    return (
+        f" No ${GITHUB_TOKEN_ENV_VAR} is set — if this is a private repository, set it "
+        f"and retry."
+    )
+
+
 def redacted(text: str, token: str | None) -> str:
     """Strip *token* out of *text*, for output that might otherwise echo it back.
 
