@@ -8,6 +8,7 @@ decision comes from `/etc/cairn/registry.toml` and the registry's own API.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ from typing import Annotated
 
 import typer
 
-from . import __version__, registry, registry_config, registry_provision, registry_retention
+from . import __version__, images, registry, registry_config, registry_provision, registry_retention
 from .cli_support import done, note, run, step, version_callback
 from .errors import CairnError, RegistryError
 from .setup_runner import Aborted, Runner, SetupOptions, execute
@@ -92,70 +93,104 @@ def _run_lifecycle(action) -> int:
 
 @app.command(
     "images",
-    help="List repositories, tags, and digests in this registry, read remotely with no pull.",
+    help=(
+        "List cairn-built images across a registry, read remotely with no pull. Defaults to "
+        "this machine's own registry; --host points elsewhere. --namespace/--image narrow "
+        "which repositories are read; an exact --namespace + --image reads that one repository "
+        "directly, which is what reaches an authenticated remote like GHCR."
+    ),
 )
 def images_command(
+    host: Annotated[
+        str | None,
+        typer.Option(
+            "--host", help="Registry host:port to query. Default: this machine's own registry."
+        ),
+    ] = None,
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Only repositories directly under this namespace."),
+    ] = None,
+    image: Annotated[
+        str | None,
+        typer.Option(
+            "--image", help="Only this image name; a glob (e.g. 'erpnext-*') matches several."
+        ),
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
 ) -> None:
     def _action() -> int:
-        config = registry_config.load()
-        repositories = registry.catalog(config.host)
+        target_host = host or registry_config.load().host
+
+        if namespace is not None and image is not None and not _is_glob(image):
+            # One named repository — read it directly (`registry.tags`/`inspect`'s
+            # anonymous-then-bearer-token flow), never the catalog. This is what reaches an
+            # authenticated remote registry (GHCR and similar), which the catalog endpoint
+            # below cannot (`BR-REG-005`, `ADR-069`).
+            repositories = [f"{namespace}/{image}"]
+        else:
+            repositories = [
+                name for name in registry.catalog(target_host) if _matches(name, namespace, image)
+            ]
+            if not repositories:
+                note(f"No repositories found in {target_host}.")
+                return 0
+
+        reports: list[tuple[registry.ImageRef, list, int]] = []
+        empty = 0
+        for name in repositories:
+            base = registry.ImageRef(target_host, name, "")
+            found, others = images.inspect_registry(base)
+            if not found:
+                empty += 1
+                continue
+            reports.append((base, images.group_registry(found), others))
+
         if as_json:
             payload = {
-                "registry": config.host,
-                "repositories": [_repository_json(config, name) for name in repositories],
+                "registry": target_host,
+                "repositories": [
+                    images.registry_payload(base, grouped, others)
+                    for base, grouped, others in reports
+                ],
+                "repositories_without_cairn_images": empty,
             }
             typer.echo(json.dumps(payload, indent=2))
             return 0
 
-        if not repositories:
-            note(f"No repositories found in {config.host}.")
+        if not reports:
+            note(
+                f"No images cairn built were found among {len(repositories)} "
+                f"repositories in {target_host}."
+            )
             return 0
+
         # Registry printed once, separately from each repository — the same split a target
         # descriptor's `registry_host`/`image` now makes, rather than one glued-together
         # string repeated on every line.
-        note(f"Registry {config.host}")
+        note(f"Registry {target_host}")
         note("")
-        for name in repositories:
-            base = registry.ImageRef(config.host, name, "")
-            note(f"Repository {name}")
-            note(f"  {'DIGEST':<14}TAGS")
-            for digest, tags in _grouped_tags(base):
-                short = digest.removeprefix("sha256:")[:12]
-                note(f"  {short:<14}{', '.join(tags)}")
+        for base, grouped, others in reports:
+            note(f"Repository {base.base}")
+            note(images.render_registry(base, grouped, others))
+        if empty:
+            note(f"{empty} other repositories in {target_host} hold no images cairn built.")
         return 0
 
     run(_action)
 
 
-def _grouped_tags(base: registry.ImageRef) -> list[tuple[str, list[str]]]:
-    """Every tag in *base*'s repository, grouped by the full digest it resolves to.
-
-    One entry per unique digest, not per tag — the shape that actually answers "what is this
-    build called": a deterministic content-hash tag, `latest`, and any moving environment tag
-    an operator assigned all point at the same build and belong on the same line, not scattered
-    across three that each repeat the digest. This is what lets a reader pick the right `tag`
-    for a target descriptor at a glance, rather than cross-referencing digests by eye.
-
-    Returns the **full** ``sha256:...`` digest — callers needing the short display form
-    (`--json` needs the full one, for anything that acts on it) truncate at the point of
-    printing. Sorted by each group's own alphabetically-first tag, for a stable, readable order.
-    """
-    by_digest: dict[str, list[str]] = {}
-    for tag in sorted(registry.tags(base)):
-        digest = registry.digest_of(base.with_tag(tag))
-        by_digest.setdefault(digest, []).append(tag)
-    return sorted(by_digest.items(), key=lambda item: item[1][0])
+def _matches(name: str, namespace: str | None, image_pattern: str | None) -> bool:
+    """Whether catalog repository *name* satisfies the optional filters (`BR-REG-005`)."""
+    repo_namespace, _, image_name = name.rpartition("/")
+    if namespace is not None and repo_namespace != namespace:
+        return False
+    return image_pattern is None or fnmatch.fnmatchcase(image_name, image_pattern)
 
 
-def _repository_json(config: registry_config.RegistryConfig, name: str) -> dict:
-    base = registry.ImageRef(config.host, name, "")
-    return {
-        "name": name,
-        "images": [
-            {"digest": digest, "tags": tags} for digest, tags in _grouped_tags(base)
-        ],
-    }
+def _is_glob(pattern: str) -> bool:
+    """Whether *pattern* uses an `fnmatch` metacharacter, rather than naming one exact image."""
+    return any(ch in pattern for ch in "*?[")
 
 
 # --- retention (BR-CLI-025, BR-REG-006/007/008) ------------------------------

@@ -6,7 +6,7 @@ purpose: BR-CLI requirements — the command surface and UX conventions across a
 
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-05_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-06_
 
 The command surface across cairn's **three CLI entry points**, one file sectioned by role
 (`05-config.md`'s `A`/`B` split, precedent) rather than separate area files — most of what
@@ -14,7 +14,7 @@ governs the CLI is shared UX convention (logging, `--json`, config discovery, he
 applying identically across binaries. Mostly *cites* verbs defined in other areas; adds the
 create/move/retire guards, global flags, and output/exit conventions. Conventions:
 `/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`,
-`ADR-046`, `ADR-048`, `ADR-052`, `ADR-061`.
+`ADR-046`, `ADR-048`, `ADR-052`, `ADR-061`, `ADR-069`.
 
 ---
 
@@ -74,15 +74,13 @@ An earlier draft added an opt-in `--install-app <apps>` here. It was **struck** 
 (`ADR-037`, `BR-DEPLOY-003a`): installing a Frappe App is the operator's act, not a pointer
 move's. *(BR-DEPLOY-004, BR-DEPLOY-003a, ADR-023, ADR-052)*
 
-**`BR-CLI-005`** *(introspection)* — `cairn-build images [--tags] [--local] [--json]`.
-
-- **Registry** (default) — tags, digests, and provenance labels read **remotely**, no pull.
-  *(BR-DEPLOY-005)*
-- **`--local`** — the same question asked of the build machine: which images does *this*
-  machine hold, why does each exist, and which are superseded. cairn MUST identify its own
-  images by their provenance labels (`BR-BUILD-011`), MUST group them by **input hash**, and
-  MUST show, per image, its tags — or that it has **none** — along with age, size, and the
-  resolved Frappe/app commits read from labels.
+**`BR-CLI-005`** *(introspection, local only)* — `cairn-build images [--json]`, no other
+arguments: which images does *this* build machine hold, why does each exist, and which are
+superseded. cairn MUST identify its own images by their provenance labels (`BR-BUILD-011`),
+MUST group them by **input hash**, and MUST show, per image, its tags — or that it has
+**none** — along with age, size, and the resolved Frappe/app commits read from labels.
+`cairn-build` never reads a registry — that's `cairn-registry images`'s question
+(`BR-REG-005`, `ADR-069`). No manifest is accepted or needed.
 
 An engine's own image listing answers only repository, tag, id, age and size, so an untagged
 former build is indistinguishable from anything else untagged. Every fact needed to explain
@@ -92,11 +90,11 @@ mistaken for a complete inventory.
 
 **On a host colocating roles, "cairn built this" and "cairn built this *here*" are different
 claims** (`ADR-061`) — provenance labels travel with a pulled image exactly as they do with a
-built one, so a `--local` listing legitimately includes an image `cairn-adopt` only pulled for
+built one, so a listing legitimately includes an image `cairn-adopt` only pulled for
 deployment. cairn MUST show whether each image still carries the `cairn-build-owned` marker
 (`BR-BUILD-018`): present means this host's build role produced it and it has not been shared
-anywhere; absent means it either was pushed, or arrived here some other way. *(BR-DEPLOY-005,
-BR-BUILD-011, BR-BUILD-014, BR-BUILD-018, ADR-032, ADR-061)*
+anywhere; absent means it either was pushed, or arrived here some other way. *(BR-BUILD-011,
+BR-BUILD-014, BR-BUILD-018, ADR-032, ADR-061, ADR-069)*
 
 **`BR-CLI-006`** *(vendor, struck)* — `cairn-build vendor status | sync` is retired. Cairn no
 longer syncs from upstream `frappe_docker`; it owns its recipe directly and carries no command
@@ -266,7 +264,8 @@ must accept. *(BR-DEPLOY-010a, BR-DEPLOY-014, BR-BUILD-003, BR-CLI-019, ADR-034,
 
 Surface only — substance is `BR-REG` policy, cited not restated.
 
-**`BR-CLI-024`** — `status|start|stop|restart` (`BR-REG-004`); `images [--json]` (`BR-REG-005`).
+**`BR-CLI-024`** — `status|start|stop|restart` (`BR-REG-004`); `images [--host] [--namespace]
+[--image] [--json]` (`BR-REG-005`).
 
 **`BR-CLI-025`** *(prune)* — `[--dry-run] [--yes]`; `BR-REG-006`/`007`'s retention algorithm;
 no-op unless `[registry.retention] enabled = true` (`BR-CLI-011`).

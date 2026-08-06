@@ -198,37 +198,6 @@ def _manifest_with_environment(environment="staging"):
     )
 
 
-def _remote(input_hash, *, tags=("v16",), size=2_750_000_000, minutes_old=0, digest=None):
-    created = datetime.now(UTC) - timedelta(minutes=minutes_old)
-    return images.RegistryImage(
-        digest=digest or ("sha256:" + input_hash + "0" * (64 - len(input_hash))),
-        tags=tuple(tags),
-        size=size,
-        labels={
-            images.INPUT_HASH_LABEL: input_hash,
-            images.FRAPPE_REF_LABEL: "v16.0.1",
-            images.FRAPPE_COMMIT_LABEL: "a" * 40,
-            images.CREATED_LABEL: created.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        },
-    )
-
-
-@pytest.fixture
-def registry_repo(project, monkeypatch):
-    """A configured registry and a discovered manifest, for the registry-side commands."""
-    manifest_path = project / "cairn.toml"
-    manifest_path.touch()
-    monkeypatch.setattr(config, "find_manifest_or_none", lambda explicit=None: manifest_path)
-    monkeypatch.setattr(config, "find_manifest", lambda explicit=None: explicit or manifest_path)
-    monkeypatch.setattr(config, "load_manifest", lambda path: _manifest_with_environment())
-    monkeypatch.setattr(
-        config,
-        "load_build_config",
-        lambda path=None: BuildConfig(registry="ghcr.io", namespace="datahenge"),
-    )
-    return manifest_path
-
-
 #: The primary tag `_plan()` computes — what `environments.check()` asks the registry about.
 _PRIMARY_REF = "ghcr.io/datahenge/erpnext-btu-v16:v16.0.1-1b019793dc20"
 
@@ -555,57 +524,27 @@ def test_a_moving_branch_is_warned_about(stubs, monkeypatch):
 # --- images (BR-CLI-005, BR-CLI-013) ---------------------------------------
 
 
-def test_registry_mode_needs_a_manifest_to_know_the_repository(local):
-    """Which repository to read comes from the manifest; without one there is no question
-    to ask, and guessing a repository would read someone else's images."""
-    result = runner.invoke(cli_build.app, ["images"])
-
-    assert result.exit_code == 2
-    assert "--manifest" in result.stderr
-
-
-def test_registry_mode_needs_a_configured_registry(registry_repo, monkeypatch):
-    """Absent a registry, images stay local and there is nothing remote to read — saying so
-    beats reporting an empty registry as though it were the answer."""
-    monkeypatch.setattr(config, "load_build_config", lambda path=None: BuildConfig())
-
-    result = runner.invoke(cli_build.app, ["images"])
-
-    assert result.exit_code == 2
-    assert "--local" in result.stderr
-
-
-def test_registry_mode_reads_tags_without_pulling(registry_repo, monkeypatch):
-    remote = _remote("aaa111", tags=("v16.0.1-aaa111", "v16", "production"))
-    monkeypatch.setattr(images, "inspect_registry", lambda base: ([remote], 2))
-
-    result = runner.invoke(cli_build.app, ["images"])
-
-    assert result.exit_code == 0
-    assert "input hash aaa111" in result.stdout
-    assert "production" in result.stdout
-    assert "2 other tag(s)" in result.stdout
-
-
-def test_registry_json_is_parseable(registry_repo, monkeypatch):
-    remote = _remote("aaa111", tags=("v16",))
-    monkeypatch.setattr(images, "inspect_registry", lambda base: ([remote], 0))
-
-    result = runner.invoke(cli_build.app, ["images", "--json"])
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["repository"] == "ghcr.io/datahenge/erpnext-btu-v16"
-    assert payload["groups"][0]["images"][0]["tags"] == ["v16"]
-
-
-def test_local_images_are_reported_for_people_by_default(local, monkeypatch):
+def test_images_reports_this_machine_unconditionally(local, monkeypatch):
+    """No flags, no manifest — `images` always answers for this machine (`ADR-069`); a
+    registry (this machine's own, or a client's remote one) is `cairn-registry images`'s
+    question, not this one's."""
     monkeypatch.setattr(images, "inspect_local", lambda engine_name: ([_image("aaa")], 3))
 
-    result = runner.invoke(cli_build.app, ["images", "--local"])
+    result = runner.invoke(cli_build.app, ["images"])
 
     assert result.exit_code == 0
     assert "input hash aaa111" in result.stdout
+
+
+def test_images_has_no_manifest_or_local_flag(local):
+    """There is only one mode, so neither flag exists to select it."""
+    result = runner.invoke(cli_build.app, ["images", "--manifest", "cairn.toml"])
+    assert result.exit_code != 0
+    assert "no such option" in result.stderr.lower()
+
+    result = runner.invoke(cli_build.app, ["images", "--local"])
+    assert result.exit_code != 0
+    assert "no such option" in result.stderr.lower()
 
 
 def test_json_output_is_parseable(local, monkeypatch):
@@ -613,7 +552,7 @@ def test_json_output_is_parseable(local, monkeypatch):
     progress belongs on stderr."""
     monkeypatch.setattr(images, "inspect_local", lambda engine_name: ([_image("aaa")], 3))
 
-    result = runner.invoke(cli_build.app, ["images", "--local", "--json"])
+    result = runner.invoke(cli_build.app, ["images", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)

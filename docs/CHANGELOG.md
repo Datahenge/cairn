@@ -9,6 +9,49 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (`images` splits by role: `cairn-build` local-only, `cairn-registry` gains `--host`/`--namespace`/`--image`)
+
+Brian flagged `cairn-build images`'s help text as inaccurate — "reads the registry by default"
+said nothing about needing a manifest first, and a bare invocation errored outright. First fix
+considered was a `--local` fallback; Brian pushed back on the premise instead: examining a
+*registry* shouldn't be reached indirectly through a manifest's `image_name`. Settled into a
+clean split, restated by Brian as "the builder talks about things the builder owns; the
+registry talks about things registries own (a local one, or a remote one)."
+
+**`cairn-build images` (`BR-CLI-005`) becomes `[--json]`, nothing else, unconditionally local.**
+No `--manifest`, no `--local` — there is no other mode to flag. `_registry_repository` and the
+old registry branch are deleted outright.
+
+**`cairn-registry images` (`BR-REG-005`) gains `--host`/`--namespace`/`--image` and the
+provenance detail (frappe/app versions, `cairn-build-owned` marker) the old `cairn-build`
+registry mode used to show**, so that capability relocates rather than disappears. Re-reading
+the userdocs mid-design surfaced a real constraint: `ghcr-setup.md`/`ghcr-tags-and-
+troubleshooting.md` already use the old registry mode against **GHCR**, a real authenticated
+third-party registry, which only works because the single-repository read
+(`registry.tags`/`inspect`) does the full anonymous-then-bearer-token exchange (`BR-CFG-010`).
+`registry.catalog()` — needed to *enumerate* a registry — is anonymous-only by design, scoped
+to cairn's own self-hosted registry. Resolved by splitting the lookup: an **exact**
+`--namespace` + `--image` (no glob) reads that one repository directly, bypassing the catalog
+entirely — this is what keeps GHCR reachable via `docker login`/`podman login`. Any other
+combination (no `--image`, or a glob) enumerates via the catalog, which stays limited to
+registries that allow anonymous catalog access.
+
+Also fixed incidentally: `cairn-registry images`' "Repository" line printed the bare catalog
+name; `userdocs/registry/cli.md` already (incorrectly) documented it as the full reference
+with registry host. The rewrite makes the doc's existing claim true.
+
+Recorded as `ADR-069` (`docs/decisions/069-images-splits-by-role-builder-local-registry-remote.md`)
+— amends a requirement with a rejected alternative (the `--local`-fallback draft) worth
+remembering. `BR-CLI-005`/`BR-REG-005` (`docs/requirements/06-cli.md`,
+`docs/requirements/08-registry.md`) rewritten. Code: `cli_build.py`'s `images_command`
+simplified; `images.py`'s `registry_as_json` renamed `registry_payload`, now returning a
+`dict` so `cli_registry.py` can assemble one multi-repository JSON payload; `cli_registry.py`'s
+`images_command` extended, its old `_grouped_tags`/`_repository_json` helpers replaced by
+`images.py`'s provenance-aware equivalents. Tests updated in `test_cli_build.py` and
+`test_cli_registry.py`. Userdocs updated: `userdocs/builder/index.md` drops its `--local`
+example; `userdocs/registry/cli.md`, `ghcr-setup.md`, and `ghcr-tags-and-troubleshooting.md`
+now point at `cairn-registry images`.
+
 ## 2026-08-06 (`05-implementation-index.md` trimmed — Completion Judgment cells are verdicts, not incident narratives)
 
 Brian flagged the file as wordy/busy right after the `setup-timer` entry below added yet another

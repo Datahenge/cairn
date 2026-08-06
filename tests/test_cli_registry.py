@@ -3,18 +3,19 @@
 This file covers what `cli_registry.py` itself decides: exit codes, flag plumbing, and output
 shape. The algorithms behind the flags are tested where they live — retention in
 `test_registry_retention.py`, provisioning in `test_registry_provision.py`, the registry client
-in `test_registry.py`.
+in `test_registry.py`, and `images`' provenance-reading/grouping in `test_images.py`.
 """
 
 from __future__ import annotations
 
+import json
 import runpy
 import sys
 
 import pytest
 from typer.testing import CliRunner
 
-from cairn import cli_registry, registry, registry_config, registry_provision, setup_runner
+from cairn import cli_registry, images, registry, registry_config, registry_provision, setup_runner
 from cairn.errors import RegistryError
 
 runner = CliRunner()
@@ -89,31 +90,87 @@ def test_a_lifecycle_failure_is_reported_and_exits_two(monkeypatch):
     assert "docker is not installed" in result.stderr
 
 
-# --- images (BR-CLI-024, BR-REG-005) ------------------------------------------
+# --- images (BR-CLI-024, BR-REG-005, ADR-069) ---------------------------------
+#
+# What cli_registry.py itself decides: flag plumbing, the catalog-vs-direct-lookup split,
+# and output shape. The provenance-reading/grouping algorithm behind each repository is
+# `images.inspect_registry`/`group_registry`, tested where it lives — `test_images.py`.
 
 
-def test_images_lists_repositories_and_tags(local_registry, monkeypatch):
+def _remote_image(digest, labels, size=2_750_000_000):
+    return registry.RemoteImage(
+        ref=registry.parse_ref(f"placeholder.example/x:{digest[:6]}"),
+        digest=digest,
+        media_type="application/vnd.oci.image.manifest.v1+json",
+        size=size,
+        labels=labels,
+    )
+
+
+def _cairn_labels(input_hash="aaa111", created="2026-07-25T10:00:00Z"):
+    return {
+        images.INPUT_HASH_LABEL: input_hash,
+        images.FRAPPE_REF_LABEL: "v16.0.1",
+        images.FRAPPE_COMMIT_LABEL: "a" * 40,
+        images.CREATED_LABEL: created,
+    }
+
+
+def _stub_repositories(monkeypatch, repos):
+    """*repos*: ``{repository_name: (tags, {tag: RemoteImage_or_Exception})}``."""
+
+    def _tags(ref):
+        return repos[ref.repository][0]
+
+    def _inspect(ref):
+        answer = repos[ref.repository][1][ref.tag]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(registry, "tags", _tags)
+    monkeypatch.setattr(registry, "inspect", _inspect)
+
+
+def test_images_lists_repositories_with_provenance(local_registry, monkeypatch):
     monkeypatch.setattr(registry, "catalog", lambda host: ["erpnext-btu-v16"])
-    monkeypatch.setattr(registry, "tags", lambda ref: ["v16-aaaaaaaaaaaa", "production"])
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "a" * 64)
+    _stub_repositories(
+        monkeypatch,
+        {
+            "erpnext-btu-v16": (
+                ["v16-aaaaaaaaaaaa", "production"],
+                {
+                    "v16-aaaaaaaaaaaa": _remote_image("sha256:" + "a" * 64, _cairn_labels()),
+                    "production": _remote_image("sha256:" + "a" * 64, _cairn_labels()),
+                },
+            )
+        },
+    )
 
     result = runner.invoke(cli_registry.app, ["images"])
 
     assert result.exit_code == 0
     assert f"Registry {local_registry.host}" in result.stderr
-    assert "Repository erpnext-btu-v16" in result.stderr
-    assert "DIGEST" in result.stderr and "TAGS" in result.stderr
-    assert "v16-aaaaaaaaaaaa" in result.stderr
-    assert "production" in result.stderr
+    assert f"Repository {local_registry.host}/erpnext-btu-v16" in result.stderr
+    assert "v16-aaaaaaaaaaaa" in result.stderr and "production" in result.stderr
+    assert "v16.0.1" in result.stderr  # frappe ref, from BR-BUILD-011's labels
 
 
-def test_the_registry_host_is_printed_once_not_per_repository(local_registry, monkeypatch):
-    """A target descriptor's `registry_host` and `image` are now separate fields
-    (`BR-DEPLOY-010`) — the registry is one fact about the whole listing, not something to
-    repeat, glued onto every repository line, the way the combined-string design used to."""
+def test_the_registry_is_printed_once_not_per_repository(local_registry, monkeypatch):
+    """A target descriptor's `registry_host` and `image` are separate fields (`BR-DEPLOY-010`)
+    — the registry is one fact about the whole listing, not repeated per repository line."""
     monkeypatch.setattr(registry, "catalog", lambda host: ["acme/erpnext-v16", "acme/other"])
-    monkeypatch.setattr(registry, "tags", lambda ref: ["latest"])
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "b" * 64)
+    _stub_repositories(
+        monkeypatch,
+        {
+            "acme/erpnext-v16": (
+                ["latest"], {"latest": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+            ),
+            "acme/other": (
+                ["latest"], {"latest": _remote_image("sha256:" + "b" * 64, _cairn_labels())}
+            ),
+        },
+    )
 
     result = runner.invoke(cli_registry.app, ["images"])
 
@@ -121,38 +178,56 @@ def test_the_registry_host_is_printed_once_not_per_repository(local_registry, mo
     repository_lines = [
         line for line in result.stderr.splitlines() if line.startswith("Repository")
     ]
-    assert repository_lines == ["Repository acme/erpnext-v16", "Repository acme/other"]
+    assert repository_lines == [
+        f"Repository {local_registry.host}/acme/erpnext-v16",
+        f"Repository {local_registry.host}/acme/other",
+    ]
 
 
-def test_images_groups_tags_sharing_a_digest_on_one_line(local_registry, monkeypatch):
-    """The whole point: a reader picking a `tag` for a target descriptor should see every name
-    for one build together, not have to cross-reference three repeated digests by eye."""
-    monkeypatch.setattr(registry, "catalog", lambda host: ["erpnext-btu-v16"])
-    monkeypatch.setattr(registry, "tags", lambda ref: ["latest", "production", "v16-aaaaaaaaaaaa"])
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "a" * 64)
+def test_repositories_with_no_cairn_images_are_counted_not_listed(local_registry, monkeypatch):
+    monkeypatch.setattr(registry, "catalog", lambda host: ["erpnext-btu-v16", "someone-elses"])
+    _stub_repositories(
+        monkeypatch,
+        {
+            "erpnext-btu-v16": (
+                ["v16"], {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+            ),
+            "someone-elses": (["latest"], {"latest": _remote_image("sha256:" + "b" * 64, {})}),
+        },
+    )
 
     result = runner.invoke(cli_registry.app, ["images"])
 
-    lines = [line for line in result.stderr.splitlines() if "a" * 12 in line]
-    assert len(lines) == 1
-    assert "latest" in lines[0] and "production" in lines[0] and "v16-aaaaaaaaaaaa" in lines[0]
+    assert "Repository" + f" {local_registry.host}/erpnext-btu-v16" in result.stderr
+    assert "someone-elses" not in result.stderr
+    assert "1 other repositories" in result.stderr
 
 
 def test_images_json_is_valid_and_structured(local_registry, monkeypatch):
-    import json
-
     monkeypatch.setattr(registry, "catalog", lambda host: ["erpnext-btu-v16"])
-    monkeypatch.setattr(registry, "tags", lambda ref: ["v16-aaaaaaaaaaaa", "production"])
-    monkeypatch.setattr(registry, "digest_of", lambda ref: "sha256:" + "a" * 64)
+    _stub_repositories(
+        monkeypatch,
+        {
+            "erpnext-btu-v16": (
+                ["v16-aaaaaaaaaaaa", "production"],
+                {
+                    "v16-aaaaaaaaaaaa": _remote_image("sha256:" + "a" * 64, _cairn_labels()),
+                    "production": _remote_image("sha256:" + "a" * 64, _cairn_labels()),
+                },
+            )
+        },
+    )
 
     result = runner.invoke(cli_registry.app, ["images", "--json"])
 
     payload = json.loads(result.stdout)
     assert payload["registry"] == local_registry.host
-    assert payload["repositories"][0]["name"] == "erpnext-btu-v16"
-    image = payload["repositories"][0]["images"][0]
+    repo = payload["repositories"][0]
+    assert repo["repository"] == f"{local_registry.host}/erpnext-btu-v16"
+    image = repo["groups"][0]["images"][0]
     assert image["digest"] == "sha256:" + "a" * 64  # full digest, not truncated
     assert image["tags"] == ["production", "v16-aaaaaaaaaaaa"]
+    assert payload["repositories_without_cairn_images"] == 0
 
 
 def test_images_with_no_repositories_says_so(local_registry, monkeypatch):
@@ -174,6 +249,87 @@ def test_an_unreachable_registry_is_reported_as_an_error(local_registry, monkeyp
 
     assert result.exit_code == 2
     assert "connection refused" in result.stderr
+
+
+def test_host_option_overrides_this_machines_own_registry(local_registry, monkeypatch):
+    seen = []
+
+    def _catalog(host):
+        seen.append(host)
+        return []
+
+    monkeypatch.setattr(registry, "catalog", _catalog)
+
+    result = runner.invoke(cli_registry.app, ["images", "--host", "registry.example.com:5000"])
+
+    assert seen == ["registry.example.com:5000"]
+    assert "registry.example.com:5000" in result.stderr
+
+
+def test_namespace_and_image_filter_the_catalog(local_registry, monkeypatch):
+    """A glob `--image` still enumerates via the catalog — only an exact `--namespace` +
+    `--image` (no glob) bypasses it (see the tests below)."""
+    monkeypatch.setattr(
+        registry,
+        "catalog",
+        lambda host: ["acme/erpnext-v16", "acme/other", "other-client/erpnext-v16"],
+    )
+    _stub_repositories(
+        monkeypatch,
+        {
+            "acme/erpnext-v16": (
+                ["v16"], {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+            )
+        },
+    )
+
+    result = runner.invoke(
+        cli_registry.app, ["images", "--namespace", "acme", "--image", "erpnext-*"]
+    )
+
+    assert f"Repository {local_registry.host}/acme/erpnext-v16" in result.stderr
+    assert "acme/other" not in result.stderr
+    assert "other-client" not in result.stderr
+
+
+def test_exact_namespace_and_image_bypasses_the_catalog(local_registry, monkeypatch):
+    """The single named repository is read directly — the same tag-by-tag authenticated read
+    `push`/`assign-tag` use — so it reaches an authenticated remote registry the anonymous-only
+    catalog endpoint cannot (`ADR-069`)."""
+
+    def _catalog_must_not_be_called(host):
+        raise AssertionError("the catalog endpoint must not be called for an exact repository")
+
+    monkeypatch.setattr(registry, "catalog", _catalog_must_not_be_called)
+    _stub_repositories(
+        monkeypatch,
+        {
+            "acme/erpnext-v16": (
+                ["v16"], {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+            )
+        },
+    )
+
+    result = runner.invoke(
+        cli_registry.app,
+        ["images", "--host", "ghcr.io", "--namespace", "acme", "--image", "erpnext-v16"],
+    )
+
+    assert result.exit_code == 0
+    assert "Repository ghcr.io/acme/erpnext-v16" in result.stderr
+
+
+def test_glob_image_does_not_bypass_the_catalog(local_registry, monkeypatch):
+    catalog_calls = []
+    monkeypatch.setattr(registry, "catalog", lambda host: catalog_calls.append(host) or [])
+
+    result = runner.invoke(
+        cli_registry.app, ["images", "--namespace", "acme", "--image", "erpnext-*"]
+    )
+
+    assert catalog_calls == [local_registry.host]
+    assert result.exit_code == 0
+    assert "No repositories found" in result.stderr
 
 
 # --- prune (BR-CLI-025, BR-REG-006/007/008) -----------------------------------

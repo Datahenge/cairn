@@ -1,10 +1,17 @@
-"""Local image introspection — what this machine holds, and why (BR-CLI-005, `ADR-032`).
+"""Image introspection, local and remote — what was built, and why (`BR-CLI-005`, `BR-REG-005`,
+`ADR-032`, `ADR-069`).
 
-An engine's own listing answers repository, tag, id, age and size. Those five facts cannot
-distinguish a superseded build from a build-cache stage from an unrelated orphan, which is
-how a build machine accumulates nameless multi-gigabyte images nobody can account for.
+Local reads (`inspect_local`/`group`/`render`/`as_json`) back `cairn-build images`, which
+answers only for this machine. Registry reads (`inspect_registry`/`group_registry`/
+`render_registry`/`registry_payload`) back `cairn-registry images`, which answers for a
+registry — this machine's own, or a remote one such as a client's GHCR.
 
-Everything needed to account for them is already on the images. `BR-BUILD-011` stamps the
+An engine's own local listing answers repository, tag, id, age and size. Those five facts
+cannot distinguish a superseded build from a build-cache stage from an unrelated orphan, which
+is how a build machine accumulates nameless multi-gigabyte images nobody can account for. A
+registry's own API is thinner still — a repository, a tag, a digest.
+
+Everything needed to account for either is already on the images. `BR-BUILD-011` stamps the
 input hash, both tags, the resolved Frappe and app commits, the effective build args, and
 the owned recipe's own provenance onto every image cairn builds. This module reads them
 back and groups by **input hash**, so supersession becomes something you can see rather
@@ -17,7 +24,7 @@ Two consequences of `--label` semantics are load-bearing here:
   carries them. Identifying cairn's images by label therefore also excludes the build
   cache — the property `BR-CLI-018` depends on to prune without going cold (lessons §12).
 * Images cairn did not build are excluded but **counted**, so this is never mistaken for a
-  complete inventory of local storage.
+  complete inventory of local storage, or a complete inventory of a repository.
 """
 
 from __future__ import annotations
@@ -308,7 +315,7 @@ def as_json(groups: list[ImageGroup], others: int) -> str:
     )
 
 
-# --- the registry (BR-CLI-005 default mode, BR-DEPLOY-005) ------------------
+# --- the registry (cairn-registry images, BR-REG-005, BR-DEPLOY-005) --------
 
 
 def inspect_registry(base: registry.ImageRef) -> tuple[list[RegistryImage], int]:
@@ -359,9 +366,9 @@ def group_registry(images: list[RegistryImage]) -> list[tuple[str, list[Registry
 
 
 def render_registry(base: registry.ImageRef, groups, others: int) -> str:
-    """Return the human report for a registry (`BR-CLI-005`).
+    """Return the human report for one repository in a registry (`BR-REG-005`).
 
-    Deliberately not the same report as ``--local``. There is no notion of a *superseded*
+    Deliberately not the same report as a local listing. There is no notion of a *superseded*
     image here: an untagged manifest in a registry is unreferenced, not sitting on someone's
     disk, so what matters remotely is which tags point at which digest — that is what a
     target watches and what a rollback moves.
@@ -402,35 +409,37 @@ def render_registry(base: registry.ImageRef, groups, others: int) -> str:
     return "\n".join(lines)
 
 
-def registry_as_json(base: registry.ImageRef, groups, others: int) -> str:
-    """Return the machine-readable registry report (`BR-CLI-013`)."""
-    return json.dumps(
-        {
-            "repository": base.base,
-            "groups": [
-                {
-                    "input_hash": input_hash,
-                    "frappe": {
-                        "ref": members[0].frappe_ref,
-                        "commit": members[0].frappe_commit,
-                    },
-                    "apps": members[0].apps,
-                    "images": [
-                        {
-                            "digest": image.digest,
-                            "tags": list(image.tags),
-                            "created": image.built_at.isoformat() if image.built_at else None,
-                            "size": image.size,
-                        }
-                        for image in members
-                    ],
-                }
-                for input_hash, members in groups
-            ],
-            "other_tags": others,
-        },
-        indent=2,
-    )
+def registry_payload(base: registry.ImageRef, groups, others: int) -> dict:
+    """Return one repository's machine-readable report as a `dict` (`BR-CLI-013`).
+
+    A `dict`, not a JSON string: `cairn-registry images` (`BR-REG-005`) calls this once per
+    repository and assembles the results into one registry-wide payload, serialized once by
+    the caller — not one JSON document per repository glued together.
+    """
+    return {
+        "repository": base.base,
+        "groups": [
+            {
+                "input_hash": input_hash,
+                "frappe": {
+                    "ref": members[0].frappe_ref,
+                    "commit": members[0].frappe_commit,
+                },
+                "apps": members[0].apps,
+                "images": [
+                    {
+                        "digest": image.digest,
+                        "tags": list(image.tags),
+                        "created": image.built_at.isoformat() if image.built_at else None,
+                        "size": image.size,
+                    }
+                    for image in members
+                ],
+            }
+            for input_hash, members in groups
+        ],
+        "other_tags": others,
+    }
 
 
 def _newest_built_first(images: list[RegistryImage]) -> list[RegistryImage]:

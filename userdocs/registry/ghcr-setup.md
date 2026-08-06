@@ -175,8 +175,11 @@ Ask for write on one package, or on the one repository it is linked to.
 
 1. Create a classic token with `write:packages`.
 2. `podman login ghcr.io` — your GitHub username, then the token as the password.
-3. Verify with a read: `cairn-build images`. It will report an empty repository rather than a
-   permission error.
+3. Verify with a read: `cairn-registry images --host ghcr.io --namespace datahenge --image
+   erpnext-v16` (your owner and image name in place of these). It will report an empty
+   repository rather than a permission error. This reads the repository directly rather than
+   listing the registry, which is what reaches GHCR at all — see [Registry CLI:
+   images](cli.md#images).
 
 The credential is stored by podman, not by cairn — normally in
 `${XDG_RUNTIME_DIR}/containers/auth.json`. cairn only ever *reads* it. Note that
@@ -188,7 +191,7 @@ the runtime directory is unavailable, or you can point it there explicitly.
 
 ```bash
 cairn-build build --push
-cairn-build images                  # confirm it arrived
+cairn-registry images --host ghcr.io --namespace datahenge --image erpnext-v16   # confirm it arrived
 ```
 
 **On the VPS, once:**

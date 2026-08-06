@@ -25,8 +25,9 @@ cairn-build assign-tag --manifest cairn_production.toml
 watches. Moving that tag is what deploying, promoting, and rolling back all are — no rebuild,
 no upload, just a new name written server-side.
 
-So a single image commonly carries three or more tags at once, and `cairn-build images` folds
-them together and reports them as one image, because that is what they are.
+So a single image commonly carries three or more tags at once, and `cairn-registry images`
+(pointed at the repository) folds them together and reports them as one image, because that is
+what they are.
 
 One thing to be clear about, because the word invites the wrong inference: cairn's
 deterministic tag is **deterministic, not immutable.** Same inputs → same name. The name is
@@ -54,7 +55,7 @@ manifest, and warns you that the registry tag will still exist and still resolve
 registry. Registry-side cleanup is deliberately left as a manual, deliberate act.
 
 If you do need to reclaim registry space, do it by hand in the package's **Manage versions**
-page, deliberately, having first checked with `cairn-build images` that no environment tag
+page, deliberately, having first checked with `cairn-registry images` that no environment tag
 points at the version you are about to destroy.
 
 ## Errors you will actually hit

@@ -16,9 +16,9 @@ the original ID into the new file's `origin` field so a citation made while it w
 resolves.
 
 These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`, `ADR-057`,
-`ADR-058`, `ADR-060`, `ADR-062`, `ADR-063`, `ADR-064`, `ADR-066`) continue the same `ADR-NNN`
-sequence as `docs/adr/` — they were simply judged lightweight rather than consequential, not a
-separate numbering track.
+`ADR-058`, `ADR-060`, `ADR-062`, `ADR-063`, `ADR-064`, `ADR-066`, `ADR-069`) continue the same
+`ADR-NNN` sequence as `docs/adr/` — they were simply judged lightweight rather than
+consequential, not a separate numbering track.
 
 `ADR-054`, `ADR-055`, `ADR-056`, and `ADR-068` were retired from this index (not superseded —
 deleted) once judged process/tooling-only rather than product decisions; see
@@ -42,3 +42,4 @@ Their full record lives only in `docs/CHANGELOG.md`'s dated entries, by date rat
 | [063-registry-maintenance-script-moves-to-opt-cairn-registry.md](063-registry-maintenance-script-moves-to-opt-cairn-registry.md) | `authoritative` | Registry maintenance script moves from the invoking shell's `cwd` to `/opt/cairn-registry` — the `ADR-062` fix's second half, amends `BR-CLI-027`/`BR-REG-010` |
 | [064-build-timer-workingdirectory-and-workdir-flag-both-corrected.md](064-build-timer-workingdirectory-and-workdir-flag-both-corrected.md) | `authoritative` | Build timer's `WorkingDirectory=` and script `cd` corrected off `options.workdir`, which `ADR-062` missed; `--workdir` dropped from `cairn-build setup-timer` |
 | [066-build-push-defaults-to-assign-tag.md](066-build-push-defaults-to-assign-tag.md) | `authoritative` | `cairn-build build --push` assigns the manifest's declared environment by default; `--no-assign-tag` opts out; a manifest with no environment is skipped, not errored |
+| [069-images-splits-by-role-builder-local-registry-remote.md](069-images-splits-by-role-builder-local-registry-remote.md) | `authoritative` | `cairn-build images` becomes local-only (`--json` only, no manifest); `cairn-registry images` gains `--host`/`--namespace`/`--image` and provenance detail, with an exact `--namespace`+`--image` reading one repository directly (works against authenticated remotes like GHCR) rather than via the anonymous-only catalog endpoint |

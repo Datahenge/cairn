@@ -6,12 +6,12 @@ purpose: BR-REG requirements — provisioning, lifecycle, retention, and garbage
 
 # BR-REG — Registry Lifecycle Requirements
 
-_Status: **approved** 2026-08-03 · Last updated: 2026-08-04_
+_Status: **approved** 2026-08-03 · Last updated: 2026-08-06_
 
 Requirements for `cairn-registry`, the third CLI role: provisioning and operating a
 self-hosted OCI registry, and keeping its disk use bounded. Conventions: see `/CLAUDE.md`.
 Decisions cited: `ADR-009`, `ADR-035`, `ADR-036`, `ADR-038`, `ADR-039`, `ADR-046`, `ADR-048`,
-`ADR-053`.
+`ADR-053`, `ADR-069`.
 
 ---
 
@@ -90,15 +90,43 @@ cairn does not reimplement container lifecycle management.
 
 ## Introspection
 
-**`BR-REG-005`** *(images)* — `cairn-registry images [--json]` lists repositories, tags, and
-the digest each resolves to, reading the registry's own API remotely — no pull, mirroring
-`BR-DEPLOY-005`'s existing no-pull introspection for the same reason. Output MUST be **grouped
-by digest**, not listed one row per tag: a deterministic content-hash tag, `latest`, and any
-moving tag an operator assigned (an environment pointer, or anything else) can all name the
-same build, and a reader — deciding, for instance, what to write into a target descriptor's
-`tag` — needs to see every name for one build together, not cross-reference repeated digests
-by eye. Labels are explicit throughout (a repository line reads as a repository, not a bare
-name; columns are headed) — nothing is left for the reader to infer.
+**`BR-REG-005`** *(images)* — `cairn-registry images [--host HOST] [--namespace NAME] [--image
+PATTERN] [--json]` reads a registry's own API remotely (no pull, `BR-DEPLOY-005`) and reports
+what cairn built there — the registry-side counterpart to `BR-CLI-005`'s local-only
+`cairn-build images` (`ADR-069`, "the builder talks about what the builder owns; the registry
+talks about what a registry owns"). Every fact is operator-supplied or read from the registry
+itself — never a manifest (`BR-REG-001`).
+
+- **`--host`** — which registry to query, `host[:port]`. Defaults to this machine's own
+  (`registry.toml`'s `host`); may name any other reachable registry, local or remote.
+- **`--namespace`** — restrict to repositories directly under one namespace (e.g. one
+  client). Omitted means every namespace on the queried registry.
+- **`--image`** — restrict to one image name; accepts a glob (e.g. `erpnext-*`).
+- Together, an **exact `--namespace` and `--image`** (no glob) name one specific repository.
+  cairn MUST read that repository **directly** — the same tag-by-tag, anonymous-then-
+  bearer-token read `BR-DEPLOY-005` always used — and MUST NOT call the registry's catalog
+  endpoint to do it. This is what makes a single repository reachable on an **authenticated**
+  remote registry (GHCR and similar) via `docker login`/`podman login` credentials, the same
+  way `cairn-build push`/`assign-tag` already read one.
+- **Any other combination** (no `--image`, or `--image` is a glob) enumerates via the
+  registry's catalog endpoint (`GET /v2/_catalog`), then filters the result by `--namespace`/
+  `--image`. The catalog endpoint is **anonymous-only** (`registry.catalog`) — this MUST work
+  against cairn's own self-hosted registry (unauthenticated by design, `BR-REG-003`), and MAY
+  fail plainly against a registry that requires authentication for a catalog listing, which
+  most third-party registries do. This is a real limitation of catalog-wide enumeration, not
+  a bug — it is why the single-repository path above exists and bypasses it.
+
+Whichever path found a repository, cairn MUST read its images' provenance labels
+(`BR-BUILD-011`) exactly as `BR-CLI-005`'s local report does — resolved Frappe/app commits,
+the `cairn-build-owned` marker — and MUST group them by **input hash**, not listed one row per
+tag: a deterministic content-hash tag, `latest`, and any moving tag an operator assigned (an
+environment pointer, or anything else) can all name the same build, and a reader — deciding,
+for instance, what to write into a target descriptor's `tag` — needs to see every name for one
+build together, not cross-reference repeated digests by eye. A repository holding no images
+cairn built MUST be counted, not itemized, matching `BR-CLI-005`'s treatment of images cairn
+did not build. Labels are explicit throughout (a repository line reads as a repository,
+**full reference, registry host included** — not a bare name; columns are headed) — nothing
+is left for the reader to infer.
 
 ## Retention
 

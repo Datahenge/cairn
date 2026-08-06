@@ -157,7 +157,7 @@ a raw `docker images` — cairn groups by what was actually built, distinguishin
 build from one it has since superseded:
 
 ```bash
-cairn-build images --local
+cairn-build images
 ```
 
 ```

@@ -27,7 +27,6 @@ from . import (
     transcript,
 )
 from .cli_support import done, note, report_timing, run, step, version_callback
-from .errors import CairnError
 from .provision import (
     BUILD_STAGE_FUNCS,
     BUILD_STAGES,
@@ -285,50 +284,27 @@ def build_command(
 @app.command(
     "images",
     help=(
-        "Show images and what they were built from. Reads the registry by default; "
-        "--local reads this machine instead."
+        "Show what this build machine holds and what it was built from. Local only — for a "
+        "registry (this machine's own, or a client's remote one), see cairn-registry images."
     ),
 )
 def images_command(
-    local: Annotated[
-        bool,
-        typer.Option("--local", help="Report this machine's images instead of the registry."),
-    ] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Emit machine-readable output.")] = False,
-    manifest_path: Annotated[
-        Path | None,
-        typer.Option("--manifest", help="Path to cairn.toml. Default: $CAIRN_MANIFEST."),
-    ] = None,
 ) -> None:
-    """Report images and their provenance, locally or from the registry (BR-CLI-005).
+    """Report this machine's images and their provenance (BR-CLI-005).
 
-    Two genuinely different questions. ``--local`` asks what this machine holds and which of
-    it is superseded; the default asks what the registry holds and which tags point where —
-    read remotely, with nothing pulled.
+    Unconditionally local — no manifest, no registry. Which images does this machine hold, why
+    does each exist, and which is superseded. What a registry (cairn's own, or a client's
+    remote one) holds is a different CLI role's question (`cairn-registry images`, `BR-REG-005`,
+    `ADR-069`).
     """
 
     def _action() -> int:
-        found_manifest = config.find_manifest_or_none(explicit=manifest_path)
-        build_config = config.load_build_config(found_manifest)
-
-        if local:
-            engine_name = engine.detect(build_config.engine).name
-            held, others = images.inspect_local(engine_name)
-            groups = images.group(held)
-            typer.echo(images.as_json(groups, others) if as_json else images.render(groups, others))
-            return 0
-
-        base = _registry_repository(found_manifest, build_config)
-        if not as_json:
-            step(f"Reading {base.base} (one request per tag; nothing is pulled)…")
-        remote, others = images.inspect_registry(base)
-        grouped = images.group_registry(remote)
-
-        typer.echo(
-            images.registry_as_json(base, grouped, others)
-            if as_json
-            else images.render_registry(base, grouped, others)
-        )
+        build_config = config.load_build_config(None)
+        engine_name = engine.detect(build_config.engine).name
+        held, others = images.inspect_local(engine_name)
+        groups = images.group(held)
+        typer.echo(images.as_json(groups, others) if as_json else images.render(groups, others))
         return 0
 
     run(_action)
@@ -466,31 +442,6 @@ def push_command(
         return 0
 
     run(_action)
-
-
-def _registry_repository(
-    manifest_path: Path | None, build_config: config.BuildConfig
-) -> registry.ImageRef:
-    """The repository the registry commands act on, taken from the manifest and build config.
-
-    The tag is a placeholder — every caller replaces it. What matters is the repository, which
-    is composed exactly as `cairn-build build` composes it, so the images read here are the
-    images built there.
-    """
-    if manifest_path is None:
-        raise CairnError(
-            "No manifest given, so cairn does not know which repository to read. Pass "
-            "--manifest, set $CAIRN_MANIFEST, or use --local."
-        )
-    manifest = config.load_manifest(manifest_path)
-    base = build_config.resolve_image_base(manifest.image_name)
-    if not build_config.registry:
-        raise CairnError(
-            "No registry is configured, so images stay local and there is no registry to "
-            "read. Set `registry` (and usually `namespace`) in /etc/cairn/builder.toml, "
-            "or set $CAIRN_REGISTRY (and usually $CAIRN_NAMESPACE), or use --local."
-        )
-    return registry.parse_ref(f"{base}:latest")
 
 
 def _apply_assignment(assignment: environments.Assignment, *, assume_yes: bool) -> int:

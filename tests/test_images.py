@@ -306,7 +306,7 @@ def test_sizes_render_in_the_units_the_engine_uses():
     assert images.format_size(512) == "512 B"
 
 
-# --- the registry report (BR-CLI-005 default mode, BR-DEPLOY-005) -----------
+# --- the registry report (cairn-registry images, BR-REG-005, BR-DEPLOY-005) -
 
 
 def _remote_image(digest, labels, size=2_750_000_000):

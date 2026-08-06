@@ -95,22 +95,52 @@ cairn-registry restart   # docker compose restart
 
 ```bash
 cairn-registry images
+cairn-registry images --host ghcr.io --namespace acmecorp --image erpnext-v16
+cairn-registry images --namespace acmecorp --image 'erpnext-*'
 cairn-registry images --json
 ```
 
-Lists every repository, tag, and the digest it resolves to. Reads the registry's own API
-remotely — never pulls an image to find out. Grouped by digest, not one row per tag — a
-deterministic content-hash tag, `latest`, and any moving tag you assigned (an environment
-pointer, or anything else) can all name the same build, so every name for it shows up on one
-line rather than three repeated digests you'd otherwise have to cross-reference by eye. The
-repository line prints the **full reference** — registry host included — not just the bare
-name: `image = "..."` in a target descriptor needs the host too, since cairn refuses to assume
-one, and this is meant to be copy-pasted straight in:
+Reports what cairn built, read from a registry's own API — never pulls an image to find out.
+This is the registry-side counterpart to `cairn-build images`, which only ever answers for
+the build machine itself; a registry (this machine's own, or a client's remote one) is always
+this command's job, not that one's.
+
+Flags:
+
+- `--host <host[:port]>` — which registry to query. Default: this machine's own (from
+  `registry.toml`). Any other value queries that registry instead, local or remote.
+- `--namespace <name>` — only repositories directly under this namespace (typically one
+  client).
+- `--image <name>` — only this image name; accepts a glob, e.g. `'erpnext-*'`.
+- `--json` — machine-readable output.
+
+**An exact `--namespace` and `--image` together (no glob) read that one repository directly**,
+the same authenticated way `cairn-build push`/`assign-tag` do — this is what reaches a
+registry that requires a login, GHCR included, after `docker login`/`podman login`. Any other
+combination — no `--image`, or `--image` is a glob — enumerates the registry's whole catalog
+first, then filters. Catalog enumeration only works unauthenticated, which cairn's own
+self-hosted registry is by design; most third-party registries refuse it, so a whole-registry
+or glob query against one of those will fail plainly rather than pretend to a partial answer.
+
+Output is grouped by input hash and digest, not one row per tag — a deterministic content-hash
+tag, `latest`, and any moving tag you assigned (an environment pointer, or anything else) can
+all name the same build, so every name for it shows up together rather than scattered across
+rows you'd otherwise have to cross-reference by eye. The repository line prints the **full
+reference** — registry host included — not just the bare name: `image = "..."` in a target
+descriptor needs the host too, since cairn refuses to assume one, and this is meant to be
+copy-pasted straight in:
 
 ```
-Repository registry.example.com:5000/acmecorp/erpnext-v16
-  DIGEST         TAGS
-  a1b2c3d4e5f6   latest, production, v16-a1b2c3d4e5f6
+Registry ghcr.io
+
+Repository ghcr.io/acmecorp/erpnext-v16
+v16-a1b2c3d4e5f6  (input hash a1b2c3d4e5f6)
+  frappe       v16.25.0         9a8daf34
+  erpnext      v16.26.1         fd00cebb
+    a1b2c3d4e5f6  1.79 GB       2d  latest, production, v16-a1b2c3d4e5f6
+
+1 image(s) built by cairn in ghcr.io/acmecorp/erpnext-v16 across 1 input hash(es).
+Sizes are the download size from the registry, not unpacked size on disk.
 ```
 
 This is usually the fastest way to find the exact tag to put into a target's
