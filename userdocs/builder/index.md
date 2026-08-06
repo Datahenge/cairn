@@ -172,7 +172,7 @@ cairn/erpnext-v16:v16-d47f139c6ffe  (input hash d47f139c6ffe)
 
 Leads with the tag you'd actually recognize, not the input hash — the hash is still there,
 parenthetically, and is usually visible again in the tag's own suffix
-(`<series>-<hash>`). `src/cairn/recipe/frappe_docker/` is cairn's own owned Docker build
+(`<series>-<hash>`). `src/cairn/recipe/` is cairn's own owned Docker build
 recipe — its git commit is part of what produced this image, since it supplies the
 Containerfile itself, so two images from an identical `cairn.toml` can still differ if the
 recipe changed between builds. Every image cairn builds carries its full provenance as OCI

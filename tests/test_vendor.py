@@ -9,19 +9,19 @@ from cairn.errors import VendorInputsMissingError
 
 CONTAINERFILE = """\
 FROM base AS builder
-COPY resources/core/nginx/nginx-template.conf /templates/nginx/frappe.conf.template
+COPY resources/nginx/nginx-template.conf /templates/nginx/frappe.conf.template
 COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
-COPY resources/core/start.sh /usr/local/bin/start.sh
+COPY resources/start.sh /usr/local/bin/start.sh
 RUN echo not-a-copy
 """
 
 
 def _recipe_tree(root, containerfile: str = CONTAINERFILE) -> None:
-    """Materialize a minimal recipe frappe_docker tree under *root*."""
+    """Materialize a minimal recipe tree under *root*."""
     custom = root / vendor.CUSTOM_CONTAINERFILE
     custom.parent.mkdir(parents=True)
     custom.write_text(containerfile, encoding="utf-8")
-    for name in ("resources/core/nginx/nginx-template.conf", "resources/core/start.sh"):
+    for name in ("resources/nginx/nginx-template.conf", "resources/start.sh"):
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("x", encoding="utf-8")
@@ -31,25 +31,25 @@ def _recipe_tree(root, containerfile: str = CONTAINERFILE) -> None:
 
 
 def test_assert_build_inputs_passes_when_complete(monkeypatch, tmp_path):
-    monkeypatch.setattr(vendor, "FRAPPE_DOCKER_DIR", tmp_path)
+    monkeypatch.setattr(vendor, "RECIPE_DIR", tmp_path)
     _recipe_tree(tmp_path)
 
     vendor.assert_build_inputs()  # must not raise
 
 
 def test_assert_build_inputs_raises_when_containerfile_absent(monkeypatch, tmp_path):
-    monkeypatch.setattr(vendor, "FRAPPE_DOCKER_DIR", tmp_path)
+    monkeypatch.setattr(vendor, "RECIPE_DIR", tmp_path)
 
-    with pytest.raises(VendorInputsMissingError, match="images/custom/Containerfile"):
+    with pytest.raises(VendorInputsMissingError, match="images/Containerfile"):
         vendor.assert_build_inputs()
 
 
 def test_assert_build_inputs_raises_when_a_copied_resource_is_absent(monkeypatch, tmp_path):
-    monkeypatch.setattr(vendor, "FRAPPE_DOCKER_DIR", tmp_path)
+    monkeypatch.setattr(vendor, "RECIPE_DIR", tmp_path)
     _recipe_tree(tmp_path)
-    (tmp_path / "resources/core/start.sh").unlink()
+    (tmp_path / "resources/start.sh").unlink()
 
-    with pytest.raises(VendorInputsMissingError, match=r"resources/core/start\.sh"):
+    with pytest.raises(VendorInputsMissingError, match=r"resources/start\.sh"):
         vendor.assert_build_inputs()
 
 
@@ -59,8 +59,8 @@ def test_context_copies_skips_build_stage_copies(tmp_path):
     containerfile.write_text(CONTAINERFILE, encoding="utf-8")
 
     assert vendor._context_copies(containerfile) == [
-        "resources/core/nginx/nginx-template.conf",
-        "resources/core/start.sh",
+        "resources/nginx/nginx-template.conf",
+        "resources/start.sh",
     ]
 
 

@@ -31,7 +31,7 @@ The `dev` extra adds `ruff` and `pytest` — neither of which a normal install n
 
 ### Docker build recipe
 
-`src/cairn/recipe/frappe_docker/` is cairn's own Docker build recipe (the `Containerfile`
+`src/cairn/recipe/` is cairn's own Docker build recipe (the `Containerfile`
 and compose YAML) — ordinary source, owned and freely edited directly, not vendored or
 pinned from upstream. It lives inside the `cairn` package itself, so it's part of every
 install — pip or checkout alike. There's no sync command or pin file: consulting

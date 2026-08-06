@@ -12,13 +12,13 @@ _Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · La
 Requirements for cairn's Docker build recipe (`Containerfile`) and compose configuration.
 Cairn owns this recipe directly — it is not vendored, pinned, or synced from upstream
 `frappe_docker` (`ADR-059`, which supersedes `ADR-001` and `ADR-007`). Conventions: see
-`/CLAUDE.md`. Decisions cited: `ADR-004`, `ADR-059`, `ADR-068`. Scope: `src/cairn/recipe/frappe_docker/`
+`/CLAUDE.md`. Decisions cited: `ADR-004`, `ADR-059`, `ADR-068`. Scope: `src/cairn/recipe/`
 is the single owned recipe tree.
 
 ---
 
 **`BR-VEND-001` — Recipe ownership.** Cairn owns the Docker build recipe and compose
-configuration at `src/cairn/recipe/frappe_docker/` as ordinary source. Cairn MAY create,
+configuration at `src/cairn/recipe/` as ordinary source. Cairn MAY create,
 modify, or delete any file within it, subject to the same review discipline as any other part
 of the codebase — there is no read-only restriction. *(ADR-059)*
 
@@ -29,7 +29,7 @@ when convenient — never a scheduled, automated, or tooling-mediated one. There
 lock file, or drift check. *(ADR-059)*
 
 **`BR-VEND-003` — Build-input completeness.** Before producing an image, cairn MUST verify the
-recipe tree contains the required build inputs (at minimum `images/custom/Containerfile` and
+recipe tree contains the required build inputs (at minimum `images/Containerfile` and
 the `resources/` it references), and MUST abort with a clear error if any are absent. This is
 an ordinary sanity check on cairn's own source, not a precondition tied to any external sync.
 *(ADR-004)*
@@ -41,12 +41,15 @@ constraint — the recipe's own history lives in cairn's own git history from th
 
 **`BR-VEND-005` — Attribution retained.** For as long as any part of `src/cairn/recipe/`
 derives from `frappe/frappe_docker`, cairn MUST retain `src/cairn/recipe/
-ATTRIBUTIONS_FRAPPE_DOCKER.md` and `frappe_docker/LICENSE` alongside it, and MUST keep the
-attribution file's description of what was kept and why current as the tree changes. The
-byte-for-byte bootstrap copy (`ADR-059`) was trimmed to only the files cairn actually builds or
-provisions with 2026-08-06 — everything else upstream ships (its docs site, test suite, CI
-workflows, contributor tooling, and alternate build strategies) was dropped as not part of
-cairn's own recipe.
+ATTRIBUTIONS_FRAPPE_DOCKER.md`, carrying the original MIT notice verbatim, and MUST keep its
+description of what was kept and why current as the tree changes. The byte-for-byte bootstrap
+copy (`ADR-059`) was trimmed to only the files cairn actually builds or provisions with
+2026-08-06 — everything else upstream ships (its docs site, test suite, CI workflows,
+contributor tooling, and alternate build strategies) was dropped as not part of cairn's own
+recipe. The tree was flattened the same day: files that lived under a nested `frappe_docker/`
+subdirectory now sit directly under `src/cairn/recipe/`, and `images/custom/` and
+`resources/core/` collapsed to `images/` and `resources/` since neither had a sibling to be
+distinguished from.
 
 ---
 

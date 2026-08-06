@@ -266,7 +266,7 @@ def provenance_labels(
     ``org.opencontainers.image.vendor`` is deliberately unset: the distributing entity of
     the operator's image is theirs to declare, not cairn's. ``frappe-docker.ref``/
     ``.commit`` record the owned recipe's own provenance — cairn's own version, and the
-    git commit covering `src/cairn/recipe/frappe_docker/` at build time — since there is
+    git commit covering `src/cairn/recipe/` at build time — since there is
     no longer a separate upstream pin to record (`ADR-059`).
     """
     return {

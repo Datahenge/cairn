@@ -75,6 +75,15 @@ take-ownership path for a pre-existing hand-built deployment. `BR-DEPLOY-007` am
 the `bench new-site`/database-creation clause and the `DATA` boundary (`ADR-022`) are explicitly
 unchanged. Neither capability is built — `W-032` (provisioning) and `W-033` (take-ownership)
 queued as design-first Open Work.
+Later the same day, Brian took the trim further: the nested `frappe_docker/` subdirectory is
+gone — every file moved up to sit directly under `src/cairn/recipe/` — and `images/custom/`,
+`resources/core/` collapsed to `images/`, `resources/` (no longer double-nested now that
+nothing else shares the parent). `frappe_docker/LICENSE` folded into
+`ATTRIBUTIONS_FRAPPE_DOCKER.md` verbatim rather than kept as a separate file. `vendor.py`'s
+`FRAPPE_DOCKER_DIR`/`FRAPPE_DOCKER_SOURCE` collapsed into a single `RECIPE_DIR`; the
+Containerfile's `COPY` lines, `pyproject.toml`'s ruff `extend-exclude`, and every doc citing the
+old paths (`01-vendoring.md`, `02-build.md`, `00-coding-standards.md`, lessons-learned 04b/04c,
+`userdocs/builder/index.md`, `userdocs/reference/index.md`) updated to match.
 
 ## Read First
 
@@ -93,8 +102,8 @@ queued as design-first Open Work.
 
 - `BR`/`ADR` identifiers never reach a user — see `AGENTS.md` and `tests/test_conventions.py`.
 - The data-plane boundary (`ADR-022`) is a hard invariant, not a preference — cairn cannot touch SQL.
-- `src/cairn/recipe/frappe_docker/` is cairn's own Docker build recipe, freely edited by hand
-  — no vendoring, no pin, no drift check (`ADR-059`).
+- `src/cairn/recipe/` is cairn's own Docker build recipe, freely edited by hand — no
+  vendoring, no pin, no drift check (`ADR-059`).
 
 ## Context Rule
 

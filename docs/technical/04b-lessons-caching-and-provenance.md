@@ -18,7 +18,7 @@ _Last updated: 2026-08-03_
 *Reasoned, then measured (§5, this file). Illuminates `BR-BUILD-006`, `BR-BUILD-007`._
 
 This is the most valuable thing learned, and it is not obvious from either requirement in
-isolation. At `frappe_docker/images/custom/Containerfile:124-134`:
+isolation. At `src/cairn/recipe/images/Containerfile:124-134`:
 
 ```dockerfile
 ARG CACHE_BUST=""

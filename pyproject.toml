@@ -64,10 +64,9 @@ packages = ["src/cairn"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
-# The owned recipe tree (src/cairn/recipe/frappe_docker/, ADR-059) is a Docker build
-# recipe — Containerfile and shell, not Python — so it is not linted to this project's
-# Python standard.
-extend-exclude = ["src/cairn/recipe/frappe_docker"]
+# The owned recipe tree (src/cairn/recipe/, ADR-059) is a Docker build recipe — Containerfile
+# and shell, not Python — so it is not linted to this project's Python standard.
+extend-exclude = ["src/cairn/recipe"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

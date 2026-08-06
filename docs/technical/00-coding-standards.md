@@ -13,10 +13,11 @@ here.
 ## Language / Runtime
 
 - Python ≥ 3.11 (`requires-python = ">=3.11"` in `pyproject.toml`).
-- The owned `src/cairn/recipe/frappe_docker/` tree (renamed from `vendored/`, `ADR-059`) is a
-  Docker build recipe — Containerfile and shell, not Python — and is not linted to this
-  document's Python standard. It is otherwise ordinary cairn source: freely edited, reviewed
-  like any other change.
+- The owned `src/cairn/recipe/` tree (renamed from `vendored/frappe_docker/`, `ADR-059`;
+  flattened out of a nested `frappe_docker/` subdirectory 2026-08-06) is a Docker build
+  recipe — Containerfile and shell, not Python — and is not linted to this document's Python
+  standard. It is otherwise ordinary cairn source: freely edited, reviewed like any other
+  change.
 
 ## Naming Conventions
 

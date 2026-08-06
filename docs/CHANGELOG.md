@@ -9,6 +9,26 @@ code changes live in git history.
 
 ---
 
+## 2026-08-06 (recipe tree flattened — no more nested `frappe_docker/`, `images/custom/`, or `resources/core/`)
+
+Follow-on to the same-day trim below: Brian asked to flatten what remained. The nested
+`frappe_docker/` subdirectory is gone — `compose.yaml`, `overrides/`, `example.env`,
+`images/`, and `resources/` now sit directly under `src/cairn/recipe/`. `images/custom/`
+collapsed to `images/` and `resources/core/` to `resources/`, since neither had a sibling
+left to be distinguished from (the alternate `bench`/`layered`/`production` Containerfiles and
+frappe_docker's own `docs/`-nested `core`/other resource groupings were already dropped in the
+trim). `frappe_docker/LICENSE` folded into `ATTRIBUTIONS_FRAPPE_DOCKER.md` verbatim rather than
+kept as a separate file. Pure scaffolding reorganization — no new ADR (`01-documentation-
+conventions.md`'s own rule for this), `BR-VEND-005` and `BR-VEND-001`/`003` in
+`docs/requirements/01-vendoring.md` updated in place instead. Code: `vendor.py`'s
+`FRAPPE_DOCKER_DIR`/`FRAPPE_DOCKER_SOURCE` collapsed into one `RECIPE_DIR`;
+`CUSTOM_CONTAINERFILE` now `images/Containerfile`; the Containerfile's own `COPY` lines
+repointed at `resources/`. `pyproject.toml`'s ruff `extend-exclude` and `ai/tools/
+docs_check.py`'s `EXCLUDED_PATHS` both updated to the flattened root. Docs swept for the old
+paths: `02-build.md`, `00-coding-standards.md`, lessons-learned `04b`/`04c`, `AGENTS.md`,
+`userdocs/builder/index.md`, `userdocs/reference/index.md`. `tests/test_vendor.py` updated to
+match; full suite passes.
+
 ## 2026-08-06 (recipe tree trimmed to load-bearing files; `ADR-068` grows cairn's scope to initial provisioning)
 
 Two related changes, same session, both prompted by Brian: make `src/cairn/recipe/frappe_docker/`

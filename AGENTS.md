@@ -92,7 +92,7 @@ traceability.
 | `CHANGELOG.md` (root) | Software release history | — |
 | `docs/plans/` | Narrative implementation plans, downstream of requirements | — |
 | `userdocs/` | Published end-user documentation (mkdocs-material → GitHub Pages, `ADR-045`) — the only tree a user ever sees | — |
-| `src/cairn/recipe/frappe_docker/` | Owned Docker build recipe (Containerfile + compose YAML), authored and maintained directly by cairn — no vendoring, no pin, freely edited (`ADR-059`) | — |
+| `src/cairn/recipe/` | Owned Docker build recipe (Containerfile + compose YAML), authored and maintained directly by cairn — no vendoring, no pin, freely edited (`ADR-059`) | — |
 
 ## Workflow (Scribe Coding phases)
 

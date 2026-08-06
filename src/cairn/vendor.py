@@ -1,10 +1,12 @@
 """The recipe tree: where it lives, and the one build precondition over it (`ADR-059`).
 
-The owned ``frappe_docker`` recipe lives at ``src/cairn/recipe/frappe_docker`` — *inside*
-the cairn package itself (`BR-VEND-001`) — so it ships in the wheel the same way every
-other package file does, and every path in this module is resolved relative to cairn's own
-installed location, never by searching the filesystem for a project root. That is what
-makes these checks work identically in a development checkout and in a ``pip install``.
+The owned recipe lives at ``src/cairn/recipe`` — *inside* the cairn package itself
+(`BR-VEND-001`) — so it ships in the wheel the same way every other package file does, and
+every path in this module is resolved relative to cairn's own installed location, never by
+searching the filesystem for a project root. That is what makes these checks work identically
+in a development checkout and in a ``pip install``. It derives from `frappe/frappe_docker`
+(`src/cairn/recipe/ATTRIBUTIONS_FRAPPE_DOCKER.md`, `BR-VEND-005`), but is no longer nested
+under a ``frappe_docker/`` subdirectory of its own — the tree *is* the recipe.
 
 Cairn owns this tree outright: it may be created, modified, or deleted like any other part
 of the codebase. There is no pin, no lock file, no drift check, and no sync obligation
@@ -21,16 +23,12 @@ from pathlib import Path
 
 from .errors import VendorInputsMissingError
 
-#: The recipe source that supplies the image build inputs.
-FRAPPE_DOCKER_SOURCE = "frappe_docker"
-
 #: Where the recipe tree lives, relative to cairn's own installed location — not searched
 #: for, so this resolves identically in a checkout and in a wheel.
 RECIPE_DIR = Path(__file__).resolve().parent / "recipe"
-FRAPPE_DOCKER_DIR = RECIPE_DIR / FRAPPE_DOCKER_SOURCE
 
-#: The custom-image Containerfile cairn builds with, relative to that source (ADR-004).
-CUSTOM_CONTAINERFILE = "images/custom/Containerfile"
+#: The custom-image Containerfile cairn builds with, relative to the recipe root (ADR-004).
+CUSTOM_CONTAINERFILE = "images/Containerfile"
 
 
 def assert_build_inputs() -> None:
@@ -41,16 +39,13 @@ def assert_build_inputs() -> None:
     the build context — so it stays correct as the recipe is edited by hand, rather than
     encoding a list that silently rots.
     """
-    containerfile = FRAPPE_DOCKER_DIR / CUSTOM_CONTAINERFILE
+    containerfile = RECIPE_DIR / CUSTOM_CONTAINERFILE
     if not containerfile.is_file():
         raise VendorInputsMissingError(
-            f"Recipe source '{FRAPPE_DOCKER_SOURCE}' is missing {CUSTOM_CONTAINERFILE} "
-            f"(expected at {containerfile})."
+            f"Recipe is missing {CUSTOM_CONTAINERFILE} (expected at {containerfile})."
         )
 
-    missing = [
-        path for path in _context_copies(containerfile) if not _resolves(FRAPPE_DOCKER_DIR, path)
-    ]
+    missing = [path for path in _context_copies(containerfile) if not _resolves(RECIPE_DIR, path)]
     if missing:
         raise VendorInputsMissingError(
             f"{CUSTOM_CONTAINERFILE} copies build inputs that are absent from the recipe "
@@ -60,12 +55,12 @@ def assert_build_inputs() -> None:
 
 def containerfile_path() -> Path:
     """Return the path to the owned custom Containerfile (`ADR-004`)."""
-    return FRAPPE_DOCKER_DIR / CUSTOM_CONTAINERFILE
+    return RECIPE_DIR / CUSTOM_CONTAINERFILE
 
 
 def build_context() -> Path:
     """Return the build context — the recipe source root, per `BR-BUILD-009`."""
-    return FRAPPE_DOCKER_DIR
+    return RECIPE_DIR
 
 
 def containerfile_arg_defaults(containerfile: Path) -> dict[str, str]:
@@ -91,15 +86,15 @@ def recipe_commit() -> str:
 
     Provenance under ownership has no separate upstream pin to record (`ADR-059`) — this
     is what supplies ``com.datahenge.cairn.frappe-docker.commit`` instead: the commit in
-    *cairn's own* git history that last changed anything under `FRAPPE_DOCKER_DIR`, not a
-    commit of the recipe's own (there isn't one, `BR-VEND-004`). An installed wheel carries
-    no ``.git`` directory, so this degrades to an empty string rather than raising — it is
-    informational provenance, not a build precondition.
+    *cairn's own* git history that last changed anything under `RECIPE_DIR`, not a commit of
+    the recipe's own (there isn't one, `BR-VEND-004`). An installed wheel carries no ``.git``
+    directory, so this degrades to an empty string rather than raising — it is informational
+    provenance, not a build precondition.
     """
     try:
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%H", "--", str(FRAPPE_DOCKER_DIR)],
-            cwd=FRAPPE_DOCKER_DIR.parent,
+            ["git", "log", "-1", "--format=%H", "--", str(RECIPE_DIR)],
+            cwd=RECIPE_DIR.parent,
             capture_output=True,
             text=True,
             check=False,

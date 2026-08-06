@@ -13,7 +13,7 @@ clause — both unchanged, see "Out of scope" below.
 
 ## Raised
 
-While trimming `src/cairn/recipe/frappe_docker/` down to what cairn's own code actually reads
+While trimming `src/cairn/recipe/` down to what cairn's own code actually reads
 (dropping the byte-for-byte bootstrap copy's dead weight — its docs site, test suite, CI
 workflows, contributor tooling, alternate build strategies), the compose scaffolding
 (`compose.yaml`, `overrides/*.yaml`) turned out to be in the same boat: nothing in cairn's code

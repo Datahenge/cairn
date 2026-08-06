@@ -138,8 +138,8 @@ definition, already pushed, so it can never carry the marker. *(ADR-061)*
 
 ## Build invocation
 
-**`BR-BUILD-009`** — cairn MUST build using its own owned `images/custom/Containerfile` with
-`frappe_docker/` as the build context, and MUST enforce the `VEND` precondition first:
+**`BR-BUILD-009`** — cairn MUST build using its own owned `images/Containerfile` with
+`src/cairn/recipe/` as the build context, and MUST enforce the `VEND` precondition first:
 `BR-VEND-003` (build-input completeness). *(ADR-004)*
 
 **`BR-BUILD-010`** — cairn MUST pass the `[cairn.build]` knobs as the matching build-args and
@@ -180,7 +180,7 @@ Constraints, each load-bearing:
 **`BR-BUILD-011`** — On a successful build, cairn MUST stamp provenance onto the image as OCI
 labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; resolved Frappe + app commits
 with their source refs; effective build args; both tags; the owned recipe's own provenance
-(cairn's package version and the git commit covering `src/cairn/recipe/frappe_docker/` at
+(cairn's package version and the git commit covering `src/cairn/recipe/` at
 build time — there is no separate upstream pin to record, `ADR-059`); the input-hash; and a
 timestamp. cairn MAY emit a sidecar marker into the deployment working directory, and MUST NOT
 write markers into its own installation or source tree. The concrete label schema is

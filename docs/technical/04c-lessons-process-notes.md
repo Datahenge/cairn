@@ -19,7 +19,7 @@ _Last updated: 2026-08-04_
 vendoring model was retired for direct recipe ownership, `ADR-059`)._
 
 `BR-VEND-003` requires verifying the recipe tree holds "at minimum
-`images/custom/Containerfile` and the `resources/` it references". The obvious
+`images/Containerfile` and the `resources/` it references". The obvious
 implementation — a hardcoded list of six resource paths — is wrong by construction: it
 silently rots the first time the recipe changes and a file is added or moved, and it rots
 *quietly*, still reporting success.
