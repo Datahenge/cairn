@@ -9,6 +9,38 @@ code changes live in git history.
 
 ---
 
+## 2026-08-05 — `BR-BUILD-018`/`ADR-061`: a `cairn-build-owned` marker tag, `cairn-build
+prune` rewritten around it, `OQ-001` resolved
+
+Raised while working through what a VPS colocating `cairn-build`, `cairn-registry`, and
+`cairn-adopt` actually shares: two independently-computed local-image GCs (today's
+`cairn-build prune`, and the target-side GC `BR-DEPLOY-006`/`W-003` still describes but does
+not yet implement) would share one engine image store on such a host, with neither able to
+tell what the other still needs — and `cairn-build images --local` (`OQ-001`) could not tell
+"cairn built this" from "cairn built this *here*," since `BR-BUILD-011`'s provenance labels
+survive a `docker pull` intact.
+
+New `BR-BUILD-018` (`docs/requirements/02-build.md`): every build additionally applies a
+fixed, local-only `cairn-build-owned` tag, never pushed, stripped once that build's own tags
+are successfully pushed. This makes "still owned" and "anything `cairn-adopt` could ever
+depend on" provably disjoint by construction — a pulled image was, by definition, already
+pushed, so it can never carry the marker.
+
+`BR-CLI-018` (`06-cli.md`) is rewritten around it: `cairn-build prune` no longer protects by
+tag-presence alone, but by "carries any tag other than the owned marker" — reaching a stale,
+never-shared build it previously left alone forever, while continuing to protect anything
+pushed exactly as before. `--keep` is now documented as a grace window, not rollback
+headroom, since build-machine storage never carried that guarantee. `BR-CLI-005`'s `--local`
+now reports the marker per image, closing `OQ-001` (`open/OPEN_QUESTIONS.md`) directly.
+`BR-DEPLOY-006` (`03-deploy.md`) gets one guard ahead of its own implementation: it must
+never remove a still-owned image.
+
+Full rationale, alternatives considered (per-role rollback tags; a label instead of a tag —
+rejected, labels are immutable per digest, only a tag can be stripped after the fact), and
+scope in `docs/adr/061-cairn-build-owned-marker-tag-untagged-only-pruning-retired.md`.
+
+---
+
 ## 2026-08-05 — `ADR-060`: registry `data_dir` default corrected to `/var/lib/cairn-registry`
 
 `ADR-053` justified defaulting registry blob storage under `/opt/cairn-registry` as mirroring

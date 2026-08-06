@@ -88,3 +88,35 @@ def test_missing_engine_binary_is_actionable(monkeypatch):
 
     with pytest.raises(PushError, match="not found on PATH"):
         push.push("ghcr.io/datahenge/erp:v16", "podman")
+
+
+# --- releasing the ownership marker (BR-BUILD-018, ADR-061) -----------------
+
+
+def test_release_ownership_removes_the_marker_reference(monkeypatch):
+    captured: list[list[str]] = []
+
+    def _run(command, **kwargs):
+        captured.append(command)
+        return _completed(0)
+
+    monkeypatch.setattr(push.subprocess, "run", _run)
+    push.release_ownership("ghcr.io/datahenge/erp", "podman")
+
+    assert captured == [["podman", "image", "rm", "ghcr.io/datahenge/erp:cairn-build-owned"]]
+
+
+def test_release_ownership_is_best_effort_on_failure(monkeypatch):
+    """A crash or a stale marker (already stripped by an earlier push) must not raise."""
+    monkeypatch.setattr(push.subprocess, "run", lambda *a, **k: _completed(1))
+
+    push.release_ownership("ghcr.io/datahenge/erp", "podman")  # must not raise
+
+
+def test_release_ownership_tolerates_a_missing_engine(monkeypatch):
+    def _raise(*args, **kwargs):
+        raise FileNotFoundError("podman")
+
+    monkeypatch.setattr(push.subprocess, "run", _raise)
+
+    push.release_ownership("ghcr.io/datahenge/erp", "podman")  # must not raise

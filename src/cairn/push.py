@@ -17,9 +17,11 @@ and never assumes Docker Hub (`BR-CFG-009`).
 
 from __future__ import annotations
 
+import contextlib
 import shlex
 import subprocess
 
+from . import tagging
 from .config import BuildConfig, Manifest
 from .errors import PushError
 
@@ -75,6 +77,21 @@ def push(image: str, engine_name: str) -> None:
             f"cairn never stores registry credentials. The command was:\n"
             f"  {shlex.join(command)}"
         )
+
+
+def release_ownership(image_base: str, engine_name: str) -> None:
+    """Strip the ownership marker now that *image_base*'s own tags have been pushed
+    (`BR-BUILD-018`, `ADR-061`).
+
+    Best-effort and silent either way: nothing downstream depends on this succeeding
+    immediately. If the engine is briefly unavailable, or a crash lands between the push
+    completing and this call, the marker is simply left on — `cairn-build prune` then leaves
+    that image alone a little longer than strictly necessary, which is the safe direction to
+    fail in, never an unsafe removal. A later successful push of the same image re-attempts it.
+    """
+    command = [engine_name, "image", "rm", f"{image_base}:{tagging.OWNED_TAG}"]
+    with contextlib.suppress(FileNotFoundError):
+        subprocess.run(command, capture_output=True, text=True, check=False)
 
 
 def registry_host(image: str) -> str:

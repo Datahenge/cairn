@@ -31,7 +31,7 @@ from typing import Any
 from . import registry
 from .build import LABEL_NAMESPACE
 from .errors import ImageQueryError, RegistryError
-from .tagging import MOVING_TAG
+from .tagging import MOVING_TAG, OWNED_TAG
 
 #: The label that marks an image as cairn's, and names the inputs it was built from.
 INPUT_HASH_LABEL = f"{LABEL_NAMESPACE}.input-hash"
@@ -112,6 +112,17 @@ class LocalImage(Provenance):
     @property
     def short_id(self) -> str:
         return self.image_id.removeprefix("sha256:")[:12]
+
+    @property
+    def is_owned(self) -> bool:
+        """Whether this image still carries cairn-build's ownership marker (`BR-BUILD-018`).
+
+        True only for an image nothing outside this host has ever seen — the marker is
+        stripped the moment a push of this image's own tags succeeds (`ADR-061`). False for
+        an image that was pushed and kept, and for one `cairn-adopt` pulled here: a pulled
+        image was, by definition, already pushed, so it can never carry the marker.
+        """
+        return any(tag.rpartition(":")[2] == OWNED_TAG for tag in self.tags)
 
 
 @dataclass(frozen=True)
@@ -196,8 +207,12 @@ def _group_header(tags: tuple[str, ...], input_hash: str) -> str:
     suffix (`<series>-<hash>`), so restating it up front said little on its own.
     """
     # Local tags are full "repo:tag" refs; registry tags are bare. `rpartition` reads the
-    # tag half of either uniformly, so the moving tag is recognized in both.
-    primary = next((tag for tag in tags if tag.rpartition(":")[2] != MOVING_TAG), None)
+    # tag half of either uniformly, so the moving and owned tags are recognized in both
+    # (the owned tag never actually reaches a registry, but excluding it here costs nothing
+    # and keeps this one rule instead of two).
+    primary = next(
+        (tag for tag in tags if tag.rpartition(":")[2] not in (MOVING_TAG, OWNED_TAG)), None
+    )
     label = primary or (tags[0] if tags else None)
     if label is None:
         return f"(no current tag — input hash {input_hash})"
@@ -241,11 +256,18 @@ def _footer(groups: list[ImageGroup], others: int) -> list[str]:
     reclaimable = sum(image_group.reclaimable for image_group in groups)
     superseded = sum(len(image_group.superseded) for image_group in groups)
     built = sum(len(image_group.images) for image_group in groups)
+    owned = sum(1 for group in groups for image in group.images if image.is_owned)
 
     lines = [
         f"{built} image(s) built by cairn across {len(groups)} input hash(es); "
         f"{superseded} superseded, holding {format_size(reclaimable)}."
     ]
+    if owned:
+        lines.append(
+            f"{owned} carry the '{OWNED_TAG}' tag — built here, not pushed anywhere yet. On a "
+            f"host also running cairn-adopt or cairn-registry, anything without that tag "
+            f"either has been pushed, or arrived here some other way (a pull, most likely)."
+        )
     if others:
         lines.append(
             f"{others} other image(s) in local storage are not cairn's and are not listed "
@@ -273,6 +295,7 @@ def as_json(groups: list[ImageGroup], others: int) -> str:
                             "created": image.created.isoformat() if image.created else None,
                             "size": image.size,
                             "superseded": not image.tags,
+                            "owned": image.is_owned,
                         }
                         for image in image_group.images
                     ],

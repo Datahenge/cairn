@@ -9,7 +9,16 @@ the full ownership map.
 
 ## [Unreleased]
 
+### Added
+- Every `cairn-build` build now applies a `cairn-build-owned` local tag, stripped once that
+  build is successfully pushed. `cairn-build images --local` reports it per image, so a
+  colocated host can tell a build produced here from an image `cairn-adopt` only pulled for
+  deployment.
+
 ### Changed
+- `cairn-build prune` reaches further: it now also reclaims a stale build that was never
+  pushed anywhere, not just duplicate rebuilds of identical inputs. It still never removes
+  anything that has been pushed.
 - `cairn-registry`'s default `data_dir` (where registry image blobs are stored) changed from
   `/opt/cairn-registry/data` to `/var/lib/cairn-registry`, correcting an FHS misapplication in
   the original default. Still fully operator-relocatable via `[registry] data_dir` in

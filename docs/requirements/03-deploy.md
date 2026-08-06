@@ -11,7 +11,7 @@ _Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · La
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
 `ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
-`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`.
+`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`.
 
 ---
 
@@ -91,7 +91,12 @@ tag, the resolved digest and baked provenance. *(BR-BUILD-011, BR-CFG-011)*
 **`BR-DEPLOY-006`** — A timer-driven GC pass MUST prune old images and stopped containers on
 the target, **keeping the last N images** (configurable) for rollback headroom. **GC MUST
 NEVER touch volumes** — never `docker volume prune`, never `docker system prune --volumes`.
-*(ADR-022)*
+
+**GC MUST NEVER remove an image still carrying the `cairn-build-owned` marker
+(`BR-BUILD-018`, `ADR-061`).** On a host colocating the target with a build role, such an
+image was built here and never pushed — it is not cairn-adopt's to reap, and it cannot be
+one this GC has any legitimate rollback reason to keep either, since nothing was ever
+deployed from it. *(ADR-022, ADR-061)*
 
 ## Scope
 

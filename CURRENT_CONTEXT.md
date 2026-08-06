@@ -22,7 +22,11 @@ migration (`src/cairn/vendored/` renamed to `src/cairn/recipe/`, the `ventwig`-b
 command surface retired, `W-023`..`W-031`) are done as of 2026-08-05. The docs tree itself
 finished its migration onto the canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) —
 this file, `open/`, `scratch/`, `docs/technical/`, `docs/adr/`, `decisions/`, and
-`docs/discussions/` are the result.
+`docs/discussions/` are the result. Also 2026-08-05: `ADR-060` corrected the registry's default
+`data_dir` (`/opt/cairn-registry/data` → `/var/lib/cairn-registry`, `ADR-053`'s FHS citation was
+wrong); `ADR-061`/`BR-BUILD-018` added a `cairn-build-owned` marker tag, stripped on push, so
+`cairn-build prune` can safely reach a never-shared stale build (not just duplicate-hash
+rebuilds) on a host colocating build/registry/target roles — resolved `OQ-001` in the process.
 
 ## Read First
 

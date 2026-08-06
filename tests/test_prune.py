@@ -9,6 +9,8 @@ import pytest
 from cairn import images, prune
 from cairn.images import ImageGroup, LocalImage
 
+OWNED = "ghcr.io/x/y:cairn-build-owned"
+
 
 def _image(short, tags=(), *, input_hash="aaa111", minutes_old=0, size=2_750_000_000, cairn=True):
     labels = {images.INPUT_HASH_LABEL: input_hash} if cairn else {}
@@ -105,7 +107,45 @@ def test_protected_images_are_reported_not_silently_skipped():
     )
     rendered = prune.render(prune.select([group], keep=1), others=0)
 
-    assert "1 older image(s) still carry tags and are left alone." in rendered
+    assert "1 older image(s) have already been pushed" in rendered
+
+
+# --- restriction 2 revised: owned vs. shared (BR-BUILD-018, ADR-061) --------
+
+
+def test_a_stale_but_still_owned_image_is_now_eligible():
+    """Never pushed anywhere is not the same as safe to keep forever."""
+    group = _group(
+        _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
+        _image("bbb", ["ghcr.io/x/y:v16-bbb222", OWNED], minutes_old=5, input_hash="bbb222"),
+    )
+    plan = prune.select([group], keep=1)
+
+    assert [image.short_id for image in plan.removals] == ["bbb000000000"]
+
+
+def test_a_pushed_image_is_protected_even_if_it_once_carried_the_marker():
+    """The marker is stripped on push; what remains is a real tag, and real tags protect."""
+    group = _group(
+        _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
+        _image("bbb", ["ghcr.io/x/y:v16-bbb222"], minutes_old=5, input_hash="bbb222"),
+    )
+    plan = prune.select([group], keep=1)
+
+    assert plan.is_empty
+    assert [image.short_id for image in plan.protected] == ["bbb000000000"]
+
+
+def test_an_orphan_within_keep_is_still_grace_windowed_by_position():
+    """`keep` counts positions in the group regardless of tag status — see
+    test_keep_n_leaves_the_n_newest's keep=2 case for the untagged member this mirrors."""
+    group = _group(
+        _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
+        _image("bbb", [], minutes_old=1),  # already lost every tag, including any marker
+    )
+    plan = prune.select([group], keep=2)
+
+    assert plan.is_empty
 
 
 # --- restriction 1: the build cache is out of reach -------------------------
@@ -205,3 +245,43 @@ def test_volumes_and_containers_are_never_named(capturing_run):
     assert "volume" not in flattened
     assert "container" not in flattened
     assert "system" not in flattened
+
+
+# --- removing a still-owned, multiply-tagged image (BR-BUILD-018, ADR-061) --
+
+
+def test_a_multiply_tagged_image_is_removed_tag_by_tag(capturing_run):
+    """Engines refuse `image rm <id>` on a multiply-tagged image without --force; removing
+    each reference individually avoids ever needing it."""
+    doomed = _image("aaa", [f"ghcr.io/x/y:v16-{'a' * 12}", "ghcr.io/x/y:latest", OWNED])
+
+    removed, failures = prune.remove("podman", (doomed,))
+
+    assert failures == []
+    assert [image.short_id for image in removed] == ["aaa000000000"]
+    assert [command[-1] for command in capturing_run] == [
+        f"ghcr.io/x/y:v16-{'a' * 12}",
+        "ghcr.io/x/y:latest",
+        OWNED,
+    ]
+
+
+def test_a_failure_partway_through_a_multi_tag_removal_stops_that_image(monkeypatch):
+    """The remaining tags are left alone rather than force-removed — a later prune finishes
+    the job once whatever is blocking the middle tag clears."""
+    calls: list[str] = []
+
+    def _run(command, **kwargs):
+        calls.append(command[-1])
+        ok = command[-1] != "ghcr.io/x/y:latest"
+        return type("R", (), {"returncode": 0 if ok else 1, "stdout": "", "stderr": "busy\n"})()
+
+    monkeypatch.setattr(prune.subprocess, "run", _run)
+    doomed = _image("aaa", [f"ghcr.io/x/y:v16-{'a' * 12}", "ghcr.io/x/y:latest", OWNED])
+
+    removed, failures = prune.remove("podman", (doomed,))
+
+    assert removed == []
+    assert failures == ["aaa000000000: busy"]
+    # stopped at the failing tag rather than continuing on to the marker
+    assert calls == [f"ghcr.io/x/y:v16-{'a' * 12}", "ghcr.io/x/y:latest"]

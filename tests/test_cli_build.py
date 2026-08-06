@@ -167,6 +167,12 @@ def stubs(project, monkeypatch) -> BuildStubs:
         lambda build_config: state.seen.__setitem__("registry_checked", True),
     )
     monkeypatch.setattr(push, "push", lambda image, engine_name: state.seen["pushed"].append(image))
+    state.seen["released"] = []
+    monkeypatch.setattr(
+        push,
+        "release_ownership",
+        lambda image_base, engine_name: state.seen["released"].append(image_base),
+    )
     return state
 
 
@@ -434,6 +440,23 @@ def test_push_uploads_every_reference(stubs):
         "ghcr.io/datahenge/erpnext-btu-v16:v16.0.1-1b019793dc20",
         "ghcr.io/datahenge/erpnext-btu-v16:v16",
     ]
+
+
+def test_a_successful_push_releases_ownership(stubs):
+    """BR-BUILD-018: the marker is stripped once every real tag has uploaded — never itself."""
+    result = runner.invoke(cli_build.app, ["build", "--push"])
+
+    assert result.exit_code == 0
+    assert stubs.seen["released"] == ["ghcr.io/datahenge/erpnext-btu-v16"]
+    assert all("cairn-build-owned" not in ref for ref in stubs.seen["pushed"])
+
+
+def test_a_build_only_run_never_releases_ownership(stubs):
+    """No `--push`: nothing was shared, so the marker has nothing to be released from."""
+    result = runner.invoke(cli_build.app, ["build"])
+
+    assert result.exit_code == 0
+    assert stubs.seen["released"] == []
 
 
 def test_already_built_inputs_are_not_rebuilt(stubs):
@@ -879,6 +902,9 @@ def test_id_pushes_that_tag_without_resolving_refs(stubs, monkeypatch):
 
     assert result.exit_code == 0
     assert stubs.seen["pushed"] == ["ghcr.io/datahenge/erpnext-btu-v16:v16.0.1"]
+    # BR-BUILD-018: --id names an explicit tag, not necessarily this manifest's current
+    # build, so it must never touch the ownership marker.
+    assert stubs.seen["released"] == []
 
 
 def test_without_id_the_manifests_own_tags_are_pushed(stubs, monkeypatch):
@@ -894,6 +920,7 @@ def test_without_id_the_manifests_own_tags_are_pushed(stubs, monkeypatch):
         "ghcr.io/datahenge/erpnext-btu-v16:v16.0.1-1b019793dc20",
         "ghcr.io/datahenge/erpnext-btu-v16:v16",
     ]
+    assert stubs.seen["released"] == ["ghcr.io/datahenge/erpnext-btu-v16"]
 
 
 def test_a_missing_manifest_is_an_actionable_error(project, monkeypatch):

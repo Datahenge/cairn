@@ -211,6 +211,32 @@ def test_command_carries_cache_bust_and_both_tags():
     assert "ghcr.io/datahenge/erpnext-btu-v16:latest" in command
 
 
+# --- the ownership marker (BR-BUILD-018, ADR-061) ----------------------------
+
+
+def test_the_owned_tag_is_applied_at_build_time():
+    """The marker is a real local tag, stamped alongside the primary and moving ones."""
+    command = _plan().command(Path("/tmp/apps.json"))
+
+    assert "ghcr.io/datahenge/erpnext-btu-v16:cairn-build-owned" in command
+
+
+def test_references_includes_the_owned_tag_but_push_references_does_not():
+    plan = _plan()
+
+    assert plan.owned_reference == "ghcr.io/datahenge/erpnext-btu-v16:cairn-build-owned"
+    assert plan.references == (
+        "ghcr.io/datahenge/erpnext-btu-v16:v16-abc123",
+        "ghcr.io/datahenge/erpnext-btu-v16:latest",
+        "ghcr.io/datahenge/erpnext-btu-v16:cairn-build-owned",
+    )
+    assert plan.push_references == (
+        "ghcr.io/datahenge/erpnext-btu-v16:v16-abc123",
+        "ghcr.io/datahenge/erpnext-btu-v16:latest",
+    )
+    assert plan.owned_reference not in plan.push_references
+
+
 def test_no_cache_is_opt_in():
     assert "--no-cache" not in _plan().command(Path("/x"))
     assert "--no-cache" in _plan(no_cache=True).command(Path("/x"))
@@ -241,6 +267,7 @@ def test_dry_run_render_shows_everything_without_building():
 
     assert "apps.json" in report
     assert "ghcr.io/datahenge/erpnext-btu-v16:v16-abc123" in report
+    assert "ghcr.io/datahenge/erpnext-btu-v16:cairn-build-owned" in report
     assert "com.datahenge.cairn.input-hash=abc123" in report
     assert "podman build" in report
     assert "(moving)" in report  # branch pins are flagged, BR-BUILD-005

@@ -42,7 +42,8 @@ Decided in this session (answers to the open questions `ADR-044` left):
   right before the build, same timing cairn already uses for `git ls-remote`. No new timer/unit.
 - **Explicit manifest field**, `mirror = true` on `[[cairn.apps]]` — not inferred from URL scheme.
 
-This is `BR-BUILD-017` in the numbering (`BR-BUILD-016` is the last used ID). It sits alongside,
+This is `BR-BUILD-017` in the numbering — reserved but still unimplemented; `BR-BUILD-018`
+(`cairn-build-owned`, `ADR-061`) has since taken the next slot for unrelated reasons. It sits alongside,
 not instead of, `BR-BUILD-016` — an app can use either mechanism; `mirror = true` and a
 `CAIRN_GITHUB_TOKEN`-eligible `github.com` URL are not mutually exclusive, just independently
 applied at the same one seam (`BuildPlan.apps_json_secret`).

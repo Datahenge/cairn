@@ -83,6 +83,7 @@ unarchived.
 | [ADR-050](050-new-tag-and-retag-merge-into-assign-tag.md) | `archived` | `new-tag` and `retag` merge into one command, `assign-tag` |
 | [ADR-052](052-manifest-environment-1-1-proof-not-assertion-promotion.md) | `authoritative` | Manifest:environment is 1:1; promotion is proof, not assertion |
 | [ADR-059](059-cairn-owns-its-docker-build-recipe-frappe-docker-vendoring-retired.md) | `authoritative` | cairn owns its Docker build recipe; frappe_docker vendoring is retired |
+| [ADR-061](061-cairn-build-owned-marker-tag-untagged-only-pruning-retired.md) | `authoritative` | A `cairn-build-owned` marker tag, stripped on push, replaces untagged-only pruning |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../../decisions/](../../decisions/)
 instead, as lightweight decisions.

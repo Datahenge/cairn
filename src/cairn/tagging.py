@@ -44,6 +44,11 @@ DIGEST_LENGTH = 12
 #: The moving convenience tag applied alongside the immutable one (`BR-BUILD-008`).
 MOVING_TAG = "latest"
 
+#: Marks a build's own not-yet-shared local copy; stripped once a push of it succeeds
+#: (`BR-BUILD-018`, `ADR-061`). Never pushed itself — it names a fact about local storage,
+#: not a build artifact.
+OWNED_TAG = "cairn-build-owned"
+
 _VERSION_REF_RE = re.compile(r"^version-(\d+)$")
 _TAG_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 

@@ -89,9 +89,19 @@ class BuildPlan:
     plain_progress: bool = False
 
     @property
-    def references(self) -> tuple[str, str]:
-        """The two fully-qualified image references this build produces."""
+    def owned_reference(self) -> str:
+        """The local-only ownership marker, stripped once this build is pushed (`BR-BUILD-018`)."""
+        return f"{self.image_base}:{tagging.OWNED_TAG}"
+
+    @property
+    def push_references(self) -> tuple[str, str]:
+        """The two references an actual push uploads — never the ownership marker."""
         return f"{self.image_base}:{self.primary_tag}", f"{self.image_base}:{self.moving_tag}"
+
+    @property
+    def references(self) -> tuple[str, str, str]:
+        """Every local tag this build applies, including the ownership marker."""
+        return (*self.push_references, self.owned_reference)
 
     @property
     def apps_json_secret(self) -> str:

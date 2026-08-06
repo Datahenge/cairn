@@ -32,7 +32,7 @@ record of everything ever finished; swept rows move to
 
 | ID | Status | Area | Work | Notes / Links |
 | --- | --- | --- | --- | --- |
-| `W-003` | `open` | `DEPLOY` | `BR-DEPLOY-006` — target-side image GC pass (keep last N, never touch volumes); `cairn-build prune`'s analogue | `docs/archive/next-steps.md` §4a |
+| `W-003` | `open` | `DEPLOY` | `BR-DEPLOY-006` — target-side image GC pass (keep last N, never touch volumes); `cairn-build prune`'s analogue. Must never remove an image still carrying the `cairn-build-owned` marker (`BR-BUILD-018`, `ADR-061`) — settled 2026-08-05, ahead of implementation | `docs/archive/next-steps.md` §4a |
 | `W-004` | `open` | `DEPLOY` | `BR-DEPLOY-020` — optional failure webhook; opt-in, best-effort, must never crash `reconcile` or alter deploy behavior | `docs/archive/next-steps.md` §4a |
 | `W-005` | `deferred` | `BUILD` | Registry-backed build cache (`--cache-to`/`--cache-from`) — helps a cold CI runner, not a warm local rebuild; weaker on podman | `docs/archive/next-steps.md` §5; not yet a requirement |
 | `W-006` | `open` | (testing) | Decide whether to add a `--cov-fail-under` coverage floor, given `--cov` in `addopts` would break a plain `pytest` run without the plugin installed | `docs/archive/next-steps.md` §5 |

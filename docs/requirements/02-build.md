@@ -6,11 +6,11 @@ purpose: BR-BUILD requirements — building a custom ERPNext image from a manife
 
 # BR-BUILD — Image Build Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-04_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-05_
 
 Requirements for building a custom ERPNext image from a manifest, using cairn's own owned
 `custom/Containerfile` recipe. Conventions: see `/CLAUDE.md`. Decisions cited:
-`ADR-004`, `ADR-009`, `ADR-011`, `ADR-015`, `ADR-052`, `ADR-059`.
+`ADR-004`, `ADR-009`, `ADR-011`, `ADR-015`, `ADR-052`, `ADR-059`, `ADR-061`.
 
 ---
 
@@ -120,6 +120,21 @@ makes a build machine's cache miss (a cold local store, or a second/replacement 
 a registry read instead of a full rebuild, since the primary tag is deterministic regardless of
 which machine computed it first. cairn MUST NOT pull the image locally as a side effect of a
 registry hit. *(ADR-052)*
+
+**`BR-BUILD-018`** *(the owned marker, `ADR-061`)* — Every build MUST additionally apply a
+third, fixed local tag — `cairn-build-owned` — alongside the primary and moving tags
+(`BR-BUILD-008`), marking the image as **not yet shared**. cairn MUST NOT push this tag.
+
+On a successful push of an image's own tags (`build --push`, or `push` without `--id`), cairn
+MUST strip the marker once every pushed tag has uploaded. A push via `--id` — an explicit tag,
+not necessarily "this manifest's current build" — MUST NOT touch it.
+
+**Local build storage is not a registry** — no backup, no retention guarantee; that is a
+registry's job (`BR-REG` area). The marker lets `cairn-build prune` (`BR-CLI-018`) tell an
+image nothing outside this host has seen (reclaimable once stale) from one already shared
+(never its to remove), and gives `images --local` (`BR-CLI-005`) an exact answer to whether
+this build role produced an image or it arrived some other way — a pulled image was, by
+definition, already pushed, so it can never carry the marker. *(ADR-061)*
 
 ## Build invocation
 

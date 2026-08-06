@@ -149,6 +149,85 @@ def test_json_output_is_machine_readable(monkeypatch):
     assert [image["superseded"] for image in payload["groups"][0]["images"]] == [False, True]
 
 
+# --- the ownership marker (BR-BUILD-018, ADR-061) ----------------------------
+
+
+def test_is_owned_detects_the_marker_tag(monkeypatch):
+    found, _ = _load(
+        monkeypatch,
+        [
+            _inspection(
+                "aaa" + "0" * 61,
+                [
+                    "ghcr.io/x/y:v16-1bf0adf3823f",
+                    "ghcr.io/x/y:latest",
+                    "ghcr.io/x/y:cairn-build-owned",
+                ],
+            ),
+            _inspection("bbb" + "0" * 61, ["ghcr.io/x/y:someone-elses-tag"], minutes_old=2),
+        ],
+    )
+
+    assert [image.is_owned for image in found] == [True, False]
+
+
+def test_group_header_prefers_the_primary_tag_over_the_owned_marker(monkeypatch):
+    """Neither `latest` nor the owned marker is the name an operator recognizes."""
+    found, _ = _load(
+        monkeypatch,
+        [
+            _inspection(
+                "aaa" + "0" * 61,
+                ["ghcr.io/x/y:cairn-build-owned", "ghcr.io/x/y:v16-1bf0adf3823f"],
+            )
+        ],
+    )
+    rendered = images.render(images.group(found), 0)
+
+    assert rendered.startswith("ghcr.io/x/y:v16-1bf0adf3823f")
+
+
+def test_footer_reports_owned_count_and_explains_it(monkeypatch):
+    found, others = _load(
+        monkeypatch,
+        [
+            _inspection(
+                "aaa" + "0" * 61,
+                ["ghcr.io/x/y:v16-1bf0adf3823f", "ghcr.io/x/y:cairn-build-owned"],
+            )
+        ],
+    )
+    rendered = images.render(images.group(found), others)
+
+    assert "1 carry the 'cairn-build-owned' tag" in rendered
+    assert "not pushed anywhere yet" in rendered
+
+
+def test_footer_says_nothing_about_ownership_when_nothing_is_owned(monkeypatch):
+    found, others = _load(
+        monkeypatch, [_inspection("aaa" + "0" * 61, ["ghcr.io/x/y:v16-1bf0adf3823f"])]
+    )
+    rendered = images.render(images.group(found), others)
+
+    assert "cairn-build-owned" not in rendered
+
+
+def test_json_reports_owned_status(monkeypatch):
+    found, others = _load(
+        monkeypatch,
+        [
+            _inspection(
+                "aaa" + "0" * 61,
+                ["ghcr.io/x/y:v16-1bf0adf3823f", "ghcr.io/x/y:cairn-build-owned"],
+            ),
+            _inspection("bbb" + "0" * 61, [], minutes_old=2),
+        ],
+    )
+    payload = json.loads(images.as_json(images.group(found), others))
+
+    assert [image["owned"] for image in payload["groups"][0]["images"]] == [True, False]
+
+
 # --- engine differences (ADR-027) -------------------------------------------
 
 

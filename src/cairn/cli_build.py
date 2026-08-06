@@ -247,10 +247,11 @@ def build_command(
 
             if push_after:
                 with watch.phase("push"):
-                    for reference in plan.references:
+                    for reference in plan.push_references:
                         step(f"Pushing {reference}…")
                         push.push(reference, plan.engine_name)
                         done(f"Pushed {reference}")
+                    push.release_ownership(plan.image_base, plan.engine_name)
 
         if assign_tag:
             environment = environments.require(manifest, build_config)
@@ -430,14 +431,20 @@ def push_command(
         push.assert_registry_configured(build_config)
 
         engine_name = engine.detect(build_config.engine).name
-        if identifier:
-            targets: tuple[str, ...] = (push.reference(manifest, build_config, identifier),)
-        else:
-            targets = build.plan(manifest, build_config).references
 
-        for target in targets:
+        # `--id` names an explicit, arbitrary tag — not necessarily this manifest's current
+        # build — so it MUST NOT touch the ownership marker (`BR-BUILD-018`).
+        if identifier:
+            target = push.reference(manifest, build_config, identifier)
             push.push(target, engine_name)
             typer.secho(f"Pushed {target}", fg=typer.colors.GREEN)
+            return 0
+
+        plan = build.plan(manifest, build_config)
+        for target in plan.push_references:
+            push.push(target, engine_name)
+            typer.secho(f"Pushed {target}", fg=typer.colors.GREEN)
+        push.release_ownership(plan.image_base, engine_name)
         return 0
 
     run(_action)
