@@ -6,7 +6,7 @@ purpose: BR-CLI requirements — the command surface and UX conventions across a
 
 # BR-CLI — Command Surface & UX Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-06_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-08_
 
 The command surface across cairn's **three CLI entry points**, one file sectioned by role
 (`05-config.md`'s `A`/`B` split, precedent) rather than separate area files — most of what
@@ -14,7 +14,7 @@ governs the CLI is shared UX convention (logging, `--json`, config discovery, he
 applying identically across binaries. Mostly *cites* verbs defined in other areas; adds the
 create/move/retire guards, global flags, and output/exit conventions. Conventions:
 `/CLAUDE.md`. Decisions cited: `ADR-003`, `ADR-023`, `ADR-031`, `ADR-042`, `ADR-043`,
-`ADR-046`, `ADR-048`, `ADR-052`, `ADR-061`, `ADR-069`.
+`ADR-046`, `ADR-048`, `ADR-052`, `ADR-061`, `ADR-069`, `ADR-072`.
 
 ---
 
@@ -90,11 +90,14 @@ mistaken for a complete inventory.
 
 **On a host colocating roles, "cairn built this" and "cairn built this *here*" are different
 claims** (`ADR-061`) — provenance labels travel with a pulled image exactly as they do with a
-built one, so a listing legitimately includes an image `cairn-adopt` only pulled for
-deployment. cairn MUST show whether each image still carries the `cairn-build-owned` marker
-(`BR-BUILD-018`): present means this host's build role produced it and it has not been shared
-anywhere; absent means it either was pushed, or arrived here some other way. *(BR-BUILD-011,
-BR-BUILD-014, BR-BUILD-018, ADR-032, ADR-061, ADR-069)*
+built one. An image carrying the `cairn-adopt-owned` marker (`BR-DEPLOY-023`) MUST be excluded
+from this report entirely (`ADR-072`), same as an image cairn did not build — once
+`cairn-adopt` claims an image as currently running, accounting for it is its question, not
+this one's. For everything else shown, cairn MUST show whether it still carries the
+`cairn-build-owned` marker (`BR-BUILD-018`): present means this host's build role produced it
+and it has not been shared; absent means it was pushed, or arrived some other way.
+*(BR-BUILD-011, BR-BUILD-014, BR-BUILD-018, BR-DEPLOY-023, ADR-032, ADR-061, ADR-069,
+ADR-072)*
 
 **`BR-CLI-006`** *(vendor, struck)* — `cairn-build vendor status | sync` is retired. Cairn no
 longer syncs from upstream `frappe_docker`; it owns its recipe directly and carries no command
@@ -149,18 +152,20 @@ execution contexts** (`ADR-031`), and writes a transcript in exactly one of them
 
 *(ADR-031, BR-CFG-008, BR-DEPLOY-019)*
 
-**`BR-CLI-018`** *(prune — build machine, `ADR-061`)* — `cairn-build prune [--keep <n>]
-[--dry-run] [--yes]` reclaims space on the **build** machine, under three concentric
-restrictions:
+**`BR-CLI-018`** *(prune — build machine, `ADR-061`, `ADR-072`)* — `cairn-build prune
+[--keep <n>] [--dry-run] [--yes]` reclaims space on the **build** machine, under three
+concentric restrictions:
 
-1. Only images carrying cairn's own provenance labels (`BR-BUILD-011`) are candidates.
-2. Of those, an image is protected — never removed, regardless of age — if it carries any
-   tag **other than** the `cairn-build-owned` marker (`BR-BUILD-018`): that means it has been
-   pushed and is no longer solely local, or predates the marker, and either way is not
-   cairn-build prune's to touch. Everything else is eligible: an image still carrying the
-   owned marker (pushed nowhere yet), and a fully untagged image (an orphaned duplicate whose
-   tags — owned marker included — already moved to a newer build of the same input hash,
-   `BR-BUILD-014`).
+1. Only images carrying cairn's own provenance labels (`BR-BUILD-011`) are candidates — and,
+   since `ADR-072`, an image also carrying the `cairn-adopt-owned` marker (`BR-DEPLOY-023`)
+   is never one of them, excluded at the same step `BR-CLI-005` excludes it from `images`.
+2. **Nothing else is protected.** Of the remaining candidates, every one is eligible: one
+   still carrying `cairn-build-owned` (`BR-BUILD-018`, not yet pushed); a fully untagged
+   orphaned duplicate whose tags already moved to a newer build of the same input hash
+   (`BR-BUILD-014`); and, since `ADR-072`, a **pushed** image with real tags that nothing
+   local is currently running — no longer unconditionally protected, as `ADR-061` originally
+   had it. What made that protection unconditional before was having no signal for "still in
+   use"; restriction 1's exclusion is now that signal.
 3. Of the eligible pool, only images beyond the newest `<n>` per **input hash** (default 1)
    are actually removed — `<n>` counts a group's newest members regardless of ownership
    status, so this reads as a grace window rather than rollback headroom: build-machine
@@ -259,6 +264,20 @@ others. That condition is a **stop**, not a warning to be worked around.
 
 The emitted descriptor MUST be **loadable**: whatever `examine` prints, `BR-DEPLOY-010a`'s reader
 must accept. *(BR-DEPLOY-010a, BR-DEPLOY-014, BR-BUILD-003, BR-CLI-019, ADR-034, ADR-046)*
+
+**`BR-CLI-028`** *(prune — target machine, `ADR-072`)* — `cairn-adopt prune [--keep <n>]
+[--dry-run] [--yes]` reclaims target disk:
+
+1. Only images carrying `cairn-adopt-owned` (`BR-DEPLOY-023`) are candidates — never
+   `cairn-build`'s own images.
+2. The running `backend` container's own image (`BR-DEPLOY-003b`) is unconditionally
+   protected regardless of `--keep`; beyond that, only images past the newest `<n>` (default
+   1, a grace window not a rollback guarantee) are removed.
+
+Removal mechanics match `BR-CLI-018`: no engine `--force`, tag-by-tag removal, a failed
+removal MUST NOT abort the rest. cairn MUST NOT remove volumes or containers (`ADR-022`), MUST
+report and confirm first (`BR-CLI-011`), and MUST state what it leaves alone.
+*(BR-DEPLOY-003b, BR-DEPLOY-006, BR-DEPLOY-023, BR-BUILD-018, BR-CLI-018, ADR-022, ADR-072)*
 
 ## C. `cairn-registry` commands (registry host)
 

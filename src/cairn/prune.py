@@ -4,32 +4,35 @@ Repeat builds of one manifest used to leave a trail of nameless multi-gigabyte i
 the condition `BR-BUILD-014` now prevents at the source. This command clears what is
 already there, and what a deliberate `--rebuild` produces later.
 
-**Three concentric restrictions, and the order matters.**
+**Candidates, then a grace window — nothing in between protects an image anymore.**
 
-1. *Only images cairn built.* Candidates come from :func:`cairn.images.inspect_local`,
-   which admits an image only if it carries cairn's own provenance labels. Since `--label`
-   values are applied at the **final** commit, a multi-stage *stage* image never has them —
-   so the owned Containerfile's `builder` stage, the thing that lets a rebuild skip
-   `bench init`, is outside this command's reach by construction rather than by care
-   (lessons §12). This is why the selection is never written against "dangling": on podman
-   an untagged image may be cache, and deleting it silently converts every later build into
-   a cold one.
-2. *Never an image that has been shared.* An image carrying any tag other than the
-   ``cairn-build-owned`` marker (`BR-BUILD-018`) has been pushed — or predates the marker,
-   treated the same way out of caution — and is never this command's to remove. Everything
-   else is eligible: an image still carrying only the owned marker (built here, shared
-   nowhere), and a fully untagged image (an orphaned duplicate rebuild whose tags, marker
-   included, already moved to a newer image under the same input hash). Removing an eligible
-   image never needs the engine's ``--force`` — cairn never passes it — but a still-owned
-   image usually carries several live tags at once (primary, moving, marker), and engines
-   refuse to remove a multiply-tagged image by id without forcing it; so removal drops each
-   tag reference in turn, the last one being what actually frees the disk (`ADR-061`).
-3. *Only beyond the newest `keep` of each input hash.* A grace window for a build that
-   might still be pushed any moment, not rollback headroom — build-machine storage carries
-   no such guarantee; a registry is what that promise belongs to. `keep` counts a group's
-   newest members regardless of ownership status, so a stale-but-recent orphan still gets
-   the same grace a stale-but-recent owned image does. Applied per input hash because images
-   under different hashes are different images and not each other's history.
+1. *Only images cairn built, and not currently claimed by a target role.* Candidates come
+   from :func:`cairn.images.inspect_local`, which admits an image only if it carries cairn's
+   own provenance labels and does **not** carry the `cairn-adopt-owned` marker
+   (`BR-DEPLOY-023`, `ADR-072`) — a target role on this host is running it, and reclaiming it
+   is `cairn-adopt prune`'s job, not this one's. Since `--label` values are applied at the
+   **final** commit, a multi-stage *stage* image never has them either — so the owned
+   Containerfile's `builder` stage, the thing that lets a rebuild skip `bench init`, is
+   outside this command's reach by construction rather than by care (lessons §12). This is
+   why selection is never written against "dangling": on podman an untagged image may be
+   cache, and deleting it silently converts every later build into a cold one.
+2. *Nothing else is protected.* `ADR-061` originally protected every image carrying any tag
+   other than the `cairn-build-owned` marker unconditionally, because prune had no signal for
+   "still in use" beyond its own marker. `ADR-072` gives it one — restriction 1's exclusion —
+   so a **pushed** image nothing local needs anymore is now eligible too, alongside an image
+   still carrying only the owned marker (built here, shared nowhere) and a fully untagged
+   orphaned rebuild (tags, marker included, already moved to a newer image under the same
+   input hash). Removing an eligible image never needs the engine's ``--force`` — cairn never
+   passes it — but a still-owned image usually carries several live tags at once (primary,
+   moving, marker), and engines refuse to remove a multiply-tagged image by id without
+   forcing it; so removal drops each tag reference in turn, the last one being what actually
+   frees the disk (`ADR-061`).
+3. *Only beyond the newest `keep` of each input hash.* A grace window for a build that might
+   still be pushed any moment, not rollback headroom — build-machine storage carries no such
+   guarantee; a registry is what that promise belongs to. `keep` counts a group's newest
+   members regardless of ownership status, so a stale-but-recent orphan still gets the same
+   grace a stale-but-recent owned image does. Applied per input hash because images under
+   different hashes are different images and not each other's history.
 
 Volumes and containers are never touched under any option (`ADR-022`).
 """
@@ -52,7 +55,6 @@ class PrunePlan:
 
     removals: tuple[LocalImage, ...]
     kept: tuple[LocalImage, ...]
-    protected: tuple[LocalImage, ...]
 
     @property
     def reclaimable(self) -> int:
@@ -64,29 +66,26 @@ class PrunePlan:
 
 
 def select(groups: list[ImageGroup], keep: int) -> PrunePlan:
-    """Decide what to remove: never-shared images beyond the newest *keep* of their group.
+    """Decide what to remove: every candidate beyond the newest *keep* of its group.
 
-    *keep* counts a group's newest members regardless of ownership status, so ``--keep 2``
-    leaves the current image plus one predecessor as a grace window before either is
-    considered stale enough to reclaim (`BR-BUILD-018`, `ADR-061`).
+    *groups* is assumed already filtered to cairn's own, not-currently-adopted candidates
+    (`images.inspect_local`) — nothing here protects an image further; `keep` is only ever a
+    grace window (`BR-BUILD-018`, `ADR-061`, `ADR-072`).
     """
     if keep < 1:
         raise ValueError("keep must be at least 1")
 
     removals: list[LocalImage] = []
     kept: list[LocalImage] = []
-    protected: list[LocalImage] = []
 
     for group in groups:
         for position, image in enumerate(group.images):
             if position < keep:
                 kept.append(image)
-            elif not image.is_owned and image.tags:
-                protected.append(image)  # pushed and kept, or predates the marker
             else:
-                removals.append(image)  # still owned, or a fully untagged orphan
+                removals.append(image)
 
-    return PrunePlan(removals=tuple(removals), kept=tuple(kept), protected=tuple(protected))
+    return PrunePlan(removals=tuple(removals), kept=tuple(kept))
 
 
 def render(plan: PrunePlan, others: int) -> str:
@@ -94,12 +93,12 @@ def render(plan: PrunePlan, others: int) -> str:
     if plan.is_empty:
         return "\n".join(
             [
-                f"Nothing to remove: {len(plan.kept)} image(s) kept, none stale and unshared.",
-                *_safety_note(plan, others),
+                f"Nothing to remove: {len(plan.kept)} image(s) kept within the grace window.",
+                *_safety_note(others),
             ]
         )
 
-    lines = [f"Will remove {len(plan.removals)} image(s) never shared to a registry:"]
+    lines = [f"Will remove {len(plan.removals)} image(s):"]
     lines += [
         f"  {image.short_id}  {format_size(image.size):>9}  input hash {image.input_hash}  "
         f"{', '.join(image.tags) if image.tags else 'no tags'}"
@@ -107,26 +106,20 @@ def render(plan: PrunePlan, others: int) -> str:
     ]
     lines.append(f"Reclaims {format_size(plan.reclaimable)}.")
     lines.append("")
-    lines += [f"Keeping {len(plan.kept)} image(s) within the grace window."]
-    lines += _safety_note(plan, others)
+    lines.append(f"Keeping {len(plan.kept)} image(s) within the grace window.")
+    lines += _safety_note(others)
     return "\n".join(lines)
 
 
-def _safety_note(plan: PrunePlan, others: int) -> list[str]:
+def _safety_note(others: int) -> list[str]:
     """State plainly what is being left alone, so the omission is never a surprise."""
-    lines: list[str] = []
-    if plan.protected:
-        lines.append(
-            f"{len(plan.protected)} older image(s) have already been pushed (or predate "
-            f"cairn's ownership marker) and are left alone."
-        )
-    if others:
-        lines.append(
-            f"{others} image(s) cairn did not build are never considered — this includes "
-            f"build-cache layers, which is why removing them here would make later builds "
-            f"start from nothing."
-        )
-    return lines
+    if not others:
+        return []
+    return [
+        f"{others} image(s) in local storage are never considered — this includes "
+        f"build-cache stages and images a target role here is currently running, either of "
+        f"which removing here would be wrong to touch."
+    ]
 
 
 def remove(engine_name: str, doomed: tuple[LocalImage, ...]) -> tuple[list[LocalImage], list[str]]:

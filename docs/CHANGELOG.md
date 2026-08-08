@@ -9,6 +9,31 @@ code changes live in git history.
 
 ---
 
+## 2026-08-08 (`ADR-072`: `cairn-adopt-owned` marker; `cairn-adopt prune` fully specified)
+
+Brian asked why `cairn-build images` still held six images on a client VPS after most had
+been pushed. Tracing the code against `ADR-061`/`BR-BUILD-008`/`014`/`018` found no bug — six
+genuinely distinct input hashes, none superseded, marker correctly stripped on the five
+already pushed. The real gap: `ADR-061`'s `cairn-build prune` protects *every* pushed image
+unconditionally, forever, because it has no signal for "still in use by a colocated target
+role." `ADR-072` closes it: `cairn-adopt` gains a symmetric `cairn-adopt-owned` marker
+(`BR-DEPLOY-023`), applied to the image its `backend` container is currently running and
+refreshed on **every** `reconcile` pass (including a converged no-op, closing the rollout gap
+for hosts that pulled images before this feature existed). `cairn-build prune`'s Restriction 2
+(`BR-CLI-018`) is rewritten to protect the `cairn-build-owned` or `cairn-adopt-owned` markers
+specifically, rather than any tag at all — a pushed image nothing local is running is now
+eligible. `cairn-build images` (`BR-CLI-005`) excludes `cairn-adopt-owned` images entirely
+rather than showing them with an absent build marker.
+
+This also fully specifies `BR-DEPLOY-006`/`W-003` (target-side GC), open since 2026-07-24
+with no concrete selection rule: a new `BR-CLI-028`, `cairn-adopt prune [--keep <n>]
+[--dry-run] [--yes]`, keeps the currently-running image (unconditionally, via the same
+running-container digest read `BR-DEPLOY-003b` already uses) plus the newest `--keep`
+`cairn-adopt-owned` images, mirroring `cairn-build prune`'s removal mechanics exactly.
+`ADR-061` gets a short inline amendment note; its own core decision is unchanged.
+`docs/adr/README.md`, `docs/open/OPEN_WORK.md` (`W-003`), and both requirement files' headers
+updated to match.
+
 ## 2026-08-06 (new lessons-learned topic: Docker & host storage)
 
 Closing out the same client-VPS disk-space incident as the two entries below: six durable

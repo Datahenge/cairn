@@ -12,7 +12,19 @@ from typing import Annotated
 
 import typer
 
-from . import __version__, adopt, config, descriptor, doctor, reconcile, systemd, timing
+from . import (
+    __version__,
+    adopt,
+    adopt_prune,
+    config,
+    descriptor,
+    doctor,
+    images,
+    prune,
+    reconcile,
+    systemd,
+    timing,
+)
 from .cli_support import done, note, report_timing, run, step, version_callback
 from .errors import CairnError
 from .provision import (
@@ -94,6 +106,57 @@ def reconcile_command(
     except KeyboardInterrupt:
         typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(130) from None
+
+
+@app.command(
+    "prune",
+    help=(
+        "Remove images this target previously ran. Keeps the running image and the newest "
+        "`--keep`; never touches volumes or containers."
+    ),
+)
+def prune_command(
+    keep: Annotated[
+        int,
+        typer.Option("--keep", min=1, help="Superseded images to keep, for rollback headroom."),
+    ] = 1,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would be removed, and remove nothing.")
+    ] = False,
+    assume_yes: Annotated[bool, typer.Option("--yes", help="Do not ask for confirmation.")] = False,
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Remove `cairn-adopt-owned` images this target no longer needs (BR-CLI-028, ADR-072)."""
+
+    def _action() -> int:
+        environment = descriptor.load(descriptor_path)
+        found, others = images.inspect_local_adopted("docker")
+        running_id = reconcile.running_image_id(environment)
+        plan = adopt_prune.select(found, running_id, keep)
+
+        typer.echo(adopt_prune.render(plan, others))
+        if plan.is_empty or dry_run:
+            return 0
+
+        if not assume_yes and not typer.confirm("Remove them?", default=False):
+            note("Nothing was removed.")
+            return 0
+
+        removed, failures = prune.remove("docker", plan.removals)
+        for failure in failures:
+            typer.secho(f"Could not remove {failure}", fg=typer.colors.YELLOW, err=True)
+        done(
+            f"Removed {len(removed)} image(s), reclaiming "
+            f"{prune.format_size(sum(image.size for image in removed))}."
+        )
+        return 1 if failures else 0
+
+    run(_action)
 
 
 @app.command(

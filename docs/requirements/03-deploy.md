@@ -6,12 +6,12 @@ purpose: BR-DEPLOY requirements — deploying images to environments and keeping
 
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-06_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-08_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
 `ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
-`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`, `ADR-068`.
+`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`, `ADR-068`, `ADR-072`.
 
 ---
 
@@ -86,17 +86,27 @@ one. The target converges on its next poll.
 they point at, reading image **provenance labels remotely (without pulling)** to show, per
 tag, the resolved digest and baked provenance. *(BR-BUILD-011, BR-CFG-011)*
 
+## Ownership marker
+
+**`BR-DEPLOY-023`** *(the adopt-owned marker, `ADR-072`)* — On every `reconcile` pass,
+including a converged no-op, `cairn-adopt` MUST tag the currently-running image with a fixed,
+local-only `cairn-adopt-owned` tag — never removed by `cairn-adopt` itself, released only by
+`cairn-adopt prune` (`BR-CLI-028`). Refreshing every pass, not only on a pull, closes the
+rollout gap for a pre-feature image already running: the next reconcile tags it regardless.
+Mirrors `cairn-build-owned` (`BR-BUILD-018`), so `cairn-build prune` (`BR-CLI-018`) can tell
+"in use here" from a pushed image nothing local needs. *(ADR-061, ADR-072)*
+
 ## Garbage collection (disk safety)
 
-**`BR-DEPLOY-006`** — A timer-driven GC pass MUST prune old images and stopped containers on
-the target, **keeping the last N images** (configurable) for rollback headroom. **GC MUST
-NEVER touch volumes** — never `docker volume prune`, never `docker system prune --volumes`.
+**`BR-DEPLOY-006`** — `cairn-adopt prune` (`BR-CLI-028`) reclaims disk on the target, keeping
+the running image plus the last `<n>` `cairn-adopt-owned` images (configurable). **GC MUST
+NEVER touch volumes** — never `docker volume prune`, never `docker system prune --volumes` —
+and MUST NEVER remove the image the running `backend` container was started from, regardless
+of `--keep`.
 
-**GC MUST NEVER remove an image still carrying the `cairn-build-owned` marker
-(`BR-BUILD-018`, `ADR-061`).** On a host colocating the target with a build role, such an
-image was built here and never pushed — it is not cairn-adopt's to reap, and it cannot be
-one this GC has any legitimate rollback reason to keep either, since nothing was ever
-deployed from it. *(ADR-022, ADR-061)*
+**GC MUST NEVER remove an image still carrying `cairn-build-owned`** (`BR-BUILD-018`,
+`ADR-061`) — built here, never pushed, not cairn-adopt's to reap or a rollback candidate.
+*(ADR-022, ADR-061, ADR-072)*
 
 ## Scope
 

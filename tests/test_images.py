@@ -228,6 +228,52 @@ def test_json_reports_owned_status(monkeypatch):
     assert [image["owned"] for image in payload["groups"][0]["images"]] == [True, False]
 
 
+# --- the adopt-owned marker (BR-DEPLOY-023, ADR-072) ------------------------
+
+
+def _load_adopted(monkeypatch, records):
+    monkeypatch.setattr(images, "_list_ids", lambda engine: [r["Id"] for r in records])
+    monkeypatch.setattr(images, "_inspect", lambda engine, ids: records)
+    return images.inspect_local_adopted("docker")
+
+
+def test_inspect_local_excludes_adopt_owned_images(monkeypatch):
+    """Once cairn-adopt has claimed an image as currently running, accounting for it is
+    `inspect_local_adopted`'s question, not `cairn-build images`'s (`ADR-072`)."""
+    found, others = _load(
+        monkeypatch,
+        [
+            _inspection("aaa" + "0" * 61, ["ghcr.io/x/y:v16-1bf0adf3823f"]),
+            _inspection(
+                "bbb" + "0" * 61,
+                ["ghcr.io/x/y:v16-bbb222", "ghcr.io/x/y:cairn-adopt-owned"],
+                minutes_old=2,
+            ),
+        ],
+    )
+
+    assert [image.short_id for image in found] == ["aaa000000000"]
+    assert others == 1
+
+
+def test_inspect_local_adopted_selects_only_adopt_owned_images(monkeypatch):
+    found, others = _load_adopted(
+        monkeypatch,
+        [
+            _inspection("aaa" + "0" * 61, ["ghcr.io/x/y:v16-1bf0adf3823f"]),
+            _inspection(
+                "bbb" + "0" * 61,
+                ["ghcr.io/x/y:v16-bbb222", "ghcr.io/x/y:cairn-adopt-owned"],
+                minutes_old=2,
+            ),
+        ],
+    )
+
+    assert [image.short_id for image in found] == ["bbb000000000"]
+    assert others == 1
+    assert found[0].is_adopt_owned is True
+
+
 # --- engine differences (ADR-027) -------------------------------------------
 
 

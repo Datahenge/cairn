@@ -38,7 +38,7 @@ from typing import Any
 from . import registry
 from .build import LABEL_NAMESPACE
 from .errors import ImageQueryError, RegistryError
-from .tagging import MOVING_TAG, OWNED_TAG
+from .tagging import ADOPT_OWNED_TAG, MOVING_TAG, OWNED_TAG
 
 #: The label that marks an image as cairn's, and names the inputs it was built from.
 INPUT_HASH_LABEL = f"{LABEL_NAMESPACE}.input-hash"
@@ -131,6 +131,16 @@ class LocalImage(Provenance):
         """
         return any(tag.rpartition(":")[2] == OWNED_TAG for tag in self.tags)
 
+    @property
+    def is_adopt_owned(self) -> bool:
+        """Whether this image carries `cairn-adopt`'s ownership marker (`BR-DEPLOY-023`).
+
+        True for an image a target role on this host is running, or has ever run — the
+        marker accumulates and is released only by `cairn-adopt prune` (`ADR-072`). Never
+        true for an image `cairn-build` produced and never pushed: only a pull can add it.
+        """
+        return any(tag.rpartition(":")[2] == ADOPT_OWNED_TAG for tag in self.tags)
+
 
 @dataclass(frozen=True)
 class RegistryImage(Provenance):
@@ -178,19 +188,40 @@ class ImageGroup:
 
 
 def inspect_local(engine_name: str) -> tuple[list[LocalImage], int]:
-    """Return (cairn's images, count of images cairn did not build).
+    """Return (cairn-build's images, count of images this excludes).
 
     Two calls rather than one: engines agree on ``images --quiet`` and on ``image inspect``
     accepting many ids and answering with a JSON array, but disagree on what their listing
     formats include — podman carries labels there, docker does not. Inspecting is the
     portable way to ask the same question of both (`ADR-027`).
+
+    An image carrying the `cairn-adopt-owned` marker (`BR-DEPLOY-023`) is excluded here too,
+    counted the same as an image cairn did not build at all (`ADR-072`) — once `cairn-adopt`
+    has claimed an image as currently running, accounting for it is `inspect_local_adopted`'s
+    question, not this one's.
     """
     identifiers = _list_ids(engine_name)
     if not identifiers:
         return [], 0
 
     images = [_from_inspection(entry) for entry in _inspect(engine_name, identifiers)]
-    ours = [image for image in images if image.input_hash]
+    ours = [image for image in images if image.input_hash and not image.is_adopt_owned]
+    return _newest_first(ours), len(images) - len(ours)
+
+
+def inspect_local_adopted(engine_name: str) -> tuple[list[LocalImage], int]:
+    """Return (images `cairn-adopt` is or has been running, count of everything else).
+
+    The mirror image of :func:`inspect_local`'s exclusion: selects only images carrying the
+    `cairn-adopt-owned` marker (`BR-DEPLOY-023`), which `inspect_local` itself excludes
+    (`ADR-072`). Backs `cairn-adopt prune` (`BR-CLI-028`).
+    """
+    identifiers = _list_ids(engine_name)
+    if not identifiers:
+        return [], 0
+
+    images = [_from_inspection(entry) for entry in _inspect(engine_name, identifiers)]
+    ours = [image for image in images if image.is_adopt_owned]
     return _newest_first(ours), len(images) - len(ours)
 
 
@@ -270,15 +301,12 @@ def _footer(groups: list[ImageGroup], others: int) -> list[str]:
         f"{superseded} superseded, holding {format_size(reclaimable)}."
     ]
     if owned:
-        lines.append(
-            f"{owned} carry the '{OWNED_TAG}' tag — built here, not pushed anywhere yet. On a "
-            f"host also running cairn-adopt or cairn-registry, anything without that tag "
-            f"either has been pushed, or arrived here some other way (a pull, most likely)."
-        )
+        lines.append(f"{owned} carry the '{OWNED_TAG}' tag — built here, not pushed anywhere yet.")
     if others:
         lines.append(
-            f"{others} other image(s) in local storage are not cairn's and are not listed "
-            f"— including build-cache stages, which must not be deleted."
+            f"{others} other image(s) in local storage are not listed — either not cairn's "
+            f"(including build-cache stages, which must not be deleted), or currently claimed "
+            f"by a target role here ('{ADOPT_OWNED_TAG}')."
         )
     return lines
 
@@ -360,9 +388,7 @@ def group_registry(images: list[RegistryImage]) -> list[tuple[str, list[Registry
     buckets: dict[str, list[RegistryImage]] = {}
     for image in images:
         buckets.setdefault(image.input_hash, []).append(image)
-    return [
-        (input_hash, _newest_built_first(members)) for input_hash, members in buckets.items()
-    ]
+    return [(input_hash, _newest_built_first(members)) for input_hash, members in buckets.items()]
 
 
 def render_registry(base: registry.ImageRef, groups, others: int) -> str:

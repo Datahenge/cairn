@@ -84,10 +84,14 @@ def test_keep_below_one_is_rejected():
         prune.select([_group(_image("aaa"))], keep=0)
 
 
-# --- restriction 2: never remove something still named ----------------------
+# --- restriction 2: nothing but the grace window protects an image (ADR-072) ---
 
 
-def test_a_tagged_image_is_protected_even_when_beyond_keep():
+def test_a_tagged_image_beyond_keep_is_now_eligible():
+    """`ADR-061`'s unconditional protection for any real tag is gone (`ADR-072`) — a pushed
+    image nothing local needs anymore is reclaimable like anything else past the grace
+    window. `images.inspect_local` is what keeps a still-adopted image out of this pool at
+    all; nothing inside `select` protects one further."""
     group = _group(
         _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
         _image("bbb", ["ghcr.io/x/y:someone-elses-tag"], minutes_old=2),
@@ -95,19 +99,20 @@ def test_a_tagged_image_is_protected_even_when_beyond_keep():
     )
     plan = prune.select([group], keep=1)
 
-    assert [image.short_id for image in plan.removals] == ["ccc000000000"]
-    assert [image.short_id for image in plan.protected] == ["bbb000000000"]
+    assert sorted(image.short_id for image in plan.removals) == [
+        "bbb000000000",
+        "ccc000000000",
+    ]
 
 
-def test_protected_images_are_reported_not_silently_skipped():
+def test_the_report_explains_the_grace_window_not_a_protected_bucket():
     group = _group(
         _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
         _image("bbb", ["ghcr.io/x/y:other"], minutes_old=2),
-        _image("ccc", minutes_old=5),
     )
     rendered = prune.render(prune.select([group], keep=1), others=0)
 
-    assert "1 older image(s) have already been pushed" in rendered
+    assert "Keeping 1 image(s) within the grace window" in rendered
 
 
 # --- restriction 2 revised: owned vs. shared (BR-BUILD-018, ADR-061) --------
@@ -124,16 +129,17 @@ def test_a_stale_but_still_owned_image_is_now_eligible():
     assert [image.short_id for image in plan.removals] == ["bbb000000000"]
 
 
-def test_a_pushed_image_is_protected_even_if_it_once_carried_the_marker():
-    """The marker is stripped on push; what remains is a real tag, and real tags protect."""
+def test_a_pushed_image_beyond_keep_is_eligible_since_adr_072():
+    """A pushed image (no owned marker, real tags) used to be protected unconditionally
+    (`ADR-061`); `ADR-072` removes that once `images.inspect_local` is the thing keeping a
+    still-adopted image out of this pool in the first place."""
     group = _group(
         _image("aaa", ["ghcr.io/x/y:v16-aaa111"]),
         _image("bbb", ["ghcr.io/x/y:v16-bbb222"], minutes_old=5, input_hash="bbb222"),
     )
     plan = prune.select([group], keep=1)
 
-    assert plan.is_empty
-    assert [image.short_id for image in plan.protected] == ["bbb000000000"]
+    assert [image.short_id for image in plan.removals] == ["bbb000000000"]
 
 
 def test_an_orphan_within_keep_is_still_grace_windowed_by_position():
@@ -190,7 +196,7 @@ def test_the_report_explains_what_is_being_left_alone():
     group = _group(_image("aaa", ["ghcr.io/x/y:v16-aaa111"]), _image("bbb", minutes_old=2))
     rendered = prune.render(prune.select([group], keep=1), others=5)
 
-    assert "5 image(s) cairn did not build are never considered" in rendered
+    assert "5 image(s) in local storage are never considered" in rendered
     assert "build-cache" in rendered
 
 

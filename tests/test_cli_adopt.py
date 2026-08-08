@@ -11,14 +11,16 @@ from __future__ import annotations
 
 import runpy
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from cairn import adopt, cli_adopt, config, doctor, reconcile
+from cairn import adopt, cli_adopt, config, doctor, images, prune, reconcile
 from cairn.config import App, Frappe, Manifest
 from cairn.errors import ReconcileError
+from cairn.images import LocalImage
 
 runner = CliRunner()
 
@@ -161,6 +163,97 @@ def test_a_missing_descriptor_names_the_file(tmp_path, monkeypatch):
 
     assert result.exit_code == 2
     assert "absent.toml" in result.stderr
+
+
+# --- prune (BR-CLI-028, ADR-072) --------------------------------------------
+
+
+def _adopted_image(short, tags=(), *, minutes_old=0, size=2_750_000_000):
+    return LocalImage(
+        image_id="sha256:" + short + "0" * (64 - len(short)),
+        tags=tuple(tags),
+        created=datetime.now(UTC) - timedelta(minutes=minutes_old),
+        size=size,
+        labels={},
+    )
+
+
+@pytest.fixture
+def adopt_prunable(target, monkeypatch):
+    """The running image, plus two superseded images, all `cairn-adopt-owned`. With the
+    default `--keep 1`, the running image is never a candidate at all (protected
+    unconditionally) and the newer of the two remaining images is the grace-window keeper —
+    so exactly one image (`bbb`) is beyond it and eligible."""
+    running = _adopted_image("aaa", ["ghcr.io/datahenge/erpnext-btu-v16:cairn-adopt-owned"])
+    superseded = _adopted_image("bbb", minutes_old=5)
+    older = _adopted_image("ccc", minutes_old=10)
+    monkeypatch.setattr(
+        images,
+        "inspect_local_adopted",
+        lambda engine_name: ([running, superseded, older], 2),
+    )
+    monkeypatch.setattr(reconcile, "running_image_id", lambda descriptor: running.image_id)
+    removals: dict = {}
+
+    def _remove(engine_name, doomed):
+        removals["doomed"] = doomed
+        return list(doomed), removals.get("failures", [])
+
+    monkeypatch.setattr(prune, "remove", _remove)
+    return removals
+
+
+def test_dry_run_removes_nothing(target, adopt_prunable):
+    result = runner.invoke(cli_adopt.app, ["prune", "--descriptor", str(target), "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "doomed" not in adopt_prunable
+
+
+def test_declining_the_confirmation_removes_nothing(target, adopt_prunable):
+    result = runner.invoke(cli_adopt.app, ["prune", "--descriptor", str(target)], input="n\n")
+
+    assert result.exit_code == 0
+    assert "doomed" not in adopt_prunable
+    assert "Nothing was removed." in result.stderr
+
+
+def test_yes_skips_the_confirmation(target, adopt_prunable):
+    """With `--keep 1`: the running image is protected unconditionally, `bbb` (the newer of
+    the two remaining images) is the grace-window keeper, and `ccc` (the oldest) is removed."""
+    result = runner.invoke(cli_adopt.app, ["prune", "--descriptor", str(target), "--yes"])
+
+    assert result.exit_code == 0
+    assert [image.short_id for image in adopt_prunable["doomed"]] == ["ccc000000000"]
+    assert "Removed 1 image(s), reclaiming 2.75 GB." in result.stdout
+
+
+def test_the_running_image_is_never_a_removal_candidate(target, adopt_prunable):
+    """`BR-DEPLOY-003b`'s own digest read decides this, never recency or `--keep`."""
+    result = runner.invoke(
+        cli_adopt.app, ["prune", "--descriptor", str(target), "--keep", "0", "--yes"]
+    )
+
+    assert result.exit_code == 2  # --keep enforces its own floor, same as cairn-build prune
+
+
+def test_keep_reaches_the_selection(target, adopt_prunable):
+    result = runner.invoke(
+        cli_adopt.app, ["prune", "--descriptor", str(target), "--keep", "2", "--yes"]
+    )
+
+    assert result.exit_code == 0
+    assert "doomed" not in adopt_prunable
+    assert "Nothing to remove" in result.stdout
+
+
+def test_a_failed_removal_exits_nonzero_without_aborting_the_rest(target, adopt_prunable):
+    adopt_prunable["failures"] = ["bbb000000000"]
+
+    result = runner.invoke(cli_adopt.app, ["prune", "--descriptor", str(target), "--yes"])
+
+    assert result.exit_code == 1
+    assert "Could not remove bbb000000000" in result.stderr
 
 
 # --- systemd units (BR-CLI-019) --------------------------------------------

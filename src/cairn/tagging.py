@@ -49,6 +49,11 @@ MOVING_TAG = "latest"
 #: not a build artifact.
 OWNED_TAG = "cairn-build-owned"
 
+#: Marks an image `cairn-adopt` is (or has been) running on this host (`BR-DEPLOY-023`,
+#: `ADR-072`). Applied by the target role, not the build role; unlike `OWNED_TAG` it is never
+#: stripped by the role that applies it — only `cairn-adopt prune` (`BR-CLI-028`) releases it.
+ADOPT_OWNED_TAG = "cairn-adopt-owned"
+
 _VERSION_REF_RE = re.compile(r"^version-(\d+)$")
 _TAG_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 

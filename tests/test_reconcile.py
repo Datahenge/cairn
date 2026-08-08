@@ -95,7 +95,10 @@ def test_no_local_image_is_a_first_deploy():
 
 
 def test_a_no_change_run_does_nothing_at_all(monkeypatch, commands):
-    """BR-DEPLOY-001: the common case under a timer. It must not pull, recreate, or migrate."""
+    """BR-DEPLOY-001: the common case under a timer. It must not pull, recreate, or migrate —
+    it MAY still probe the running container to refresh the adopt-owned marker
+    (`BR-DEPLOY-023`, `ADR-072`), which is exactly what closes the rollout gap for a host
+    already running an image pulled before that feature existed."""
     monkeypatch.setattr(registry, "digest_of", lambda ref: DESIRED)
     monkeypatch.setattr(reconcile, "running_digest", lambda desc: DESIRED)
     monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: True)
@@ -105,7 +108,9 @@ def test_a_no_change_run_does_nothing_at_all(monkeypatch, commands):
 
     assert outcome.converged is True
     assert outcome.changed is False
-    assert commands.run == []
+    assert not any("pull" in command for command in commands.run)
+    assert not any("up" in command for command in commands.run)
+    assert not any("migrate" in command for command in commands.run)
 
 
 # --- the sequence (BR-DEPLOY-003) -------------------------------------------
@@ -340,6 +345,85 @@ def test_a_stale_container_reports_its_own_older_digest_not_the_local_stores(com
     }
 
     assert reconcile.running_digest(_descriptor()) == OTHER
+
+
+# --- the adopt-owned marker (BR-DEPLOY-023, ADR-072) ------------------------
+
+
+def test_running_image_id_reads_off_the_containers_own_image(commands):
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "f" * 64 + "\n",
+    }
+
+    assert reconcile.running_image_id(_descriptor()) == "sha256:" + "f" * 64
+
+
+def test_mark_owned_tags_the_running_image(commands):
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "f" * 64 + "\n",
+    }
+
+    reconcile.mark_owned(_descriptor())
+
+    tags = [command for command in commands.run if command[:2] == ["docker", "tag"]]
+    assert tags == [
+        [
+            "docker",
+            "tag",
+            "sha256:" + "f" * 64,
+            "ghcr.io/datahenge/erpnext-btu-v16:cairn-adopt-owned",
+        ]
+    ]
+
+
+def test_mark_owned_does_nothing_when_nothing_is_running(commands):
+    commands.captures = {}
+
+    reconcile.mark_owned(_descriptor())
+
+    assert not any(command[:2] == ["docker", "tag"] for command in commands.run)
+
+
+def test_mark_owned_failure_is_silent(commands):
+    """Best-effort: a tagging hiccup must not be mistaken for a convergence failure."""
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "f" * 64 + "\n",
+    }
+    commands.fail_on = "docker tag"
+
+    reconcile.mark_owned(_descriptor())  # must not raise
+
+
+def test_a_converged_no_op_pass_still_refreshes_the_marker(monkeypatch, commands):
+    """The whole point of refreshing on every pass, not only on a pull: a host already
+    running an image pulled before this feature existed picks up the marker on its very
+    next reconcile, converged or not — no manual step."""
+    monkeypatch.setattr(registry, "digest_of", lambda ref: DESIRED)
+    monkeypatch.setattr(reconcile, "running_digest", lambda desc: DESIRED)
+    monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: True)
+    monkeypatch.setattr(reconcile, "_single_flight", _no_lock)
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "f" * 64 + "\n",
+    }
+
+    reconcile.run(_descriptor())
+
+    assert any(command[:2] == ["docker", "tag"] for command in commands.run)
+
+
+def test_a_real_converge_also_refreshes_the_marker(converging, commands):
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "f" * 64 + "\n",
+    }
+
+    reconcile.run(_descriptor())
+
+    assert any(command[:2] == ["docker", "tag"] for command in commands.run)
 
 
 def test_the_stack_is_up_only_when_the_bench_service_runs(commands):

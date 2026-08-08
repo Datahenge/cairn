@@ -116,6 +116,19 @@ on the service, ahead of each check's existing enabled/active read, to both the 
 check and (same blind spot, fixed alongside) `cairn-adopt doctor`'s pre-existing
 `check_reconcile_timer` — a failed last run now FAILs rather than reading as merely
 not-yet-started. `ADR-070` amended in place; no new ID.
+2026-08-08: Brian noticed `cairn-build images` still holding six images on a client VPS after
+most had been pushed; tracing the code confirmed no bug, but surfaced a real gap `ADR-061`
+had deliberately left conservative — prune protects every pushed image forever because it has
+no signal for "still in use by a colocated `cairn-adopt`." `ADR-072`: `cairn-adopt` gains a
+symmetric `cairn-adopt-owned` marker (`BR-DEPLOY-023`), applied to the currently-running image
+and refreshed on every `reconcile` pass (converged or not, closing the rollout gap for images
+pulled before this feature existed); `cairn-build prune` (`BR-CLI-018`) now protects the
+`cairn-build-owned` **or** `cairn-adopt-owned` marker specifically, not any tag at all — a
+pushed, nothing-local-is-running-it image becomes eligible; `cairn-build images` (`BR-CLI-005`)
+excludes `cairn-adopt-owned` images entirely. Same decision fully specifies the long-open
+`BR-DEPLOY-006`/`W-003` target-side GC as a new `BR-CLI-028`, `cairn-adopt prune`: keep the
+running image plus the newest `--keep <n>` `cairn-adopt-owned` images. Docs landed; code not
+yet written — see `docs/open/OPEN_WORK.md`'s `W-003`.
 
 ## Read First
 

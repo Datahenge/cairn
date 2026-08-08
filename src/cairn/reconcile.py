@@ -46,6 +46,7 @@ from pathlib import Path
 from . import registry
 from .descriptor import Descriptor
 from .errors import ReconcileError, RegistryError
+from .tagging import ADOPT_OWNED_TAG
 
 #: Where the single-flight lock lives. ``/run`` is tmpfs, so the lock cannot outlive a boot.
 LOCK_PATH = Path("/run/cairn/reconcile.lock")
@@ -115,6 +116,7 @@ def run(
         state = inspect(descriptor, report=report)
 
         if state.is_converged:
+            mark_owned(descriptor)
             return Outcome(
                 converged=True,
                 changed=False,
@@ -131,6 +133,7 @@ def run(
             )
 
         converge(descriptor, state, report=report)
+        mark_owned(descriptor)
         return Outcome(
             converged=True,
             changed=True,
@@ -240,6 +243,41 @@ def await_health(
 # --- reading actual state ---------------------------------------------------
 
 
+def running_image_id(descriptor: Descriptor) -> str | None:
+    """Return the local image id backing the running `backend` container, or ``None``.
+
+    The one place that reads which image is *actually* running, as opposed to merely
+    pulled — shared by :func:`running_digest` (`BR-DEPLOY-003b`) and :func:`mark_owned`
+    (`BR-DEPLOY-023`), so both ask the engine the same question the same way.
+    """
+    container_id = _first_line(_capture(_compose_command(descriptor, ["ps", "-q", BENCH_SERVICE])))
+    if container_id is None:
+        return None
+
+    return _first_line(_capture(["docker", "inspect", container_id, "--format", "{{.Image}}"]))
+
+
+def mark_owned(descriptor: Descriptor) -> None:
+    """Tag the currently-running image as `cairn-adopt`'s own (`BR-DEPLOY-023`, `ADR-072`).
+
+    Called on **every** `reconcile` pass, converged or not (see :func:`run`) — refreshing on
+    a no-op, not only on a pull, is what lets a host already running an image pulled before
+    this feature existed pick up the marker on its very next pass, with no manual step. The
+    marker is never removed here; only `cairn-adopt prune` (`BR-CLI-028`) releases it.
+
+    Best-effort and silent on failure: the image is already running correctly regardless of
+    whether this bookkeeping tag attaches, and a tagging hiccup must not be mistaken for a
+    convergence failure.
+    """
+    image_id = running_image_id(descriptor)
+    if image_id is None:
+        return
+    _try(
+        ["docker", "tag", image_id, f"{descriptor.repository}:{ADOPT_OWNED_TAG}"],
+        PROBE_TIMEOUT_SECONDS,
+    )
+
+
 def running_digest(descriptor: Descriptor) -> str | None:
     """Return the registry digest of the image the running `backend` container was actually
     started from — not merely whether a matching image exists in the local store
@@ -256,11 +294,7 @@ def running_digest(descriptor: Descriptor) -> str | None:
     fork-pressure register item 4). ``None`` means there is no running container to ask,
     which is the normal state before a first deploy.
     """
-    container_id = _first_line(_capture(_compose_command(descriptor, ["ps", "-q", BENCH_SERVICE])))
-    if container_id is None:
-        return None
-
-    image_id = _first_line(_capture(["docker", "inspect", container_id, "--format", "{{.Image}}"]))
+    image_id = running_image_id(descriptor)
     if image_id is None:
         return None
 
@@ -459,9 +493,7 @@ def _try(
     """Run *command*, returning None if the binary is missing or it timed out."""
     environment = {**os.environ, **(env_overrides or {})}
     try:
-        return subprocess.run(
-            command, timeout=timeout, check=False, text=True, env=environment
-        )
+        return subprocess.run(command, timeout=timeout, check=False, text=True, env=environment)
     except FileNotFoundError:
         return None
     except subprocess.TimeoutExpired:

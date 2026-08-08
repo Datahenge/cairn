@@ -10,6 +10,12 @@ purpose: ADR-061 — a cairn-build-owned marker tag, stripped on push, replaces 
 `cairn-registry`, and `cairn-adopt` actually shares, and what a real `cairn-build prune`
 needs to stay safe once it does more than clean up duplicate rebuilds).
 
+**Amended by `ADR-072` (2026-08-08):** Restriction 2's "protect any tag other than the owned
+marker" — deliberately conservative here because prune had no signal for "still in use by a
+target role" — is narrowed once `ADR-072`'s `cairn-adopt-owned` marker gives it one. A pushed
+image nothing local is currently running is no longer unconditionally protected. This ADR's
+own core decision (the owned marker, applied at build, stripped on push) is unchanged.
+
 ## Context
 
 Two things surfaced together while examining colocation, both traced against real code rather
