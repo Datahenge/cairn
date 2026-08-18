@@ -9,6 +9,59 @@ code changes live in git history.
 
 ---
 
+## 2026-08-18 (`ADR-073` opened: the target stack has no usable lifecycle)
+
+Brian asked how to stop and restart the containers on a client VPS after changing the Compose
+YAML. cairn has no answer — `start`/`stop`/`restart` exist only for `cairn-registry`
+(`BR-REG-003`/`004`). The working procedure is five steps around a hand-assembled `docker
+compose` invocation transcribed out of `/etc/cairn/adopt.toml`; Brian's assessment was
+"extremely awkward and impractical."
+
+Tracing why separated inherited awkwardness from self-inflicted. The multi-file override
+layering is upstream `frappe_docker`'s, though `BR-DEPLOY-010`'s render-never-store choice
+does forgo upstream's usual render-once workaround. The other two factors are cairn's: the
+compose variables (`CUSTOM_IMAGE`/`CUSTOM_TAG`/`PULL_POLICY`/`SITES`) are injected per
+invocation and never written to disk, so a manual `docker compose up -d` succeeds against a
+stale `.env` and silently starts the previous image — a drift cairn's own `_survey_image` and
+`stage_reconnoitre` already treat as known; and `State.is_converged` requires `stack_up`, so
+an intentionally-stopped stack is indistinguishable from a dead one and the timer resurrects
+it, `bench migrate` included. That last one is the real blocker: cairn has no way to express
+"intentionally down."
+
+Verified against Life Scientific's test VPS the same day, which **refuted** the guess that it
+used the rendered single-file `gitops` pattern its directory name suggests. `erpnext.yaml`
+still interpolates; `CUSTOM_IMAGE`/`CUSTOM_TAG` are its only two variables, both carrying
+upstream defaults (`${CUSTOM_IMAGE:-frappe/erpnext}`); and no `.env` exists beside it. So a
+hand-run `docker compose up -d` on that host silently starts stock `frappe/erpnext:v16.26.1`
+— another vendor's image, never carrying the client's apps — with no warning, because a `:-`
+default suppresses Compose's unset-variable message. Factor 2 is more severe than first
+written, and `ADR-073` was amended accordingly: candidate (a) (write-through `.env`) is
+re-rated from "heavier, defer it" to worth doing close behind (b), since on this host the
+`.env` cairn would write carries no secret and its creation removes the hazard outright.
+`reconcile` was confirmed *not* looping there (zero converge passes in 24h).
+
+Brian then supplied the host's history, which reframed the finding twice over. The client
+built the VPS themselves from `frappe_docker`, which reached for **`pwd.yml`** — the
+disposable, explicitly non-production demo file — and cairn adopted it later; `/opt/vps-setup/`
+is surviving client tooling cairn superseded without displacing. The `.env` that does exist
+there sits one directory *above* the Compose project directory, so Compose never reads it, and
+carries neither `CUSTOM_IMAGE` nor `CUSTOM_TAG` regardless. That makes the VPS the first
+concrete instance of **`W-033`** (`ADR-068`'s take-ownership path), now cross-referenced.
+
+More consequentially, the same fallback turned out to live in **cairn's own recipe**:
+`src/cairn/recipe/compose.yaml:5` and `overrides/compose.migrator.yaml:9` both carry
+`${CUSTOM_IMAGE:-frappe/erpnext}`, inherited byte-for-byte from `frappe_docker` but owned by
+cairn since `ADR-059` — and `W-032` would ship it to every newly-provisioned host. Queued as
+`W-036`, with the choice between "drop the default so it fails loudly" and "keep it but detect
+the substitution" left to Brian.
+
+**Brian ruled the fix in scope** (an operator has no practical alternative route); the design
+is open. `ADR-073` records both candidates — write-through `.env`, and owned lifecycle
+commands plus a hold state — with two sub-questions still needing his answer: whether a hold
+survives reboot, and whether cairn writing `.env` collides with `BR-DEPLOY-011`'s
+secret-agnostic boundary. Queued as `ADR-073` (`needs_user`) in `docs/open/OPEN_DECISIONS.md`
+and `W-035` (`blocked`) in `docs/open/OPEN_WORK.md`. No requirement changed yet.
+
 ## 2026-08-08 (`ADR-072`: `cairn-adopt-owned` marker; `cairn-adopt prune` fully specified)
 
 Brian asked why `cairn-build images` still held six images on a client VPS after most had
