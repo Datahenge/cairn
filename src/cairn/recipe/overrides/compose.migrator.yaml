@@ -6,7 +6,10 @@ x-customizable-image: &customizable_image
   # By default the image used only contains the `frappe` and `erpnext` apps.
   # See https://github.com/frappe/frappe_docker/blob/main/docs/02-setup/02-build-setup.md#define-custom-apps
   # about using custom images.
-  image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-$ERPNEXT_VERSION}
+  # No `:-` default, deliberately: a default suppresses Compose's unset-variable warning,
+  # so a hand-run `docker compose up -d` would silently start stock upstream Frappe against
+  # a real site. Fail before any container starts instead.
+  image: "${CUSTOM_IMAGE:?set CUSTOM_IMAGE, or bring this stack up with cairn-adopt reconcile}:${CUSTOM_TAG:?set CUSTOM_TAG, or bring this stack up with cairn-adopt reconcile}"
   pull_policy: ${PULL_POLICY:-always}
   restart: ${RESTART_POLICY:-unless-stopped}
 

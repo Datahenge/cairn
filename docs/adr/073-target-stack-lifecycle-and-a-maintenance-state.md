@@ -77,7 +77,7 @@ when `ADR-059` bootstrapped the copy — and `ADR-059` made cairn that file's ow
 default is cairn's responsibility now, not upstream's. `example.env` ships
 `ERPNEXT_VERSION=v16.26.2`, so on any host following it an unset `CUSTOM_IMAGE` resolves
 silently to stock `frappe/erpnext:v16.26.2`. `W-032` (provision a new environment from cairn's
-owned stack) would propagate this to every future host. Tracked as `W-036`.
+owned stack) would propagate this to every future host. Tracked as `W-036` — **resolved 2026-08-18** by `BR-VEND-006`: Brian chose to drop the default so a missing value fails loudly. Factors 1, 2 and 3 remain open; this closed only cairn's own contribution to 2b.
 
 **3. No way to express "intentionally down" — ours, and the actual blocker.** `State.is_converged`
 requires `stack_up`, correctly refusing to call a stopped stack converged (that check exists

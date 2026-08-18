@@ -51,6 +51,18 @@ subdirectory now sit directly under `src/cairn/recipe/`, and `images/custom/` an
 `resources/core/` collapsed to `images/` and `resources/` since neither had a sibling to be
 distinguished from.
 
+**`BR-VEND-006` — No silent image substitution.** The recipe's compose files MUST NOT supply a
+fallback value for the image reference. `CUSTOM_IMAGE` and `CUSTOM_TAG` MUST use Compose's
+error-on-unset form (`${VAR:?...}`), so a missing value halts before any container starts and
+names the variable and its remedy. A `:-` default is specifically forbidden here because it
+suppresses Compose's own unset-variable warning: the stack comes up on an unrelated public
+image, against the operator's real site, with no output indicating anything is wrong. The
+bootstrap copy inherited `${CUSTOM_IMAGE:-frappe/erpnext}` from upstream (`ADR-059`), which is
+appropriate for upstream's audience — someone trying stock Frappe — and wrong for cairn's,
+where the custom image *is* the deployment. This rule governs image identity only; defaults
+for behavioral settings (`PULL_POLICY`, `RESTART_POLICY`) are unaffected, since substituting
+one of those cannot silently run somebody else's software. *(ADR-059, ADR-073)*
+
 ---
 
 ## Cross-references

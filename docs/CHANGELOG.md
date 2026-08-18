@@ -9,6 +9,26 @@ code changes live in git history.
 
 ---
 
+## 2026-08-18 (`BR-VEND-006`: the owned recipe no longer substitutes another vendor's image)
+
+Brian's call on `W-036`: drop the default so it fails loudly. New **`BR-VEND-006`** forbids a
+fallback on the image reference in the owned recipe, and requires Compose's error-on-unset
+form. `src/cairn/recipe/compose.yaml` and `overrides/compose.migrator.yaml` now read
+`${CUSTOM_IMAGE:?...}:${CUSTOM_TAG:?...}`, halting before any container starts and naming the
+remedy. Plain `${CUSTOM_IMAGE}` was considered and rejected: Compose substitutes an empty
+string and emits only a `WARN`, so the failure still arrives late and quietly. `example.env`'s
+`ERPNEXT_VERSION` — read by nothing once the fallback was gone — is replaced by explicit
+`CUSTOM_IMAGE`/`CUSTOM_TAG` placeholders. The requirement is deliberately scoped to image
+*identity*: `PULL_POLICY` and `RESTART_POLICY` keep their defaults, since substituting one of
+those cannot silently run somebody else's software.
+
+Guarded by a parametrized test over every compose file in the recipe tree, not just the two
+that carried the line, since it gets copied whenever an override is added; mutation-checked by
+reinstating the old line and confirming the test fails. Full suite 929 passed. The `${VAR:?...}`
+form was then confirmed live the same day on Life Scientific's test VPS (same Compose
+syntax, applied by hand to that host's own file): `docker compose config` fails on an unset
+variable and renders the correct image when both are supplied.
+
 ## 2026-08-18 (`ADR-073` opened: the target stack has no usable lifecycle)
 
 Brian asked how to stop and restart the containers on a client VPS after changing the Compose

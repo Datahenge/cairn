@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from cairn import vendor
@@ -103,3 +105,35 @@ def test_recipe_commit_degrades_to_empty_when_git_is_missing(monkeypatch):
     monkeypatch.setattr(vendor.subprocess, "run", _raise)
 
     assert vendor.recipe_commit() == ""
+
+
+# --- image reference has no silent fallback (BR-VEND-006) --------------------
+
+
+def _recipe_compose_files() -> list[Path]:
+    """Every shipped compose file in the owned recipe tree."""
+    recipe = Path(vendor.__file__).parent / "recipe"
+    return [recipe / "compose.yaml", *sorted((recipe / "overrides").glob("*.yaml"))]
+
+
+@pytest.mark.parametrize("path", _recipe_compose_files(), ids=lambda p: p.name)
+def test_recipe_image_reference_has_no_default(path: Path) -> None:
+    """BR-VEND-006: the image reference must never carry a `:-` fallback.
+
+    Upstream ships `${CUSTOM_IMAGE:-frappe/erpnext}`, which suits an audience trying stock
+    Frappe and actively harms cairn's, where the custom image *is* the deployment: a `:-`
+    default suppresses Compose's unset-variable warning, so a hand-run `docker compose up -d`
+    starts somebody else's image against a real site in silence. This guards the whole
+    recipe tree, not just the two files that carried it, because the line is copied between
+    compose files whenever a new override is added.
+    """
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("#") or "image:" not in stripped:
+            continue
+        for variable in ("CUSTOM_IMAGE", "CUSTOM_TAG"):
+            if f"${{{variable}:-" in stripped:
+                pytest.fail(
+                    f"{path.name}:{number} gives {variable} a `:-` default — an unset value "
+                    f"would silently start an unrelated image. Use `${{{variable}:?...}}`."
+                )
