@@ -67,3 +67,6 @@ docs/adr/073-target-stack-lifecycle-and-a-maintenance-state.md = 2600
 docs/archive/CHANGELOG-2026-08-05-to-2026-08-06.md = 3000
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
+docs/archive/CHANGELOG-2026-08-06.md = 2300
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.

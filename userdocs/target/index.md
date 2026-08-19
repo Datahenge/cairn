@@ -288,6 +288,8 @@ timer that repeats it unattended — see **[Reconcile Automation](automation.md)
 
 ## Next steps
 
+- **[Operating the Stack](operating.md)** — the everyday verbs: logs, a shell, a console, and
+  taking the environment down for maintenance without the timer bringing it back.
 - **[Reconcile Automation](automation.md)** — install the systemd timer that polls the
   environment's tag and converges automatically.
 - **[Build Automation](../builder/automation.md)** — if you haven't already, automate the

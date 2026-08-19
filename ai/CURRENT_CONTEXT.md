@@ -130,6 +130,33 @@ excludes `cairn-adopt-owned` images entirely. Same decision fully specifies the 
 running image plus the newest `--keep <n>` `cairn-adopt-owned` images. Docs landed; code not
 yet written — see `docs/open/OPEN_WORK.md`'s `W-003`.
 
+**2026-08-18/19 — the operator surface.** Started from "how do I stop these containers after a
+compose change?" and found cairn had no answer: `start`/`stop` existed only for
+`cairn-registry`. `ADR-073` records the analysis and the decision — a human never runs
+`docker compose` directly; cairn provides the verbs. `ADR-074` settles ownership: cairn writes
+the *first* compose file on a fresh install and **never regenerates** it, keeps
+`${CUSTOM_IMAGE}` so it controls the image while the operator controls everything else, and
+seeds it to `/etc/cairn/`. Brian's framing: *"Help them. But don't take away their control."*
+`ADR-075` adds **named** inspection verbs (`console`/`mariadb`/`logs`/`shell`) rather than the
+general compose passthrough `W-037` rejected — and there is deliberately **no** verb printing
+`site_config.json`, since `BR-DATA-006` forbids cairn reading it and it holds `db_password`.
+Landed: `BR-VEND-006` (recipe no longer falls back to stock `frappe/erpnext`),
+`BR-DEPLOY-024` + `BR-CLI-029` (durable hold at `/etc/cairn/hold`, `stop`/`start`/`restart`),
+`BR-CLI-030`, and `userdocs/target/operating.md`.
+
+Two field lessons from the same days. `BR-VEND-006` was correct **and** broke a live client VPS:
+removing the `:-` default exposed three read-path probes that had been silently relying on it —
+`_capture` never passed the compose environment. Fixed, then hardened structurally
+(`compose_run`/`compose_capture`/`compose_try` pair construction with environment, so it cannot
+be forgotten). The general lesson: *removing a silent default surfaces everything that quietly
+depended on it* — search for other readers **before** shipping that kind of change. Second:
+`pyproject.toml` now pins `core-metadata-version = "2.4"`, because `python -m build` resolves
+hatchling in an isolated environment and a newer default broke `twine` uploads.
+
+> **Housekeeping:** this Current Phase section is ~8x the length its own header asks for and has
+> become a second changelog. Compacting it — keeping the standing state, deferring the narrative
+> to `docs/CHANGELOG.md` — is overdue and needs Brian's call on what to keep.
+
 ## Read First
 
 | Task | Read |

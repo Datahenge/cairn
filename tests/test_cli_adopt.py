@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from cairn import adopt, cli_adopt, config, doctor, images, prune, reconcile
+from cairn import adopt, cli_adopt, config, descriptor, doctor, images, prune, reconcile
 from cairn.config import App, Frappe, Manifest
 from cairn.errors import ReconcileError
 from cairn.images import LocalImage
@@ -507,3 +507,113 @@ def test_python_dash_m_cairn_adopt_runs_the_app(monkeypatch):
         runpy.run_module("cairn.cli_adopt", run_name="__main__")
 
     assert excinfo.value.code == 0
+
+
+# --- lifecycle and session verbs: wiring only (BR-CLI-029, BR-CLI-030) -------
+#
+# The behaviour behind these lives in test_lifecycle.py and test_session.py. What is only
+# decidable here is whether the CLI reaches them at all, with the right arguments — the
+# `--help` output alone cannot tell you that a flag is connected to anything.
+
+
+@pytest.fixture
+def _descriptor_loads(monkeypatch):
+    """Give every verb a descriptor without touching /etc/cairn."""
+    target = descriptor.Descriptor(
+        environment="production",
+        registry_host="ghcr.io",
+        image="datahenge/erpnext-btu-v16",
+        tag="production",
+        site="erp.example.com",
+    )
+    monkeypatch.setattr(cli_adopt.descriptor, "load", lambda path=None: target)
+    return target
+
+
+def test_stop_passes_its_reason_through(monkeypatch, _descriptor_loads):
+    """BR-CLI-029: `--reason` is only useful if it reaches the hold it is recorded in."""
+    seen = {}
+    monkeypatch.setattr(
+        cli_adopt.lifecycle,
+        "stop",
+        lambda env, *, reason=None, report=None: seen.setdefault("reason", reason) or "stopped",
+    )
+
+    result = runner.invoke(cli_adopt.app, ["stop", "--reason", "adding a port mapping"])
+
+    assert result.exit_code == 0
+    assert seen["reason"] == "adding a port mapping"
+
+
+@pytest.mark.parametrize("verb", ["start", "restart"])
+def test_lifecycle_verbs_reach_their_module(monkeypatch, _descriptor_loads, verb):
+    called = []
+    monkeypatch.setattr(
+        cli_adopt.lifecycle, verb, lambda env, *, report=None: called.append(verb) or "done"
+    )
+
+    result = runner.invoke(cli_adopt.app, [verb])
+
+    assert result.exit_code == 0
+    assert called == [verb]
+
+
+def test_a_failing_lifecycle_verb_exits_two_rather_than_tracebacks(monkeypatch, _descriptor_loads):
+    """BR-CLI-012: an operator gets a message and an exit code, never a stack trace."""
+
+    def _fail(env, *, report=None):
+        raise ReconcileError("the stack would not stop")
+
+    monkeypatch.setattr(cli_adopt.lifecycle, "start", _fail)
+
+    result = runner.invoke(cli_adopt.app, ["start"])
+
+    assert result.exit_code == 2
+    assert "would not stop" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_logs_flags_reach_the_command_builder(monkeypatch, _descriptor_loads):
+    seen = {}
+
+    def _build(env, *, follow=False, tail=None, service=None):
+        seen.update(follow=follow, tail=tail, service=service)
+        return (["docker", "compose", "logs"], {})
+
+    monkeypatch.setattr(cli_adopt.session, "logs_command", _build)
+    monkeypatch.setattr(cli_adopt.session, "become", lambda invocation: None)
+
+    result = runner.invoke(cli_adopt.app, ["logs", "--follow", "--tail", "200", "backend"])
+
+    assert result.exit_code == 0
+    assert seen == {"follow": True, "tail": 200, "service": "backend"}
+
+
+def test_shell_passes_the_service_through(monkeypatch, _descriptor_loads):
+    seen = {}
+    monkeypatch.setattr(
+        cli_adopt.session,
+        "shell_command",
+        lambda env, service=None: seen.setdefault("service", service) or (["docker"], {}),
+    )
+    monkeypatch.setattr(cli_adopt.session, "become", lambda invocation: None)
+
+    result = runner.invoke(cli_adopt.app, ["shell", "db"])
+
+    assert result.exit_code == 0
+    assert seen["service"] == "db"
+
+
+@pytest.mark.parametrize("verb", ["console", "mariadb"])
+def test_interactive_verbs_reach_become(monkeypatch, _descriptor_loads, verb):
+    """BR-CLI-030: these replace the process, so `become` being called is the whole contract."""
+    handed = []
+    monkeypatch.setattr(cli_adopt.session, "become", lambda invocation: handed.append(invocation))
+
+    result = runner.invoke(cli_adopt.app, [verb])
+
+    assert result.exit_code == 0
+    assert len(handed) == 1
+    command, environment = handed[0]
+    assert "-T" not in command
+    assert environment["CUSTOM_TAG"] == "production"

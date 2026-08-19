@@ -74,6 +74,7 @@ nav:
       - Build Automation: builder/automation.md
   - Target:
       - Overview: target/index.md
+      - Operating the Stack: target/operating.md
       - Reconcile Automation: target/automation.md
   - Guides:
       - Overview: guides/index.md
