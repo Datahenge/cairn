@@ -96,3 +96,21 @@ Removal mechanics match `BR-CLI-018`: no engine `--force`, tag-by-tag removal, a
 removal MUST NOT abort the rest. cairn MUST NOT remove volumes or containers (`ADR-022`), MUST
 report and confirm first (`BR-CLI-011`), and MUST state what it leaves alone.
 *(BR-DEPLOY-003b, BR-DEPLOY-006, BR-DEPLOY-023, BR-BUILD-018, BR-CLI-018, ADR-022, ADR-072)*
+
+**`BR-CLI-030`** *(inspection verbs — `console`, `mariadb`, `logs`)* — `cairn-adopt` MUST provide
+these three, each deriving site, project, and compose files from the descriptor so that none
+requires an argument (`ADR-075`). They close the gap `ADR-073` left: an operator forbidden to
+run `docker compose` by hand still needs a console and logs.
+
+- **`console`** — `bench console` for the descriptor's site.
+- **`mariadb`** — `bench mariadb` for the descriptor's site. MUST refuse, with a message naming
+  the engine, when the descriptor layers the `postgres` override. Best-effort: a hand-built
+  stack may use Postgres without declaring it.
+- **`logs [--follow] [--tail N] [SERVICE]`** — compose logs, defaulting to the whole project.
+  Bounded flags only; there MUST NOT be a passthrough for arbitrary arguments.
+
+`console` and `mariadb` MUST allocate a TTY (never `-T`) and MUST replace the process rather
+than run compose as a child, so the terminal and its signals belong to the client. All three
+MUST NOT take the single-flight lock (`BR-DEPLOY-016`) — a session may last hours and would
+otherwise block every deploy — and MUST work while a hold is set (`BR-DEPLOY-024`), since a
+hold is when an operator most wants to look. *(BR-CLI-029, BR-DEPLOY-024, ADR-073, ADR-075)*

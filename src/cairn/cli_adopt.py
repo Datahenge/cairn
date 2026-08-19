@@ -22,6 +22,7 @@ from . import (
     images,
     prune,
     reconcile,
+    session,
     systemd,
     timing,
 )
@@ -358,6 +359,83 @@ def setup_timer_command(
             verb="setup-timer",
         )
     )
+
+
+@app.command(
+    "console",
+    help="Open a bench console on this environment's site. Needs no arguments.",
+)
+def console_command(
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Hand the terminal to `bench console` (BR-CLI-030, ADR-075)."""
+    _become(session.console_command, descriptor_path)
+
+
+@app.command(
+    "mariadb",
+    help="Open a MariaDB console on this environment's site. Needs no arguments.",
+)
+def mariadb_command(
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Hand the terminal to `bench mariadb` (BR-CLI-030, ADR-075)."""
+    _become(session.mariadb_command, descriptor_path)
+
+
+@app.command("logs", help="Show this environment's container logs.")
+def logs_command(
+    follow: Annotated[
+        bool, typer.Option("--follow", "-f", help="Keep printing new lines until interrupted.")
+    ] = False,
+    tail: Annotated[
+        int | None, typer.Option("--tail", help="Show only this many trailing lines per container.")
+    ] = None,
+    service: Annotated[
+        str | None, typer.Argument(help="One service to show; default: every service.")
+    ] = None,
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Hand the terminal to `docker compose logs` (BR-CLI-030, ADR-075)."""
+    try:
+        environment = descriptor.load(descriptor_path)
+        session.become(session.logs_command(environment, follow=follow, tail=tail, service=service))
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
+
+
+def _become(build, descriptor_path: Path | None) -> None:
+    """Load the descriptor, build the invocation, and replace this process with it.
+
+    Shared by `console` and `mariadb`, which differ only in the command they build. No
+    single-flight lock and no hold check, deliberately: a session may last hours and must not
+    block deploys, and a held stack is exactly when an operator wants to look (`ADR-075`).
+    """
+    try:
+        session.become(build(descriptor.load(descriptor_path)))
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
 
 
 def main() -> None:

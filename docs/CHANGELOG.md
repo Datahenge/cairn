@@ -9,6 +9,38 @@ code changes live in git history.
 
 ---
 
+## 2026-08-19 (`ADR-075`/`BR-CLI-030`: named inspection verbs)
+
+`ADR-073` forbade running `docker compose` by hand and gave the operator `stop`/`start`/
+`restart`. Using it revealed the gap that left: Brian needed a SQL console on a client VPS, had
+no cairn verb for one, and was keeping two shell scripts in his home directory on that host to
+compensate — the signal that the tool was missing something, not that the operator was misusing
+it.
+
+Answered with three **named** verbs rather than by reviving `W-037`'s general
+`cairn-adopt compose -- <args>` passthrough: `console`, `mariadb`, and
+`logs [--follow] [--tail N] [SERVICE]`, each taking site, project and compose files from the
+descriptor so none needs an argument. The distinction is the whole decision — a passthrough
+makes *arbitrary* compose use easy, which is what `ADR-073` set out to discourage; named verbs
+make the **specific** legitimate things easy and leave everything else deliberately awkward.
+
+Three properties, each with a reason recorded rather than assumed. **No `-T`**: the MariaDB
+client silently drops to batch mode without a TTY, which is indistinguishable from a hang — the
+exact confusion that prompted these verbs, and the reason `bench console` seemed to tolerate
+`-T` while `bench mariadb` did not (Python's console prints prompts regardless of `isatty`).
+Both interactive verbs `execvp` and replace the cairn process, so the terminal and its signals
+belong to the client. **No single-flight lock**: a console may be open for hours and would
+otherwise block every deploy — the hazard of a console open during `bench migrate` is
+acknowledged, not hidden. **They work while a hold is set** (`BR-DEPLOY-024`), since a hold is
+when an operator most wants to look.
+
+`mariadb` keeps Frappe's own name rather than a neutral `db`; because cairn's recipe ships a
+Postgres override, it refuses with a message naming the engine when the descriptor layers it —
+best-effort, since a hand-built stack may use Postgres without declaring one. Guarded by tests
+including a parametrized `-T` assertion over both interactive verbs, mutation-checked by
+reintroducing the flag. 942 pass. `W-037` closes as superseded, retained because the rejected
+alternative is what explains `BR-CLI-030`'s shape.
+
 ## 2026-08-19 (packaging: core-metadata version pinned to 2.4)
 
 The `0.4.11` upload failed with `InvalidDistribution: '2.5' is not a valid metadata version`.

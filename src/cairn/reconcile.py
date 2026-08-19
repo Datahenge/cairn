@@ -390,6 +390,20 @@ def _compose_command(descriptor: Descriptor, arguments: list[str]) -> list[str]:
     return command + arguments
 
 
+def compose_invocation(
+    descriptor: Descriptor, arguments: list[str]
+) -> tuple[list[str], dict[str, str]]:
+    """The compose command for *arguments*, and the environment it must be run with.
+
+    The public form of the ``_compose_*`` seam, for callers that cannot use it because they do
+    not run the command as a child at all — `BR-CLI-030`'s interactive verbs replace the
+    process (`ADR-075`). Returns both halves together for the same reason the private helpers
+    pair them: a compose invocation without `CUSTOM_IMAGE`/`CUSTOM_TAG` cannot resolve its own
+    image reference (`BR-VEND-006`) and fails rather than reports.
+    """
+    return _compose_command(descriptor, arguments), _compose_environment(descriptor)
+
+
 def _compose_run(descriptor: Descriptor, arguments: list[str], timeout: int, what: str) -> None:
     """Run a compose command, always with the variables its file interpolates.
 
