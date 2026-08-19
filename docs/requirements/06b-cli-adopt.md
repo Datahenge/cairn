@@ -106,6 +106,12 @@ run `docker compose` by hand still needs a console and logs.
 - **`mariadb`** — `bench mariadb` for the descriptor's site. MUST refuse, with a message naming
   the engine, when the descriptor layers the `postgres` override. Best-effort: a hand-built
   stack may use Postgres without declaring it.
+- **`shell [SERVICE]`** — an interactive shell inside a container, defaulting to the bench
+  container. This is deliberately cairn's answer to "show me `site_config.json`": `BR-DATA-006`
+  forbids cairn reading that file or `common_site_config.json` at all, and `BR-DEPLOY-011`
+  forbids it handling secret values — `site_config.json` carries `db_password`. A shell lets the
+  operator read their own config with no credential passing through cairn or its output. cairn
+  MUST NOT gain a verb that prints either file.
 - **`logs [--follow] [--tail N] [SERVICE]`** — compose logs, defaulting to the whole project.
   Bounded flags only; there MUST NOT be a passthrough for arbitrary arguments.
 

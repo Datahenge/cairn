@@ -115,3 +115,44 @@ def test_become_reports_a_missing_docker_as_a_cairn_error(monkeypatch) -> None:
     monkeypatch.setattr(session.os, "execvp", fake_exec)
     with pytest.raises(CairnError, match="not available"):
         session.become((["docker", "compose", "ps"], {}))
+
+
+# --- shell replaces "print me the config" (BR-DATA-006, BR-CLI-030) ----------
+
+
+def test_shell_defaults_to_the_bench_container() -> None:
+    command, _ = session.shell_command(_descriptor())
+    assert command[-2:] == ["backend", "bash"]
+
+
+def test_shell_can_enter_another_service() -> None:
+    command, _ = session.shell_command(_descriptor(), "db")
+    assert command[-2:] == ["db", "bash"]
+
+
+def test_shell_allocates_a_tty() -> None:
+    """BR-CLI-030: a shell without a TTY has no prompt, no job control and no line editing."""
+    command, _ = session.shell_command(_descriptor())
+    assert "-T" not in command
+
+
+def test_no_verb_reads_the_sites_volume() -> None:
+    """BR-DATA-006: cairn must not read site_config.json or common_site_config.json.
+
+    `shell` exists precisely so an operator can read their own config without cairn touching
+    it — the credential in `site_config.json` never passes through cairn or its output
+    (`BR-DEPLOY-011`). This asserts the boundary at the command level: no verb may name those
+    files, so none can quietly grow a `cat` of them.
+    """
+    target = _descriptor()
+    built = [
+        session.console_command(target),
+        session.mariadb_command(target),
+        session.shell_command(target),
+        session.logs_command(target),
+    ]
+    for command, _ in built:
+        joined = " ".join(command)
+        assert "site_config.json" not in joined
+        assert "common_site_config.json" not in joined
+        assert "cat" not in command

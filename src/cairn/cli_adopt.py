@@ -393,6 +393,36 @@ def mariadb_command(
     _become(session.mariadb_command, descriptor_path)
 
 
+@app.command(
+    "shell",
+    help="Open a shell inside a container of this environment. Defaults to the bench container.",
+)
+def shell_command(
+    service: Annotated[
+        str | None, typer.Argument(help="Which container to enter; default: the bench container.")
+    ] = None,
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Hand the terminal to a shell in the stack (BR-CLI-030, ADR-075).
+
+    cairn never reads the site's config itself (BR-DATA-006, BR-DEPLOY-011) — this is how an
+    operator reads their own, without a credential passing through cairn.
+    """
+    try:
+        environment = descriptor.load(descriptor_path)
+        session.become(session.shell_command(environment, service))
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
+
+
 @app.command("logs", help="Show this environment's container logs.")
 def logs_command(
     follow: Annotated[

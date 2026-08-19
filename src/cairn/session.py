@@ -46,6 +46,20 @@ def mariadb_command(descriptor: Descriptor) -> tuple[list[str], dict[str, str]]:
     )
 
 
+def shell_command(
+    descriptor: Descriptor, service: str | None = None
+) -> tuple[list[str], dict[str, str]]:
+    """An interactive shell inside a container of this stack (`BR-CLI-030`).
+
+    Deliberately the answer to "print me `site_config.json`" rather than a verb that reads it.
+    `BR-DATA-006` forbids cairn reading `site_config.json`/`common_site_config.json` at all,
+    and `BR-DEPLOY-011` forbids it handling secret values — that file carries `db_password`.
+    Handing over a shell keeps both intact: the operator reads their own file, and no
+    credential passes through cairn or lands in its output.
+    """
+    return compose_invocation(descriptor, ["exec", service or BENCH_SERVICE, "bash"])
+
+
 def logs_command(
     descriptor: Descriptor,
     *,

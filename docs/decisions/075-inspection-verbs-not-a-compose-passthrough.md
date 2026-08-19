@@ -50,4 +50,17 @@ are not that.
   needs one. That check is best-effort — a hand-built stack may use Postgres without declaring
   the override — so it is a courtesy, not a guarantee.
 
-*(BR-CLI-029, BR-CLI-030, BR-DEPLOY-024, ADR-073, ADR-074)*
+## Amended 2026-08-19 — `shell`, and why there is no `config` verb
+
+Brian asked for three more helpers: print `common_site_config.json`, print `site_config.json`,
+and a shell in the container. The first two are **refused**, and not on judgment —
+`BR-DATA-006` lists **read** among the things cairn must not do to those exact files, and
+`BR-DEPLOY-011` forbids handling secret values, which `site_config.json`'s `db_password` is.
+Printing it would put a live credential into terminal scrollback and any recording of it.
+
+The third makes the first two unnecessary, which is why the boundary costs nothing here:
+`cairn-adopt shell [SERVICE]` hands over a terminal and reads nothing. The operator reads their
+own file. Same outcome, no requirement amended, no credential through cairn. A test asserts no
+verb's command names either config file, so none can quietly grow a `cat` of them.
+
+*(BR-CLI-029, BR-CLI-030, BR-DATA-006, BR-DEPLOY-011, BR-DEPLOY-024, ADR-073, ADR-074)*
