@@ -35,6 +35,25 @@ Fixed: `_capture` takes `env_overrides`, and all three call sites pass
 invocation carries `CUSTOM_IMAGE` — over the class, not the three known instances, since the
 next probe added would repeat the mistake. Mutation-checked by reverting one site.
 
+Scope confirmed the next day, empirically rather than by reasoning. Two further sites were
+suspected — `adopt.py`'s `self_compose` (used by `examine`) and `provision.py`'s
+`stage_backup` (the pre-install backup) — and both proved **immune**. The distinguishing factor
+is `--file`: `reconcile` passes `--project-directory`/`--file`, which forces Compose to parse
+and interpolate the file, while those two address the project by `--project-name` alone and
+resolve from container labels. Brian verified on the live host that
+`docker compose --project-name erpnext ps` succeeds both inside and outside the compose file's
+directory. `self_compose` chose that form for an unrelated reason — its docstring says a
+reconstructed `--file` set "could describe a different one" — and was incidentally immune to
+this entire failure mode as a result. The pre-install backup was never at risk.
+
+Hardened structurally rather than by patching sites: `_compose_run`/`_compose_capture`/
+`_compose_try` now pair command construction with `_compose_environment`, and
+`_compose_command` has exactly three callers, all of them those helpers. A future probe cannot
+omit the environment because there is no longer a way to build a compose invocation and execute
+it separately. `W-038` queues the remaining defence in depth — read-only probes could address
+by project name and stop depending on interpolation entirely — as deferred, since the seam
+already closes the defect.
+
 The durable lesson, which is not about this bug: **removing a silent default surfaces every
 latent place that depended on it.** `BR-VEND-006` was correct and stays; what it did was
 convert a hidden assumption into a loud failure, which is the point of it. The exposure was

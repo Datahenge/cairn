@@ -186,23 +186,18 @@ def converge(
     _run(["docker", "pull", reference], PULL_TIMEOUT_SECONDS, "pulling the image")
 
     report("Starting the stack")
-    _run(
-        _compose_command(descriptor, ["up", "-d", "--remove-orphans"]),
-        COMPOSE_TIMEOUT_SECONDS,
-        "starting the stack",
-        env_overrides=_compose_environment(descriptor),
+    _compose_run(
+        descriptor, ["up", "-d", "--remove-orphans"], COMPOSE_TIMEOUT_SECONDS, "starting the stack"
     )
 
     # After every image enable, rollback included (BR-DEPLOY-016). Frappe owns the schema;
     # cairn only asks for the migration it already documents as the sole DB touch.
     report(f"Migrating {descriptor.site}")
-    _run(
-        _compose_command(
-            descriptor, ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, "migrate"]
-        ),
+    _compose_run(
+        descriptor,
+        ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, "migrate"],
         MIGRATE_TIMEOUT_SECONDS,
         "running bench migrate",
-        env_overrides=_compose_environment(descriptor),
     )
 
     report("Verifying health")
@@ -250,12 +245,7 @@ def running_image_id(descriptor: Descriptor) -> str | None:
     pulled — shared by :func:`running_digest` (`BR-DEPLOY-003b`) and :func:`mark_owned`
     (`BR-DEPLOY-023`), so both ask the engine the same question the same way.
     """
-    container_id = _first_line(
-        _capture(
-            _compose_command(descriptor, ["ps", "-q", BENCH_SERVICE]),
-            env_overrides=_compose_environment(descriptor),
-        )
-    )
+    container_id = _first_line(_compose_capture(descriptor, ["ps", "-q", BENCH_SERVICE]))
     if container_id is None:
         return None
 
@@ -336,10 +326,7 @@ def stack_is_up(descriptor: Descriptor) -> bool:
     Asked of the service that serves the site rather than of the project as a whole: a
     project with only its database up is not a running deployment.
     """
-    output = _capture(
-        _compose_command(descriptor, ["ps", "--format", "json"]),
-        env_overrides=_compose_environment(descriptor),
-    )
+    output = _compose_capture(descriptor, ["ps", "--format", "json"])
     if not output:
         return False
 
@@ -368,11 +355,7 @@ def _site_answers(descriptor: Descriptor) -> tuple[bool, str]:
     """
     url = descriptor.health.url or ""
     probe = ["curl", "-fsS", "-o", "/dev/null", url]
-    result = _try(
-        _compose_command(descriptor, ["exec", "-T", BENCH_SERVICE, *probe]),
-        PROBE_TIMEOUT_SECONDS,
-        env_overrides=_compose_environment(descriptor),
-    )
+    result = _compose_try(descriptor, ["exec", "-T", BENCH_SERVICE, *probe], PROBE_TIMEOUT_SECONDS)
     if result is None:
         return False, f"{url} could not be reached from inside the stack"
     if result.returncode != 0:
@@ -405,6 +388,44 @@ def _compose_command(descriptor: Descriptor, arguments: list[str]) -> list[str]:
             command += ["--file", str(directory / "overrides" / f"compose.{name}.yaml")]
 
     return command + arguments
+
+
+def _compose_run(descriptor: Descriptor, arguments: list[str], timeout: int, what: str) -> None:
+    """Run a compose command, always with the variables its file interpolates.
+
+    The three ``_compose_*`` helpers exist so that building a compose invocation and supplying
+    its environment cannot be done separately (`BR-DEPLOY-003b`, `BR-DEPLOY-017`). They were
+    added after a live incident: three probes called ``_compose_command`` and then executed the
+    result without ``_compose_environment``, which was harmless only for as long as the compose
+    file carried a ``:-`` default to absorb the omission. `BR-VEND-006` removed that default by
+    design, and the probes went blind — reporting a running stack as stopped. Pairing the two
+    here removes the opportunity rather than relying on each caller to remember.
+    """
+    _run(
+        _compose_command(descriptor, arguments),
+        timeout,
+        what,
+        env_overrides=_compose_environment(descriptor),
+    )
+
+
+def _compose_capture(descriptor: Descriptor, arguments: list[str]) -> str | None:
+    """Capture a compose command's stdout, always with its environment. See :func:`_compose_run`."""
+    return _capture(
+        _compose_command(descriptor, arguments),
+        env_overrides=_compose_environment(descriptor),
+    )
+
+
+def _compose_try(
+    descriptor: Descriptor, arguments: list[str], timeout: int
+) -> subprocess.CompletedProcess[str] | None:
+    """Run a compose command tolerantly, always with its environment. See :func:`_compose_run`."""
+    return _try(
+        _compose_command(descriptor, arguments),
+        timeout,
+        env_overrides=_compose_environment(descriptor),
+    )
 
 
 def _compose_environment(descriptor: Descriptor) -> dict[str, str]:
