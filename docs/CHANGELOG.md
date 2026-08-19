@@ -9,6 +9,35 @@ code changes live in git history.
 
 ---
 
+## 2026-08-18 (`ADR-074`: cairn seeds the compose file, the operator owns it)
+
+Brian resolved the ownership question `ADR-073` surfaced, framing it across two horizons — this
+particular VPS today, and cairn used by dozens of operators tomorrow with `frappe_docker` never
+in the picture. His statement of it: **"Help them. But don't take away their control."**
+
+Four commitments: cairn writes the *first* compose file on a fresh install from its owned
+recipe; it **never regenerates** it (seed-once, the same pattern `registry_provision.py`
+already uses for the fully-commented starter `/etc/cairn/registry.toml`, and what makes
+operator edits safe from clobbering); `${CUSTOM_IMAGE}`/`${CUSTOM_TAG}` stay, so cairn keeps
+control of *which image* while the operator keeps everything else; and the file is readable and
+editable by the operator. Location `/etc/cairn/`, matching `registry.toml` — an earlier draft
+argued for `/opt/cairn-target/` by analogy with `ADR-063`, which was the wrong analogy: that
+tier is for files cairn *rewrites*, and this one is seeded once. The recipe's `compose.yaml`
+uses named volumes exclusively, so no path resolution constrains the choice.
+
+A first draft of `ADR-074` also claimed the decision settled `ADR-073`'s fork, by making an
+on-disk `.env` permanent architecture. Brian rejected the premise — the live VPS has no `.env`
+at all and works fine — and he was right: cairn injects `CUSTOM_IMAGE`/`CUSTOM_TAG` per
+invocation and needs nothing on disk. The claim came from the AI silently widening "the
+operator may see and edit the file" into "…and run it by hand", then deriving a requirement
+from its own addition. Withdrawn the same day; `ADR-074` and `ADR-073` both carry the
+correction in place rather than a quiet deletion, and `W-037` was rewritten from a work item
+into the open question it actually is — *is hand-running wanted at all?* — with a
+`cairn-adopt compose --` passthrough noted as an alternative that avoids the group-shared
+directory entirely. `W-032`/`W-033` updated with the decided shape. `ADR-073` stays open for
+factor 3 alone: file ownership gives cairn no way to express "intentionally down", so `W-035`
+is unaffected.
+
 ## 2026-08-18 (`BR-VEND-006`: the owned recipe no longer substitutes another vendor's image)
 
 Brian's call on `W-036`: drop the default so it fails loudly. New **`BR-VEND-006`** forbids a

@@ -136,13 +136,33 @@ cairn has adopted but not yet taken ownership of, which is every host today — 
 it as a **bridge** with a foreseeable end, not a permanent mechanism. Worth Brian's attention
 when ordering (a) against `W-033`.
 
+## Narrowed by `ADR-074` (2026-08-18)
+
+`ADR-074` settles who owns the compose file and where it lives, but **does not** settle this
+record's fork. A draft of `ADR-074` claimed it did — asserting that retaining `${CUSTOM_IMAGE}`
+makes an on-disk `.env` permanent architecture — and that claim was an AI inference, withdrawn
+the same day. cairn needs no `.env`; the live host has none and converges correctly.
+
+What actually changed here: candidate (a) is no longer framed as a bridge to be weighed against
+`W-033`, because it is not a bridge and not obviously needed at all. It applies only if
+hand-running `docker compose` is a capability worth supporting, which has not been asked
+(`W-037`). Candidate (b)'s `compose --` passthrough is an alternative answer to that same
+question, and avoids writing into a group-shared directory.
+
+Factor 3 is untouched by any of this: no amount of file ownership lets cairn express
+"intentionally down", so the hold state (`W-035`) remains the open design question this record
+exists for.
+
 ## Open sub-questions, both needing Brian
 
 - **Does a hold survive reboot?** `/run` (like the existing reconcile lock at
   `LOCK_PATH`) means a reboot resumes automatic convergence — safe against a forgotten hold,
   but a host rebooting mid-maintenance comes back up unexpectedly. `/etc/cairn` makes the
   hold durable and honest, but a forgotten one silently freezes deploys.
-- **Does cairn writing `.env` collide with `BR-DEPLOY-011`?** Only relevant if (a) is chosen.
+- **Are the verbs `up`/`down` or `start`/`stop`?** `cairn-registry` already ships
+  `start`/`stop`/`restart`. Whether the target role should match it, or use the compose-`down`
+  semantics a config change actually needs, is unsettled.
+- **Does cairn writing `.env` collide with `BR-DEPLOY-011`?** Moot if (a) is rejected.
 
 **Lean (Claude's recommendation, not agreed):** take (b), and treat the hold state as the
 primary deliverable rather than the commands — a `stop` that loses a race with the timer is
