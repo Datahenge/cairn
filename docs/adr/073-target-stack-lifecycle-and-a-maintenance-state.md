@@ -153,18 +153,59 @@ Factor 3 is untouched by any of this: no amount of file ownership lets cairn exp
 "intentionally down", so the hold state (`W-035`) remains the open design question this record
 exists for.
 
-## Open sub-questions, both needing Brian
+## Decision (Brian, 2026-08-18)
 
-- **Does a hold survive reboot?** `/run` (like the existing reconcile lock at
-  `LOCK_PATH`) means a reboot resumes automatic convergence — safe against a forgotten hold,
-  but a host rebooting mid-maintenance comes back up unexpectedly. `/etc/cairn` makes the
-  hold durable and honest, but a forgotten one silently freezes deploys.
-- **Are the verbs `up`/`down` or `start`/`stop`?** `cairn-registry` already ships
-  `start`/`stop`/`restart`. Whether the target role should match it, or use the compose-`down`
-  semantics a config change actually needs, is unsettled.
-- **Does cairn writing `.env` collide with `BR-DEPLOY-011`?** Moot if (a) is rejected.
+**Candidate (b), and candidate (a) rejected outright.** A human should not run `docker compose`
+directly against a cairn-managed stack. cairn instead offers its own verbs so an operator can
+bring the stack up and down.
 
-**Lean (Claude's recommendation, not agreed):** take (b), and treat the hold state as the
+This makes the hold state load-bearing rather than optional: without it, `State.is_converged`
+requires `stack_up`, so the timer resurrects a deliberately-stopped stack — and runs
+`bench migrate` — within the poll interval, which would make a `down` verb actively misleading.
+
+Settled the same day: the hold is **durable**, at `/etc/cairn/hold`, and the verbs are
+**`start`/`stop`**, matching `cairn-registry`.
+
+Durable rather than ephemeral (`/run`, beside `LOCK_PATH`) because a host that reboots
+mid-maintenance must stay down — "down" should honestly mean down. The cost is that a forgotten
+hold freezes deploys indefinitely, which makes `doctor` reporting it on **every** run a
+requirement of this decision, not a nicety.
+
+`start`/`stop` rather than `up`/`down` keeps one vocabulary across both binaries. A concern
+raised while deciding — that compose-`stop` semantics would leave an edited `compose.yaml`
+ineffective — turned out not to apply: `cairn-registry start` already runs
+`compose up -d`, not `compose start` (`registry_provision.py:294`), and Compose recreates any
+container whose config hash changed. So `stop` keeps containers while `start` recreates them
+when the file has moved on, which is exactly the behavior the motivating case needed.
+
+Sketch to be refined during design (`W-035`):
+
+* `stop` — write `/etc/cairn/hold`, then `compose stop`. Containers are kept; volumes are
+  never touched.
+* `start` — clear the hold, then delegate to the existing reconcile path, which already pulls,
+  starts, migrates and health-checks correctly for a stack that is not running. No new
+  convergence logic; `start` is a hold release plus the pass that would have happened anyway.
+  `stack_is_up` requires `State == "running"` (`reconcile.py:350`) and a stopped container
+  reports `exited`, so a released hold correctly registers as not-converged with no change to
+  that function.
+* `reconcile` — while the hold is set, report *held* and converge nothing. Distinct from both
+  converged and failed, which is the state cairn previously could not express.
+* `doctor` — surface the hold, so a forgotten one cannot hide.
+
+Rejected alternative retained for the record: an `.env` cairn maintains beside the compose file
+(`W-037`), which would have made plain `docker compose up -d` correct. Rejected because it
+invites exactly the direct operation this decision forbids. `BR-VEND-006`'s `${VAR:?...}` guard
+covers the case anyway — an unsupported attempt now fails loudly rather than silently starting
+another vendor's image.
+
+## Sub-questions, both answered 2026-08-18
+
+- **Does the hold survive a reboot?** Yes — `/etc/cairn/hold`. Consequence: `doctor` MUST
+  report it on every run, or a forgotten hold becomes an invisible deploy freeze.
+- **`up`/`down` or `start`/`stop`?** `start`/`stop`, matching `cairn-registry`.
+- ~~Does cairn writing `.env` collide with `BR-DEPLOY-011`?~~ Moot — candidate (a) rejected.
+
+**Superseded by the decision above; retained as written.** Lean (Claude's recommendation): take (b), and treat the hold state as the
 primary deliverable rather than the commands — a `stop` that loses a race with the timer is
 worse than no `stop` at all, because it appears to have worked. Add the `compose --`
 passthrough in the same pass if it stays cheap. **Revised 2026-08-18:** no longer defer (a)

@@ -9,6 +9,35 @@ code changes live in git history.
 
 ---
 
+## 2026-08-18 (`ADR-073` decided: cairn owns the stack's lifecycle verbs)
+
+Brian settled both halves. A human should **not** run `docker compose` directly against a
+cairn-managed stack — so `W-037` (an `.env` cairn maintains, or a `compose --` passthrough) is
+rejected outright, and `BR-VEND-006`'s `${VAR:?...}` guard stands as the entire answer for an
+unsupported attempt: it fails loudly instead of silently starting another vendor's image.
+Instead, cairn offers its own verbs so an operator can bring the stack up and down.
+
+That makes the hold state load-bearing rather than optional. `State.is_converged` requires
+`stack_up`, so without a hold the timer resurrects a deliberately-stopped stack — `bench
+migrate` included — within the poll interval, which would make a `down` verb actively
+misleading. Sketch recorded in `ADR-073`: `down` sets the hold and brings the stack down; `up`
+clears it and delegates to the existing reconcile path, which already does the right thing for
+a stack that is down, so no new convergence logic is needed; `reconcile` reports *held* and
+converges nothing while set; `doctor` surfaces it so a forgotten hold cannot hide.
+
+Both remaining details settled the same day. The hold is **durable**, at `/etc/cairn/hold`:
+a host rebooting mid-maintenance must stay down, so "down" honestly means down — which makes
+`doctor` reporting a live hold on *every* run a requirement of the decision rather than a
+nicety, since the cost of durability is that a forgotten hold freezes deploys indefinitely. The
+verbs are **`start`/`stop`**, matching `cairn-registry`. A concern raised while deciding — that
+compose-`stop` semantics would leave an edited `compose.yaml` ineffective — proved unfounded:
+`cairn-registry start` already runs `compose up -d` rather than `compose start`
+(`registry_provision.py:294`), and Compose recreates any container whose config hash changed.
+Also verified that `stack_is_up` requires `State == "running"` and a stopped container reports
+`exited`, so a released hold registers as not-converged with no change to that function.
+
+`ADR-073` is `approved` and fully specified; `W-035` is ready to implement.
+
 ## 2026-08-18 (`ADR-074`: cairn seeds the compose file, the operator owns it)
 
 Brian resolved the ownership question `ADR-073` surfaced, framing it across two horizons — this
