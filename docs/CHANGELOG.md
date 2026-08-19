@@ -9,6 +9,29 @@ code changes live in git history.
 
 ---
 
+## 2026-08-19 (`ai/CURRENT_CONTEXT.md` compacted: 1865 words to 494)
+
+The session router had accreted into a second changelog — its Current Phase section ran to
+roughly eight times the length the file's own header asks for, narrating every decision from
+`ADR-046` to `ADR-075` in prose. Every one of those already has an ADR or decision file and a
+dated entry here, so the section was duplication, and duplication in the one file every fresh
+session reads first is the most expensive kind: it is what a session trusts before it has read
+anything else, and it was already stale by a week when this session started.
+
+Replaced with standing state only — the three-binary split, four load-bearing invariants as a
+table (recipe ownership, compose-file ownership, how a target is operated, the data-plane
+boundary), the live reference target and what makes it interesting, and an explicit instruction
+*not* to infer status from this file but to read `docs/open/OPEN_WORK.md` and
+`docs/technical/05-implementation-index.md`. A blockquote states that the section records
+standing state only and that narrative belongs here, so the same accretion is at least
+discouraged next time.
+
+One thing was promoted rather than deleted: the 2026-08-19 field lesson — *removing a silent
+default surfaces everything that quietly depended on it, so search for other readers before
+shipping that kind of change* — is now a Standing Rule, since it governs how future changes
+should be made rather than recording something that happened. It cites `BR-VEND-006` as the
+case that earned it. Nothing else in the removed narrative was unique to that file.
+
 ## 2026-08-19 (release prep for `0.4.12`: user docs, router, CLI tests)
 
 Three gaps closed before cutting the release, none of them optional for a version going onto a

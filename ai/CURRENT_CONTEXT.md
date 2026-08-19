@@ -10,152 +10,32 @@ Use this file as the first context checkpoint. Keep it short — point to detail
 
 ## Current Phase
 
-Phase 4 (modular code) is under way, on the three-binary split (`cairn-build` / `cairn-adopt` /
-`cairn-registry`, `ADR-046`/`ADR-048`) that replaced the unified `cairn` command and the
-separate `cairn-provision` installer. Most recently landed: `ADR-052` (manifest:environment is
-1:1; promotion is proof, found in the registry, not an assertion). `cairn-registry setup` was
-verified live on the client's test VPS 2026-08-04; active work narrowed to `prune`/`gc`
-against a real registry (`W-015`) — see `docs/open/OPEN_WORK.md`. Newly decided:
-`ADR-059` retires `frappe_docker` vendoring in favor of cairn owning its Docker build recipe
-outright, superseding `ADR-001`/`ADR-007`; both the documentation cascade and the code
-migration (`src/cairn/vendored/` renamed to `src/cairn/recipe/`, the `ventwig`-backed `vendor`
-command surface retired, `W-023`..`W-031`) are done as of 2026-08-05. The docs tree itself
-finished its migration onto the canonical Scribe Coding scaffold (`brian-pond/scribe_coding`) —
-this file, `docs/open/`, `docs/scratch/`, `docs/technical/`, `docs/adr/`, `docs/decisions/`, and
-`docs/discussions/` are the result. Also 2026-08-05: `ADR-060` corrected the registry's default
-`data_dir` (`/opt/cairn-registry/data` → `/var/lib/cairn-registry`, `ADR-053`'s FHS citation was
-wrong); `ADR-061`/`BR-BUILD-018` added a `cairn-build-owned` marker tag, stripped on push, so
-`cairn-build prune` can safely reach a never-shared stale build (not just duplicate-hash
-rebuilds) on a host colocating build/registry/target roles — resolved `OQ-001` in the process.
-Same day, `ADR-062` fixed two bugs Brian found in `cairn-build setup-timer`, both corrected to
-key off the manifest's own `/srv/cairn/<client>/` home rather than `environment` alone or the
-invoking shell's `cwd`: the build timer's unit name is now
-`cairn-build-<client>-<image_name>-<environment>` (matching `ADR-052`'s own uniqueness key,
-which the old `cairn-build-<environment>` name never did — collision risk across clients
-sharing an environment or image name), and the generated script now writes to
-`/srv/cairn/<client>/` instead of `options.workdir` (previously the operator's cwd at
-invocation, often a personal home directory that could later disappear). `setup-timer` now
-hard-stops if `--manifest` isn't canonically homed. A companion review of `cairn-adopt`/
-`cairn-registry` found `cairn-adopt` clean but `cairn-registry` carrying the same cwd-dependent
-script bug (no naming counterpart needed — one registry per host); `ADR-063` moved
-`cairn-registry setup-timer`'s generated script to `PROJECT_DIR` (`/opt/cairn-registry`).
-Brian then caught that `ADR-062`'s fix was incomplete: the rendered `.service`'s
-`WorkingDirectory=` and the script's own `cd` line still read `options.workdir`. `ADR-064`
-corrected both to derive from the script's own (now durable) location, and dropped
-`--workdir` from `cairn-build setup-timer` entirely once nothing in the stage read it —
-`cairn-adopt setup-timer` confirmed unaffected (it never set `WorkingDirectory=` at all).
-Brian then raised, and resolved overnight, `OQ-002`: how an unattended build timer
-authenticates against a private `github.com` app, expanded once he realized a build host can
-serve more than one client and a single shared `CAIRN_GITHUB_TOKEN` can't be assumed to cover
-every client's private repos. `ADR-065`: `github_auth.py` stays unchanged — the generated
-`.service` now carries a per-client, optional `EnvironmentFile=-/etc/cairn/<client>/
-github-token.env`, never written by cairn, referenced only by that client's own unit.
-Also 2026-08-05: `ADR-066` resolves `W-021` — `cairn-build build --push` now assigns the
-manifest's declared environment by default (`--no-assign-tag` opts out; a manifest with none
-is silently skipped, not errored); the `:production` gate needed no new wiring since it was
-already keyed off the target environment rather than how assignment was requested.
-2026-08-06: nested `decisions/`/`open/`/`scratch/` under `docs/` and moved this file plus
-`tools/` into a new root-level `ai/` directory, closing the scaffold-vs-`docs/` anomaly the
-canonical Scribe Coding migration left in place. Same day, tightened the Scribe Coding rules
-(when a change earns a Decision/ADR file vs. a `docs/CHANGELOG.md` line only; plans archive the
-same session their phase completes) and pruned four process-only decision files that predated
-the new rule — see `docs/CHANGELOG.md`.
-Also 2026-08-06: `src/cairn/recipe/frappe_docker/` — still the untouched byte-for-byte copy
-`ADR-059` bootstrapped it as — trimmed to only what cairn's own code reads or now commits to
-owning: the existing build inputs plus `compose.yaml`/`overrides/*.yaml`/`example.env`/`LICENSE`.
-Everything upstream-only (docs site, test suite, CI workflows, contributor tooling, `pwd.yml`,
-`docker-bake.hcl`, three unused alternate Containerfiles) deleted. New
-`src/cairn/recipe/ATTRIBUTIONS_FRAPPE_DOCKER.md` (`BR-VEND-005`) credits `frappe/frappe_docker`.
-While scoping the trim, `cairn-adopt` turned out to never read cairn's own compose copy at all
-— it inspects whatever's already on the target host — which raised whether to drop that
-scaffolding too. Brian's answer, recorded as `ADR-068`: no — cairn replacing `frappe_docker`
-means cairn's scope now includes *provisioning* a new environment with its own owned Compose
-stack, not just reconciling an existing one, and `cairn-adopt` should eventually gain a
-take-ownership path for a pre-existing hand-built deployment. `BR-DEPLOY-007` amended to match;
-the `bench new-site`/database-creation clause and the `DATA` boundary (`ADR-022`) are explicitly
-unchanged. Neither capability is built — `W-032` (provisioning) and `W-033` (take-ownership)
-queued as design-first Open Work.
-Later the same day, Brian took the trim further: the nested `frappe_docker/` subdirectory is
-gone — every file moved up to sit directly under `src/cairn/recipe/` — and `images/custom/`,
-`resources/core/` collapsed to `images/`, `resources/` (no longer double-nested now that
-nothing else shares the parent). `frappe_docker/LICENSE` folded into
-`ATTRIBUTIONS_FRAPPE_DOCKER.md` verbatim rather than kept as a separate file. `vendor.py`'s
-`FRAPPE_DOCKER_DIR`/`FRAPPE_DOCKER_SOURCE` collapsed into a single `RECIPE_DIR`; the
-Containerfile's `COPY` lines, `pyproject.toml`'s ruff `extend-exclude`, and every doc citing the
-old paths (`01-vendoring.md`, `02-build.md`, `00-coding-standards.md`, lessons-learned 04b/04c,
-`userdocs/builder/index.md`, `userdocs/reference/index.md`) updated to match.
-Also 2026-08-06: Brian's first live `cairn-build setup-timer` run (Life Scientific test VPS,
-`W-013`) correctly refused on a private repo with no `github-token.env` populated yet, but
-flagged the output as noisy and self-contradicting. Fixed, no requirement redesign — bugs
-found and fixed, not a new Decision/ADR: `setup_runner.execute()`'s `Aborted`/
-`KeyboardInterrupt` handlers now skip the `--- summary ---` block when the run recorded
-nothing at all (new `Report.is_empty()`); `github_auth.missing_token_hint()` is now the single
-source of truth for `resolve.py`'s generic "set it and retry" sentence, which `provision.py`'s
-`setup-timer` wrapper strips before appending its own file-based remedy, so the operator sees
-one fix instead of two that disagreed about which environment (shell vs. token file) mattered.
-`BR-CLI-023` in `docs/requirements/06-cli.md` amended in place; `W-013` stays open (the happy
-path — a working token file — is still unexercised against a real host).
-Later still, Brian suggested `cairn-build doctor` should surface `setup-timer`'s systemd unit/
-timer status, currently only checkable by hand. Design settled through dialogue rather than
-mirroring `github reachability`'s single-manifest scope outright: Brian wanted every manifest
-under `/srv/cairn/` auditable in one call, not just the one named by `--manifest` — otherwise an
-operator serving several clients has to script their own enumeration to be sure every timer is
-actually running. `ADR-070`: `doctor` gains `--manifest`/`--all`, mutually exclusive; bare
-invocation is unchanged but now reports the check as skipped-with-a-fix rather than silently
-omitting it. Whether `--all` should later widen to a full per-manifest `config`/`github
-reachability` audit too was deliberately deferred, not folded in — tracked as `ADR-071`.
-`provision.build_unit_name`'s naming logic extracted into a pure `unit_name_for` so `doctor.py`
-reuses it without duplication risk. `BR-CLI-007` amended in place; new build-timer check is
-unverified against a real `setup-timer` install (`docs/technical/05-implementation-index.md`).
-Same day, Brian re-reviewed and suspected the *service* also needed to be active, not just the
-timer — checking the unit definitions showed both cairn-build's build service and cairn-adopt's
-reconcile service are `Type=oneshot`, inactive between runs by design, so his literal suggestion
-would have false-WARNed on every healthy install. The real gap underneath it was genuine though:
-neither check asked whether the last run had actually *succeeded*. Added `systemctl is-failed`
-on the service, ahead of each check's existing enabled/active read, to both the new build-timer
-check and (same blind spot, fixed alongside) `cairn-adopt doctor`'s pre-existing
-`check_reconcile_timer` — a failed last run now FAILs rather than reading as merely
-not-yet-started. `ADR-070` amended in place; no new ID.
-2026-08-08: Brian noticed `cairn-build images` still holding six images on a client VPS after
-most had been pushed; tracing the code confirmed no bug, but surfaced a real gap `ADR-061`
-had deliberately left conservative — prune protects every pushed image forever because it has
-no signal for "still in use by a colocated `cairn-adopt`." `ADR-072`: `cairn-adopt` gains a
-symmetric `cairn-adopt-owned` marker (`BR-DEPLOY-023`), applied to the currently-running image
-and refreshed on every `reconcile` pass (converged or not, closing the rollout gap for images
-pulled before this feature existed); `cairn-build prune` (`BR-CLI-018`) now protects the
-`cairn-build-owned` **or** `cairn-adopt-owned` marker specifically, not any tag at all — a
-pushed, nothing-local-is-running-it image becomes eligible; `cairn-build images` (`BR-CLI-005`)
-excludes `cairn-adopt-owned` images entirely. Same decision fully specifies the long-open
-`BR-DEPLOY-006`/`W-003` target-side GC as a new `BR-CLI-028`, `cairn-adopt prune`: keep the
-running image plus the newest `--keep <n>` `cairn-adopt-owned` images. Docs landed; code not
-yet written — see `docs/open/OPEN_WORK.md`'s `W-003`.
+**Phase 4 — modular code.** Three binaries (`ADR-046`, `ADR-048`), no unified `cairn` command:
+`cairn-build` (build/control), `cairn-adopt` (target), `cairn-registry` (registry host). The
+binary invoked *is* the role signal.
 
-**2026-08-18/19 — the operator surface.** Started from "how do I stop these containers after a
-compose change?" and found cairn had no answer: `start`/`stop` existed only for
-`cairn-registry`. `ADR-073` records the analysis and the decision — a human never runs
-`docker compose` directly; cairn provides the verbs. `ADR-074` settles ownership: cairn writes
-the *first* compose file on a fresh install and **never regenerates** it, keeps
-`${CUSTOM_IMAGE}` so it controls the image while the operator controls everything else, and
-seeds it to `/etc/cairn/`. Brian's framing: *"Help them. But don't take away their control."*
-`ADR-075` adds **named** inspection verbs (`console`/`mariadb`/`logs`/`shell`) rather than the
-general compose passthrough `W-037` rejected — and there is deliberately **no** verb printing
-`site_config.json`, since `BR-DATA-006` forbids cairn reading it and it holds `db_password`.
-Landed: `BR-VEND-006` (recipe no longer falls back to stock `frappe/erpnext`),
-`BR-DEPLOY-024` + `BR-CLI-029` (durable hold at `/etc/cairn/hold`, `stop`/`start`/`restart`),
-`BR-CLI-030`, and `userdocs/target/operating.md`.
+Standing shape a session should know before reading anything else:
 
-Two field lessons from the same days. `BR-VEND-006` was correct **and** broke a live client VPS:
-removing the `:-` default exposed three read-path probes that had been silently relying on it —
-`_capture` never passed the compose environment. Fixed, then hardened structurally
-(`compose_run`/`compose_capture`/`compose_try` pair construction with environment, so it cannot
-be forgotten). The general lesson: *removing a silent default surfaces everything that quietly
-depended on it* — search for other readers **before** shipping that kind of change. Second:
-`pyproject.toml` now pins `core-metadata-version = "2.4"`, because `python -m build` resolves
-hatchling in an isolated environment and a newer default broke `twine` uploads.
+| | |
+| --- | --- |
+| Build recipe | cairn **owns** `src/cairn/recipe/` outright — no vendoring, no pin, no drift check (`ADR-059`) |
+| Target compose file | cairn writes the **first** one and never regenerates it; the operator owns it thereafter (`ADR-074`) |
+| Operating a target | the operator never runs `docker compose` directly — cairn provides the verbs (`ADR-073`, `ADR-075`) |
+| Data plane | off-limits; the sole DB touch is `bench migrate` (`ADR-022`) |
 
-> **Housekeeping:** this Current Phase section is ~8x the length its own header asks for and has
-> become a second changelog. Compacting it — keeping the standing state, deferring the narrative
-> to `docs/CHANGELOG.md` — is overdue and needs Brian's call on what to keep.
+**Live reference target:** Life Scientific's test VPS, running `0.4.12`. Its compose file is a
+`pwd.yml` descendant the client built before cairn existed, now manually relocated to
+`/etc/cairn/` — the first host in `ADR-074`'s shape, and the working reference for what
+`W-033`'s automated take-ownership path should produce.
+
+**What is in flight:** read `docs/open/OPEN_WORK.md` (backlog) and
+`docs/technical/05-implementation-index.md` (what is built, and what is unverified against a
+real host). Do not infer status from this file.
+
+> **This section records standing state only.** Narrative history — what landed when, and why —
+> belongs in `docs/CHANGELOG.md`, and is not repeated here. Compacted 2026-08-19 after the
+> section had accreted into a second changelog roughly eight times the length this file's own
+> header asks for; keep it that way.
 
 ## Read First
 
@@ -176,6 +56,9 @@ hatchling in an isolated environment and a newer default broke `twine` uploads.
 - The data-plane boundary (`ADR-022`) is a hard invariant, not a preference — cairn cannot touch SQL.
 - `src/cairn/recipe/` is cairn's own Docker build recipe, freely edited by hand — no
   vendoring, no pin, no drift check (`ADR-059`).
+- Removing a silent default surfaces everything that quietly depended on it. Search for other
+  readers **before** shipping that kind of change — `BR-VEND-006` was correct and still broke a
+  live client VPS, because three read-path probes had been relying on the default it removed.
 
 ## Context Rule
 
