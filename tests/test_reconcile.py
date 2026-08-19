@@ -39,18 +39,23 @@ class Commands:
 
     def __init__(self, *, fail_on=None, captures=None):
         self.run: list[list[str]] = []
+        #: (command, env_overrides) for every call, so a test can assert on the environment a
+        #: command was given and not merely on the command itself (BR-DEPLOY-003b).
+        self.calls: list[tuple[list[str], dict | None]] = []
         self.fail_on = fail_on
         self.captures = captures or {}
 
     def try_(self, command, timeout, *, env_overrides=None):
         self.run.append(command)
+        self.calls.append((command, env_overrides))
         self.env = env_overrides
         if self.fail_on and self.fail_on in " ".join(command):
             return subprocess.CompletedProcess(command, 1)
         return subprocess.CompletedProcess(command, 0)
 
-    def capture(self, command):
+    def capture(self, command, *, env_overrides=None):
         self.run.append(command)
+        self.calls.append((command, env_overrides))
         for fragment, answer in self.captures.items():
             if fragment in " ".join(command):
                 return answer
@@ -82,7 +87,9 @@ def commands(monkeypatch):
     ids=["matching-digest-running", "matching-digest-stopped", "different-digest"],
 )
 def test_is_converged(running_digest, stack_up, expected_converged):
-    state = reconcile.State(desired_digest=DESIRED, running_digest=running_digest, stack_up=stack_up)
+    state = reconcile.State(
+        desired_digest=DESIRED, running_digest=running_digest, stack_up=stack_up
+    )
 
     assert state.is_converged is expected_converged
     assert state.is_first_deploy is False  # a running_digest is present in every case here
@@ -510,3 +517,39 @@ def _elapsing():
             return 9_000_000.0
 
     return _clock
+
+
+def test_every_compose_probe_carries_the_image_variables(commands):
+    """BR-DEPLOY-003b, BR-DEPLOY-017: a compose probe without the image variables reads blind.
+
+    The compose file interpolates `${CUSTOM_IMAGE}`/`${CUSTOM_TAG}`, and `BR-VEND-006` requires
+    it to *fail* rather than substitute a default when they are absent. So a read-only probe
+    that omits them exits non-zero, which is indistinguishable from a genuinely stopped stack:
+    `stack_is_up` reads false forever and health times out, while `running_digest` reads None
+    so the host never converges and re-runs `bench migrate` on every single pass.
+
+    Found live on a client VPS 2026-08-19, hours after `BR-VEND-006` removed the `:-` default
+    that had been silently absorbing the omission. Asserts over *every* compose invocation
+    rather than the three that were wrong, because the next probe added would repeat the
+    mistake — the defect is the class, not the instances.
+    """
+    target = _descriptor(health=descriptor.Health(url="https://erp.example.com"))
+    commands.captures = {
+        "ps -q": "abc123containerid\n",
+        "docker inspect": "sha256:" + "f" * 64 + "\n",
+        "ps": json.dumps({"Service": "backend", "State": "running"}),
+    }
+
+    reconcile.running_digest(target)
+    reconcile.stack_is_up(target)
+    reconcile._site_answers(target)
+
+    blind = [
+        " ".join(command)
+        for command, env in commands.calls
+        if command[:2] == ["docker", "compose"] and not (env or {}).get("CUSTOM_IMAGE")
+    ]
+    assert blind == [], (
+        "these `docker compose` calls were given no CUSTOM_IMAGE, so the compose file cannot "
+        f"resolve its image reference and the probe fails rather than reports: {blind}"
+    )

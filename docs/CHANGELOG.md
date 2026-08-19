@@ -9,6 +9,38 @@ code changes live in git history.
 
 ---
 
+## 2026-08-19 (bug: cairn's read-path compose probes ran without the image variables)
+
+Found live on Life Scientific's test VPS hours after `BR-VEND-006` reached it. Reconcile
+converged — pulled, recreated, and migrated correctly — then failed health with "the stack did
+not report itself healthy" after the full 600s, while ERPNext itself was demonstrably online and
+writing to MariaDB.
+
+`_capture()` hardcoded `env=os.environ.copy()` and had no parameter for the compose variables,
+unlike `_run`/`_try`. Three compose invocations therefore ran without `CUSTOM_IMAGE`/
+`CUSTOM_TAG`: `running_digest`'s `ps -q`, `stack_is_up`'s `ps --format json`, and
+`_site_answers`' `exec`. That was **latent and harmless** for as long as
+`${CUSTOM_IMAGE:-frappe/erpnext}` absorbed the omission — the probes resolved the default and
+succeeded. `BR-VEND-006` replaced it with `${CUSTOM_IMAGE:?...}`, at which point those three
+exited non-zero, `_capture` returned `None`, and cairn could no longer see a stack that was
+running fine.
+
+The consequence was worse than the visible error. `stack_is_up` reading false made health time
+out; `running_digest` reading `None` made `is_first_deploy` true, so `is_converged` could never
+be true and **every pass re-converged** — pull, `up -d`, and `bench migrate` — roughly
+back-to-back at ~10.5 minutes per cycle against a live site.
+
+Fixed: `_capture` takes `env_overrides`, and all three call sites pass
+`_compose_environment(descriptor)`. Guarded by a test asserting that *every* `docker compose`
+invocation carries `CUSTOM_IMAGE` — over the class, not the three known instances, since the
+next probe added would repeat the mistake. Mutation-checked by reverting one site.
+
+The durable lesson, which is not about this bug: **removing a silent default surfaces every
+latent place that depended on it.** `BR-VEND-006` was correct and stays; what it did was
+convert a hidden assumption into a loud failure, which is the point of it. The exposure was
+the fix working, not the fix misfiring — but it landed on a live client host, and a search for
+other readers of those variables should precede that kind of change, not follow it.
+
 ## 2026-08-18 (`06-cli.md` split into three)
 
 Brian asked whether the requirements docs could be split. Measurement said yes, and said which:

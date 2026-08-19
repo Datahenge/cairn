@@ -250,7 +250,12 @@ def running_image_id(descriptor: Descriptor) -> str | None:
     pulled — shared by :func:`running_digest` (`BR-DEPLOY-003b`) and :func:`mark_owned`
     (`BR-DEPLOY-023`), so both ask the engine the same question the same way.
     """
-    container_id = _first_line(_capture(_compose_command(descriptor, ["ps", "-q", BENCH_SERVICE])))
+    container_id = _first_line(
+        _capture(
+            _compose_command(descriptor, ["ps", "-q", BENCH_SERVICE]),
+            env_overrides=_compose_environment(descriptor),
+        )
+    )
     if container_id is None:
         return None
 
@@ -331,7 +336,10 @@ def stack_is_up(descriptor: Descriptor) -> bool:
     Asked of the service that serves the site rather than of the project as a whole: a
     project with only its database up is not a running deployment.
     """
-    output = _capture(_compose_command(descriptor, ["ps", "--format", "json"]))
+    output = _capture(
+        _compose_command(descriptor, ["ps", "--format", "json"]),
+        env_overrides=_compose_environment(descriptor),
+    )
     if not output:
         return False
 
@@ -363,6 +371,7 @@ def _site_answers(descriptor: Descriptor) -> tuple[bool, str]:
     result = _try(
         _compose_command(descriptor, ["exec", "-T", BENCH_SERVICE, *probe]),
         PROBE_TIMEOUT_SECONDS,
+        env_overrides=_compose_environment(descriptor),
     )
     if result is None:
         return False, f"{url} could not be reached from inside the stack"
@@ -500,8 +509,17 @@ def _try(
         return None
 
 
-def _capture(command: list[str]) -> str | None:
-    """Run a short informational command, returning its stdout or None if it failed."""
+def _capture(command: list[str], *, env_overrides: dict[str, str] | None = None) -> str | None:
+    """Run a short informational command, returning its stdout or None if it failed.
+
+    ``env_overrides`` is not optional in practice for any ``docker compose`` invocation
+    (`BR-DEPLOY-003b`, `BR-DEPLOY-017`): the compose file interpolates `CUSTOM_IMAGE`/
+    `CUSTOM_TAG`, and `BR-VEND-006` requires it to *fail* rather than substitute a default
+    when they are absent. A read-only probe that omits them therefore exits non-zero and is
+    indistinguishable here from a genuinely stopped stack — which is exactly the failure this
+    parameter exists to prevent. Only a plain `docker` call (no compose file, no
+    interpolation) may safely omit it.
+    """
     try:
         result = subprocess.run(
             command,
@@ -509,7 +527,7 @@ def _capture(command: list[str]) -> str | None:
             check=False,
             capture_output=True,
             text=True,
-            env=os.environ.copy(),
+            env={**os.environ, **(env_overrides or {})},
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
