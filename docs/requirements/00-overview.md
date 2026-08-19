@@ -72,7 +72,9 @@ added below as they are drafted.
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | **approved** |
 | 04 | `DATA` | `04-data.md` | Data-plane **boundary** (off-limits; `migrate` auto, `install-app` opt-in) | **approved** |
 | 05 | `CFG` | `05-config.md` | Configuration: target (on the sites volume) + build (local: registry, engine) | **approved** |
-| 06 | `CLI` | `06-cli.md` | Command surface and UX | **approved** |
+| 06 | `CLI` | `06-cli.md` | Command surface and UX — substrate, `cairn-registry` verbs, all-three commands, shared conventions | **approved** |
+| 06a | `CLI` | `06a-cli-build.md` | `cairn-build` command surface | **approved** |
+| 06b | `CLI` | `06b-cli-adopt.md` | `cairn-adopt` command surface | **approved** |
 | 07 | `DOCS` | `07-docs.md` | Published documentation (GitHub Pages site) | **approved** |
 | 08 | `REG` | `08-registry.md` | Registry lifecycle: provisioning, retention, garbage collection | **approved** |
 

@@ -38,19 +38,13 @@ docs/requirements/03-deploy.md = 2900
 # Bumped 2026-08-08 (2600 -> 2700) for BR-DEPLOY-023 (the cairn-adopt-owned marker) and
 # BR-DEPLOY-006's rewrite to a concrete selection rule (ADR-072); real requirement growth,
 # already trimmed once for size before this bump.
-docs/requirements/06-cli.md = 4600
-# ^ bumped 2026-08-18 to admit BR-CLI-029 (target lifecycle verbs, ADR-073); the file had
-# ten words of headroom. Same caveat as 03-deploy.md above — new content, not legacy size.
-# ^ recalibrated 2026-08-04: default ceiling rose to 2200 and this entry set to
-# real headroom (current ~3130 words) instead of the last-few-dozen-words margin it had
-# drifted to from repeated same-day bumps (ADR-048, ADR-050, ADR-052). ~4500 words is where
-# the doc's own A-E sectioning judged to stop being sufficient and an actual split (most
-# likely: section E, shared conventions, into its own file) becomes the right call — this
-# ceiling is set to trip a fresh review before that point, not at it.
-# Bumped 2026-08-06 (4000 -> 4200) for BR-CLI-007's build-timer check + --all flag (ADR-070);
-# bumped 2026-08-08 (4200 -> 4250) for BR-CLI-028 (cairn-adopt prune) plus BR-CLI-005/018
-# amendments (ADR-072) — still short of the ~4500 split threshold above.
-# still comfortably under the ~4500 split trigger noted above, so no section split yet.
+# docs/requirements/06-cli.md — override RETIRED 2026-08-18. The file was split: sections A
+# and B moved to 06a-cli-build.md and 06b-cli-adopt.md, leaving the spine at ~2198 words,
+# under the 2200 default. This is the review the retired ceiling was designed to trigger —
+# it was set to trip before ~4500 rather than at it, and it worked. It guessed section E
+# (shared conventions) would be the one to move; measurement pointed at A and B instead,
+# role-specific content having grown to 57% of the file. Neither new file needs an entry.
+
 docs/technical/05-implementation-index.md = 2300
 # ^ bumped 2026-08-06 for the "Owned Docker recipe" row's recipe-trim + ADR-068 note — an
 # inventory of the whole project's implementation state grows with the project, not sprawl.

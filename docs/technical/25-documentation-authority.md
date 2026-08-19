@@ -39,6 +39,9 @@ thin audience-specific summary.
 | Project purpose, pillars, what it is/isn't | [../00-project-scope.md](../00-project-scope.md) |
 | Requirements index, identifiers, table of contents | [../requirements/00-overview.md](../requirements/00-overview.md) |
 | Per-area requirements | [../requirements/](../requirements/) (`01-vendoring.md` … `08-registry.md`) |
+| Command surface: substrate, `cairn-registry` verbs, all-three commands, shared UX conventions | [../requirements/06-cli.md](../requirements/06-cli.md) — the `CLI` area's entry point |
+| Command surface: `cairn-build` | [../requirements/06a-cli-build.md](../requirements/06a-cli-build.md) |
+| Command surface: `cairn-adopt` | [../requirements/06b-cli-adopt.md](../requirements/06b-cli-adopt.md) |
 | Documentation revision history (requirements + decisions + discussion) | [../CHANGELOG.md](../CHANGELOG.md) |
 | Software release history | [../../CHANGELOG.md](../../CHANGELOG.md) |
 | Open discovery/validation questions | [../open/OPEN_QUESTIONS.md](../open/OPEN_QUESTIONS.md) |

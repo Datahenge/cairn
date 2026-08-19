@@ -9,6 +9,35 @@ code changes live in git history.
 
 ---
 
+## 2026-08-18 (`06-cli.md` split into three)
+
+Brian asked whether the requirements docs could be split. Measurement said yes, and said which:
+`06-cli.md` had reached 4585 words against a ceiling raised twice in one session, and its
+role-specific sections (A `cairn-build`, B `cairn-adopt`, C `cairn-registry`) were **57%** of
+the file against 42% shared convention.
+
+That mattered because the file's own header justified keeping it whole — "most of what governs
+the CLI is shared UX convention applying identically across binaries." True when written,
+false by now. Rather than split around a stale justification, the header was rewritten to say
+what the structure is and why it changed.
+
+Sections **A** and **B** moved to new `06a-cli-build.md` (1738 words) and `06b-cli-adopt.md`
+(831), leaving `06-cli.md` as the area's entry point — substrate, the `cairn-registry` verbs,
+the all-three commands, and shared conventions — at 2198 words, **under the 2200 default**, so
+its allowlist override was retired outright rather than bumped a third time. Section C stayed
+put: at 91 words it would have been a stub.
+
+Worth recording because it validates the mechanism: the retired override carried a note saying
+~4500 words was where "an actual split becomes the right call — this ceiling is set to trip a
+fresh review before that point, not at it." It did exactly that. It guessed section E (shared
+conventions) would be the one to move; measurement pointed at A and B instead.
+
+All 30 `BR-CLI` identifiers verified preserved across the three files, none lost and none
+defined twice — the IDs are cited in docstrings and test names, so only their file moved.
+`00-overview.md`'s index gained `06a`/`06b` rows and
+`docs/technical/25-documentation-authority.md` gained explicit per-file rows, so the routing
+rule in `AGENTS.md` still resolves. Documentation process, so no new identifier.
+
 ## 2026-08-18 (`BR-DEPLOY-024` + `BR-CLI-029`: the hold and the lifecycle verbs)
 
 `ADR-073`'s decision written into requirements. **`BR-DEPLOY-024`** defines the maintenance
