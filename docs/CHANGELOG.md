@@ -9,6 +9,27 @@ code changes live in git history.
 
 ---
 
+## 2026-08-19 (field verification: inspection verbs done, the held state still open)
+
+Brian verified `doctor`, `console`, `mariadb`, `shell`, `logs` and `restart` on the client VPS.
+
+`BR-CLI-030`'s inspection verbs are now fully confirmed. That matters more than a checkmark:
+the TTY handling (`execvp`, never `-T`) was the one thing unit tests could only approximate,
+since the failure it prevents is the real MariaDB client silently entering batch mode. It
+behaves as designed against the actual client.
+
+`restart` proves more than itself. It exercises the deploy lock taken **once** across several
+steps, `run_locked`, `compose stop`, and the reconcile pass that follows — so the self-deadlock
+`ADR-073` predicted, and which the split into `run`/`run_locked` was written to prevent, is now
+confirmed absent on real infrastructure rather than only under a test double.
+
+What remains unverified is deliberately noted rather than rounded up: **the held state itself.**
+`restart` cleared no hold because none existed, and `doctor` exercised only its OK path. Still
+untested live are `stop` placing a hold, `reconcile` reporting *held* and converging nothing,
+`doctor`'s WARN path, `restart` clearing a hold that genuinely exists, and a hold surviving a
+reboot. That is precisely the half that can silently suspend deployments on a client host, so
+it is the half worth exercising on purpose rather than encountering by accident.
+
 ## 2026-08-19 (`ai/CURRENT_CONTEXT.md` compacted: 1865 words to 494)
 
 The session router had accreted into a second changelog — its Current Phase section ran to
