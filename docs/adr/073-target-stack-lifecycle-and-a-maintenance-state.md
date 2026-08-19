@@ -190,7 +190,26 @@ Sketch to be refined during design (`W-035`):
   that function.
 * `reconcile` — while the hold is set, report *held* and converge nothing. Distinct from both
   converged and failed, which is the state cairn previously could not express.
+* `restart` — clear the hold if present (and say so), and deliberately set none of its own for
+  the interval between down and up. Brian's rules, 2026-08-18. Safe because all three verbs run
+  under the single-flight lock (`BR-DEPLOY-016`): a timer firing mid-command exits on the lock.
+  A hold would be worse than redundant here — it would outlive a crashed `restart` and leave the
+  host frozen, the opposite of the command's meaning.
 * `doctor` — surface the hold, so a forgotten one cannot hide.
+
+**`restart` is `stop` then `start`, not `docker compose restart`.** Accepted by Brian
+2026-08-18 with the instruction to document it clearly, since it diverges from
+`cairn-registry restart` (`BR-REG-004`), a thin `compose restart` wrapper. The reason is
+asymmetric ownership, not inconsistency for its own sake: `compose restart` does not recreate
+containers and so cannot pick up an edited compose file. The target's compose file is
+operator-editable by design (`ADR-074`) and picking up such an edit is the motivating case for
+these verbs; the registry's is cairn-written and not operator-editable, so the thin wrapper
+stays correct there. Recorded on both sides — `BR-CLI-029` and `BR-REG-004` each carry the
+divergence and its reason, so neither can be read in isolation and mistaken for an oversight.
+
+An implementation hazard noted during drafting: `reconcile.run()` already acquires the
+single-flight lock, so a verb that takes the lock and then delegates to `run()` would block
+against its own lock. The lock must be acquired exactly once per command.
 
 Rejected alternative retained for the record: an `.env` cairn maintains beside the compose file
 (`W-037`), which would have made plain `docker compose up -d` correct. Rejected because it

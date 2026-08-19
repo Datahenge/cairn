@@ -88,6 +88,11 @@ preflight`/`--only admin-group` (the registry container was never touched by eit
 wrappers over the compose project `setup` wrote (`ADR-024`'s "thin orchestration" precedent) —
 cairn does not reimplement container lifecycle management.
 
+`restart` here is a thin `compose restart` and deliberately differs from
+`cairn-adopt restart` (`BR-CLI-029`), which is `stop` then `start`. The registry's compose
+file is cairn-written and not operator-editable, so there is no edited file for a restart to
+pick up; the target's is editable by design (`ADR-074`), so its restart must recreate.
+
 ## Introspection
 
 **`BR-REG-005`** *(images)* — `cairn-registry images [--host HOST] [--namespace NAME] [--image

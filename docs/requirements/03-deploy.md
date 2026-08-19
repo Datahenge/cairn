@@ -96,6 +96,16 @@ rollout gap for a pre-feature image already running: the next reconcile tags it 
 Mirrors `cairn-build-owned` (`BR-BUILD-018`), so `cairn-build prune` (`BR-CLI-018`) can tell
 "in use here" from a pushed image nothing local needs. *(ADR-061, ADR-072)*
 
+**`BR-DEPLOY-024`** *(the maintenance hold)* — A target MAY be placed in a **hold** —
+"deliberately not running" — which `reconcile` MUST honour. The hold is the file
+**`/etc/cairn/hold`**; its presence is the whole signal. While it exists, `reconcile` MUST
+report *held* and MUST NOT pull, start, migrate, or converge. *Held* is a third outcome,
+distinct from converged and failed, and MUST NOT be reported as either. The hold is durable,
+not in `/run`: a host rebooting mid-maintenance must stay down. Because a forgotten hold
+freezes deploys, `cairn-adopt doctor` MUST report a live one on every run (`BR-CLI-020`). It
+governs convergence only, never containers, volumes, or the data plane (`BR-DATA-005`).
+*(ADR-073)*
+
 ## Garbage collection (disk safety)
 
 **`BR-DEPLOY-006`** — `cairn-adopt prune` (`BR-CLI-028`) reclaims disk on the target, keeping

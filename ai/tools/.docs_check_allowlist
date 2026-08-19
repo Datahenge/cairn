@@ -27,14 +27,20 @@ docs/archive/CHANGELOG-2026-08-04-early.md = 1200
 # invitation to keep adding to it.
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
-docs/requirements/03-deploy.md = 2700
+docs/requirements/03-deploy.md = 2900
+# ^ bumped 2026-08-06 -> 2900 on 2026-08-18 to admit BR-DEPLOY-024 (the maintenance hold,
+# ADR-073). Unlike the grandfathered entries above, this is growth from NEW content, not
+# pre-migration size. Flagged for Brian: this doc and 06-cli.md both hit their ceilings in
+# the same change, which is the signal a split is due rather than another bump.
 # ^ bumped 2026-08-04 for BR-DEPLOY-004/009/009a's promotion-is-proof-not-assertion rewrite
 # (ADR-052); bumped again 2026-08-05 for BR-DEPLOY-003b (convergence verified against the
 # running container, not the local image store — W-022).
 # Bumped 2026-08-08 (2600 -> 2700) for BR-DEPLOY-023 (the cairn-adopt-owned marker) and
 # BR-DEPLOY-006's rewrite to a concrete selection rule (ADR-072); real requirement growth,
 # already trimmed once for size before this bump.
-docs/requirements/06-cli.md = 4250
+docs/requirements/06-cli.md = 4600
+# ^ bumped 2026-08-18 to admit BR-CLI-029 (target lifecycle verbs, ADR-073); the file had
+# ten words of headroom. Same caveat as 03-deploy.md above — new content, not legacy size.
 # ^ recalibrated 2026-08-04: default ceiling rose to 2200 and this entry set to
 # real headroom (current ~3130 words) instead of the last-few-dozen-words margin it had
 # drifted to from repeated same-day bumps (ADR-048, ADR-050, ADR-052). ~4500 words is where
@@ -54,5 +60,16 @@ docs/archive/CHANGELOG-2026-08-04.md = 3500
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
 docs/archive/CHANGELOG-2026-08-04-to-2026-08-05.md = 3600
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.
+
+docs/adr/073-target-stack-lifecycle-and-a-maintenance-state.md = 2600
+# ^ 2026-08-18. Unusually long for an ADR because it carries a live investigation and two
+# withdrawn claims kept visible on purpose (the rendered-gitops guess, and the AI inference
+# that ADR-074 made an on-disk .env permanent). Splitting is the wrong tool for a decision
+# record — one decision, one file — so the ceiling moves instead. Trim the superseded
+# exploratory sections once the decision has been implemented and the history stops earning
+# its space.
+docs/archive/CHANGELOG-2026-08-05-to-2026-08-06.md = 3000
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.

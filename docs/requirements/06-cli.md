@@ -337,6 +337,37 @@ manifest warns rather than fails, since doctor legitimately runs before one exis
 *(BR-VEND-003, BR-BUILD-005, BR-BUILD-016, BR-CFG-015, BR-CLI-014, BR-CLI-022, BR-CLI-023,
 BR-REG-011, ADR-027, ADR-043, ADR-046, ADR-048, ADR-067, ADR-070)*
 
+**`BR-CLI-029`** *(target lifecycle — `stop`, `start`, `restart`)* — `cairn-adopt` MUST provide
+these three verbs, so an operator never invokes `docker compose` directly against a
+cairn-managed deployment (`ADR-073`; a direct invocation is not merely unsupported but unsafe,
+which `BR-VEND-006` makes fail loudly rather than silently).
+
+All three MUST run under the single-flight lock (`BR-DEPLOY-016`), held once for the whole
+command, so a timer firing mid-command exits on the lock rather than interleaving. Because
+`reconcile` already takes that lock, a verb delegating to it MUST NOT acquire it a second time.
+
+- **`stop`** — set the hold (`BR-DEPLOY-024`), then `docker compose stop`. Containers are kept;
+  volumes are never touched (`BR-DATA-005`).
+- **`start`** — clear the hold, then perform an ordinary reconcile pass (`BR-DEPLOY-003`). It
+  MUST NOT carry its own convergence logic: a stopped stack is already not converged, so the
+  existing path pulls, recreates, migrates, and health-checks correctly.
+- **`restart`** — clear the hold if one is present, and **MUST NOT** set a hold of its own for
+  the interval between down and up; the single-flight lock is what protects that interval, and
+  a hold would outlive a crashed `restart`, leaving the host frozen — the opposite of what the
+  command means. It MUST report having cleared a hold, since silently resuming a host somebody
+  deliberately took down is a surprise worth one line of output.
+
+**`restart` is `stop` then `start`, NOT `docker compose restart`** — a deliberate divergence
+from `cairn-registry restart` (`BR-REG-004`), which is a thin `compose restart` wrapper.
+`compose restart` does not recreate containers, so it cannot pick up an edited compose file;
+the target's compose file is operator-editable by design (`ADR-074`), and picking up such an
+edit is the motivating case for these verbs existing. The registry's is not operator-editable,
+so the thin wrapper remains correct there. Same verb, different mechanics, for a stated reason.
+
+All three MUST be idempotent — `stop` on a stopped stack, `start` on a running one — succeeding
+and reporting the existing state rather than erroring, and MUST refuse to run without a
+descriptor (`BR-DEPLOY-010a`). *(BR-DEPLOY-016, BR-DEPLOY-024, ADR-073, ADR-074)*
+
 **`BR-CLI-021`** *(setup — the privileged installer, nested per role)* — Each CLI carries its own
 `setup` (`cairn-build setup`, `cairn-adopt setup`, `cairn-registry setup`), replacing the
 retired `cairn-provision` (`ADR-046`) — `cairn-registry setup` is `BR-REG-003`, migrated from

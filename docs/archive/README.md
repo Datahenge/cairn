@@ -39,6 +39,7 @@ needed.
 | [CHANGELOG-2026-08-04-early.md](CHANGELOG-2026-08-04-early.md) | `docs/CHANGELOG.md` | Earlier 2026-08-04 entries (`setup` engine-detection fix through `CONFIGURATION.md` retirement) |
 | [CHANGELOG-2026-08-04.md](CHANGELOG-2026-08-04.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-04 |
 | [CHANGELOG-2026-08-04-to-2026-08-05.md](CHANGELOG-2026-08-04-to-2026-08-05.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-04 through 2026-08-05 |
+| [CHANGELOG-2026-08-05-to-2026-08-06.md](CHANGELOG-2026-08-05-to-2026-08-06.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-05 through 2026-08-06 |
 
 ## Index — archived open-work
 
