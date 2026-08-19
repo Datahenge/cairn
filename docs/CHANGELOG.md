@@ -53,6 +53,8 @@ out; `running_digest` reading `None` made `is_first_deploy` true, so `is_converg
 be true and **every pass re-converged** — pull, `up -d`, and `bench migrate` — roughly
 back-to-back at ~10.5 minutes per cycle against a live site.
 
+**Verified live 2026-08-19**: `0.4.11` installed on the client VPS, `cairn-adopt reconcile` completed with no errors. The same run is the first end-to-end proof of `ADR-074`'s layout — a compose file at `/etc/cairn/`, seeded from the client's own rather than cairn's recipe, carrying `BR-VEND-006`'s `${VAR:?...}` guard, reconciled cleanly by a cairn that supplies the variables itself and no `.env` anywhere on the host.
+
 Fixed: `_capture` takes `env_overrides`, and all three call sites pass
 `_compose_environment(descriptor)`. Guarded by a test asserting that *every* `docker compose`
 invocation carries `CUSTOM_IMAGE` — over the class, not the three known instances, since the
