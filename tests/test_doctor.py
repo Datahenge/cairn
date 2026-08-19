@@ -1014,6 +1014,7 @@ def test_run_target_checks_skips_the_registry_when_the_descriptor_fails(
         "descriptor",
         "docker",
         "docker compose",
+        "maintenance hold",
         "reconcile timer",
         "shared config",
     ]
@@ -1040,6 +1041,7 @@ def test_run_target_checks_includes_the_registry_when_the_descriptor_loads(
         "descriptor",
         "docker",
         "docker compose",
+        "maintenance hold",
         "reconcile timer",
         "registry",
         "shared config",

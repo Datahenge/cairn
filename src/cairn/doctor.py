@@ -52,7 +52,7 @@ from pathlib import Path
 
 import typer
 
-from . import config, descriptor, engine, registry, resolve, systemd, vendor
+from . import config, descriptor, engine, hold, registry, resolve, systemd, vendor
 from .descriptor import Descriptor
 from .errors import (
     BuildEngineError,
@@ -170,7 +170,13 @@ def run_target_checks() -> list[CheckResult]:
     names; if it fails to load there is nothing to check the registry against.
     """
     descriptor_result, loaded = check_descriptor()
-    results = [descriptor_result, check_docker(), check_compose(), check_reconcile_timer()]
+    results = [
+        descriptor_result,
+        check_docker(),
+        check_compose(),
+        check_hold(),
+        check_reconcile_timer(),
+    ]
     if loaded is not None:
         results.append(check_registry_reachable(loaded))
     results.append(check_shared_config_dir())
@@ -488,6 +494,28 @@ def check_compose() -> CheckResult:
             label, False, detail or "`docker compose version` failed; is the plugin installed?"
         )
     return CheckResult.of(label, True, _first_line(result.stdout) or "present")
+
+
+def check_hold() -> CheckResult:
+    """Report a live maintenance hold, on every run (`BR-DEPLOY-024`, `BR-CLI-020`).
+
+    Not a convenience. The hold was made durable on purpose — a host rebooting mid-maintenance
+    must stay down — and the price of durability is that a forgotten hold freezes deploys
+    indefinitely, with no expiry to rescue it. This check is what `ADR-073` traded for that,
+    so it reports whenever a hold exists and never stays silent about one.
+
+    A WARN rather than a FAIL: being held is a legitimate state an operator chose, not a
+    broken machine. Silence would be the actual defect.
+    """
+    label = "maintenance hold"
+    note = hold.describe()
+    if note is None:
+        return CheckResult(label, Status.OK, "none — this host converges normally")
+    return CheckResult(
+        label,
+        Status.WARN,
+        f"{note}. This host will not converge until `cairn-adopt start`.",
+    )
 
 
 def check_reconcile_timer() -> CheckResult:

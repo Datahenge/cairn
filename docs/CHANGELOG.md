@@ -9,6 +9,37 @@ code changes live in git history.
 
 ---
 
+## 2026-08-19 (`W-035` landed: the maintenance hold and the lifecycle verbs)
+
+`ADR-073`'s decision implemented. `BR-DEPLOY-024`'s hold is a file at `/etc/cairn/hold` whose
+*presence* is the whole signal — contents are advisory, and an unreadable hold is still a hold,
+because failing open would resume deploys on a host somebody deliberately stopped. *Held* is now
+a third `reconcile` outcome alongside converged and failed, which is the state cairn could not
+previously express: `State.is_converged` requires `stack_up`, so a deliberately-stopped stack
+read identically to a dead one.
+
+`reconcile.run` checks the hold **before** acquiring the deploy lock, so a held host answers
+immediately rather than queueing behind a deploy already in flight — its answer does not depend
+on that deploy's outcome.
+
+The self-deadlock `ADR-073` predicted is resolved structurally rather than by care: `run` is
+split into `run` (acquires the lock) and `run_locked` (assumes it), with a public
+`single_flight` for verbs that must hold it across several steps. `stop`/`start`/`restart` take
+the lock once and call `run_locked`; calling `run` would block a second `flock` against the
+process's own lock and hang with no output. A parametrized test makes a second acquisition
+fatal for all three verbs, mutation-checked by pointing them back at `run` — both `start` and
+`restart` fail as they should.
+
+`stop` places the hold *before* stopping, so a command that dies between the two steps dies
+having recorded intent. `restart` follows Brian's two rules: clear any hold found, set none of
+its own — one that outlived a crashed `restart` would freeze the host, inverting the command's
+meaning — and it reports having cleared someone else's rather than resuming silently.
+`doctor` gains a `maintenance hold` check that reports on every run, WARN not FAIL: being held
+is a state an operator chose; silence about it would be the actual defect. That check is the
+price `ADR-073` accepted for making the hold durable.
+
+963 tests pass. Not yet exercised on a real host.
+
 ## 2026-08-19 (`ADR-075`/`BR-CLI-030`: named inspection verbs)
 
 `ADR-073` forbade running `docker compose` by hand and gave the operator `stop`/`start`/

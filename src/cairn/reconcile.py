@@ -43,7 +43,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import registry
+from . import hold, registry
 from .descriptor import Descriptor
 from .errors import ReconcileError, RegistryError
 from .tagging import ADOPT_OWNED_TAG
@@ -96,8 +96,25 @@ class Outcome:
 
     converged: bool
     changed: bool
-    state: State
+    state: State | None
     detail: str
+    #: True when a hold stopped the pass before it began (`BR-DEPLOY-024`). Distinct from both
+    #: converged and failed — that third state is the whole reason the hold exists.
+    held: bool = False
+
+
+@contextmanager
+def single_flight(*, dry_run: bool = False) -> Iterator[None]:
+    """The deploy lock, for callers that must hold it across more than one step.
+
+    `BR-CLI-029`'s lifecycle verbs clear a hold, stop the stack and reconcile as one
+    indivisible command, so they take the lock themselves and then call :func:`run_locked`.
+    They MUST NOT call :func:`run`, which acquires the lock again — a second ``flock`` on a
+    fresh descriptor blocks against the process's own lock, and the command hangs forever
+    against itself.
+    """
+    with _single_flight(dry_run=dry_run):
+        yield
 
 
 def run(
@@ -111,35 +128,63 @@ def run(
     Held under the single-flight lock for the whole pass, including the registry read: two
     passes reading the same tag and then racing to `compose up` is the failure the lock
     exists to prevent, not merely two overlapping pulls.
+
+    A held host (`BR-DEPLOY-024`) is reported and converges nothing. Checked *before* the
+    lock: a held host should answer immediately rather than queue behind a deploy that is
+    already running, since its answer does not depend on that deploy's outcome.
     """
+    note = hold.describe()
+    if note is not None:
+        return Outcome(
+            converged=False,
+            changed=False,
+            held=True,
+            state=None,
+            detail=f"Held — converging nothing. {note}",
+        )
+
     with _single_flight(dry_run=dry_run):
-        state = inspect(descriptor, report=report)
+        return run_locked(descriptor, dry_run=dry_run, report=report)
 
-        if state.is_converged:
-            mark_owned(descriptor)
-            return Outcome(
-                converged=True,
-                changed=False,
-                state=state,
-                detail=f"Already running {state.desired_digest}.",
-            )
 
-        if dry_run:
-            return Outcome(
-                converged=False,
-                changed=False,
-                state=state,
-                detail=_would_do(state),
-            )
+def run_locked(
+    descriptor: Descriptor,
+    *,
+    dry_run: bool = False,
+    report: Callable[[str], None] = lambda message: None,
+) -> Outcome:
+    """A reconcile pass, assuming the caller already holds the lock (`BR-CLI-029`).
 
-        converge(descriptor, state, report=report)
+    Split out of :func:`run` so a lifecycle verb can take the lock once and perform several
+    steps under it. Never acquires the lock itself; calling it unlocked is a caller error.
+    """
+    state = inspect(descriptor, report=report)
+
+    if state.is_converged:
         mark_owned(descriptor)
         return Outcome(
             converged=True,
-            changed=True,
+            changed=False,
             state=state,
-            detail=f"Converged to {state.desired_digest}.",
+            detail=f"Already running {state.desired_digest}.",
         )
+
+    if dry_run:
+        return Outcome(
+            converged=False,
+            changed=False,
+            state=state,
+            detail=_would_do(state),
+        )
+
+    converge(descriptor, state, report=report)
+    mark_owned(descriptor)
+    return Outcome(
+        converged=True,
+        changed=True,
+        state=state,
+        detail=f"Converged to {state.desired_digest}.",
+    )
 
 
 def inspect(
@@ -186,14 +231,14 @@ def converge(
     _run(["docker", "pull", reference], PULL_TIMEOUT_SECONDS, "pulling the image")
 
     report("Starting the stack")
-    _compose_run(
+    compose_run(
         descriptor, ["up", "-d", "--remove-orphans"], COMPOSE_TIMEOUT_SECONDS, "starting the stack"
     )
 
     # After every image enable, rollback included (BR-DEPLOY-016). Frappe owns the schema;
     # cairn only asks for the migration it already documents as the sole DB touch.
     report(f"Migrating {descriptor.site}")
-    _compose_run(
+    compose_run(
         descriptor,
         ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, "migrate"],
         MIGRATE_TIMEOUT_SECONDS,
@@ -404,7 +449,7 @@ def compose_invocation(
     return _compose_command(descriptor, arguments), _compose_environment(descriptor)
 
 
-def _compose_run(descriptor: Descriptor, arguments: list[str], timeout: int, what: str) -> None:
+def compose_run(descriptor: Descriptor, arguments: list[str], timeout: int, what: str) -> None:
     """Run a compose command, always with the variables its file interpolates.
 
     The three ``_compose_*`` helpers exist so that building a compose invocation and supplying
@@ -424,7 +469,7 @@ def _compose_run(descriptor: Descriptor, arguments: list[str], timeout: int, wha
 
 
 def _compose_capture(descriptor: Descriptor, arguments: list[str]) -> str | None:
-    """Capture a compose command's stdout, always with its environment. See :func:`_compose_run`."""
+    """Capture a compose command's stdout, always with its environment. See :func:`compose_run`."""
     return _capture(
         _compose_command(descriptor, arguments),
         env_overrides=_compose_environment(descriptor),
@@ -434,7 +479,7 @@ def _compose_capture(descriptor: Descriptor, arguments: list[str]) -> str | None
 def _compose_try(
     descriptor: Descriptor, arguments: list[str], timeout: int
 ) -> subprocess.CompletedProcess[str] | None:
-    """Run a compose command tolerantly, always with its environment. See :func:`_compose_run`."""
+    """Run a compose command tolerantly, always with its environment. See :func:`compose_run`."""
     return _try(
         _compose_command(descriptor, arguments),
         timeout,

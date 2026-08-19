@@ -20,6 +20,7 @@ from . import (
     descriptor,
     doctor,
     images,
+    lifecycle,
     prune,
     reconcile,
     session,
@@ -391,6 +392,83 @@ def mariadb_command(
 ) -> None:
     """Hand the terminal to `bench mariadb` (BR-CLI-030, ADR-075)."""
     _become(session.mariadb_command, descriptor_path)
+
+
+@app.command(
+    "stop",
+    help=(
+        "Bring this environment down and hold it there. It will not converge again until "
+        "`start`, including after a reboot."
+    ),
+)
+def stop_command(
+    reason: Annotated[
+        str | None,
+        typer.Option("--reason", help="Note recorded in the hold, for whoever finds it."),
+    ] = None,
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Hold, then stop (BR-CLI-029, BR-DEPLOY-024)."""
+    _lifecycle(lambda env: lifecycle.stop(env, reason=reason, report=step), descriptor_path)
+
+
+@app.command(
+    "start",
+    help="Release the hold and bring this environment back up, converging it to its tag.",
+)
+def start_command(
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Release, then converge (BR-CLI-029)."""
+    _lifecycle(lambda env: lifecycle.start(env, report=step), descriptor_path)
+
+
+@app.command(
+    "restart",
+    help=(
+        "Stop and start in one step. Clears a hold if it finds one, and does not leave the "
+        "environment held."
+    ),
+)
+def restart_command(
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Stop then start, holding nothing (BR-CLI-029)."""
+    _lifecycle(lambda env: lifecycle.restart(env, report=step), descriptor_path)
+
+
+def _lifecycle(action, descriptor_path: Path | None) -> None:
+    """Load the descriptor, run one lifecycle verb, and report it uniformly."""
+    watch = timing.Stopwatch()
+    try:
+        environment = descriptor.load(descriptor_path)
+        step(f"Environment {environment.environment} — site {environment.site}")
+        with watch.phase("lifecycle"):
+            done(action(environment))
+        report_timing(watch)
+        raise typer.Exit(0)
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        report_timing(watch)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(130) from None
 
 
 @app.command(
