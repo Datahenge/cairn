@@ -9,6 +9,29 @@ code changes live in git history.
 
 ---
 
+## 2026-08-19 (packaging: core-metadata version pinned to 2.4)
+
+The `0.4.11` upload failed with `InvalidDistribution: '2.5' is not a valid metadata version`.
+Neither the package nor its metadata was at fault, and upgrading `packaging` could never have
+helped.
+
+`python -m build` resolves the build backend in an **isolated environment**, so a release is
+built by whatever hatchling PyPI serves that day — here **1.32.0**, recorded in the wheel's own
+`Generator:` tag, not the 1.31.0 pinned in the local venv. 1.32.0 moved its default
+core-metadata version to 2.5. Meanwhile `twine` 6.2.0 monkeypatches
+`packaging.metadata._VALID_METADATA_VERSIONS` at import (`twine/package.py:31-40`) to re-add
+2.0 support, and does it by **assigning a hardcoded list that ends at 2.4** — clobbering the
+installed `packaging` 26.2's own list, which does include 2.5. So the venv's `twine check`
+failed even though calling `packaging` directly on the same file validated cleanly.
+
+Fixed at the project level rather than by chasing tool versions: `core-metadata-version =
+"2.4"` is now set explicitly for both the `wheel` and `sdist` targets, with a comment recording
+why. A release's metadata version is now a property of this repository instead of a moving
+default inherited from an isolated build environment. Raise it once twine accepts 2.5.
+
+Both artifacts rebuilt at `Metadata-Version: 2.4`; `twine check` passes. `0.4.11` was never
+published, so the version number is unchanged. Packaging/tooling, so no identifier.
+
 ## 2026-08-19 (bug: cairn's read-path compose probes ran without the image variables)
 
 Found live on Life Scientific's test VPS hours after `BR-VEND-006` reached it. Reconcile

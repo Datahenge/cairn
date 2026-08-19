@@ -57,8 +57,18 @@ cairn-build = "cairn.cli_build:main"
 cairn-adopt = "cairn.cli_adopt:main"
 cairn-registry = "cairn.cli_registry:main"
 
+# `python -m build` resolves the backend in an isolated environment, so the hatchling that
+# builds a release is whatever PyPI serves that day — not the one pinned in a local venv.
+# hatchling 1.32.0 moved its default core-metadata version to 2.5, which twine 6.2.0 rejects:
+# twine monkeypatches packaging's `_VALID_METADATA_VERSIONS` (to re-add 2.0) with a hardcoded
+# list ending at 2.4, so a newer `packaging` cannot fix it. Pin the emitted version rather than
+# inherit a moving default; raise it once twine accepts 2.5.
 [tool.hatch.build.targets.wheel]
 packages = ["src/cairn"]
+core-metadata-version = "2.4"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 
 [tool.ruff]
 line-length = 100
