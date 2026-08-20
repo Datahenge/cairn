@@ -16,9 +16,9 @@ the original ID into the new file's `origin` field so a citation made while it w
 resolves.
 
 These ID numbers (`ADR-008`, `ADR-011`, `ADR-041`, `ADR-049`, `ADR-051`, `ADR-053`, `ADR-057`,
-`ADR-058`, `ADR-060`, `ADR-062`, `ADR-063`, `ADR-064`, `ADR-066`, `ADR-069`, `ADR-070`) continue
-the same `ADR-NNN` sequence as `docs/adr/` — they were simply judged lightweight rather than
-consequential, not a separate numbering track.
+`ADR-058`, `ADR-060`, `ADR-062`, `ADR-063`, `ADR-064`, `ADR-066`, `ADR-069`,
+`ADR-070`, `ADR-076`) continue the same `ADR-NNN` sequence as `docs/adr/` — they were
+simply judged lightweight rather than consequential, not a separate numbering track.
 
 `ADR-054`, `ADR-055`, `ADR-056`, and `ADR-068` were retired from this index (not superseded —
 deleted) once judged process/tooling-only rather than product decisions; see
@@ -44,3 +44,4 @@ Their full record lives only in `docs/CHANGELOG.md`'s dated entries, by date rat
 | [066-build-push-defaults-to-assign-tag.md](066-build-push-defaults-to-assign-tag.md) | `authoritative` | `cairn-build build --push` assigns the manifest's declared environment by default; `--no-assign-tag` opts out; a manifest with no environment is skipped, not errored |
 | [069-images-splits-by-role-builder-local-registry-remote.md](069-images-splits-by-role-builder-local-registry-remote.md) | `authoritative` | `cairn-build images` becomes local-only (`--json` only, no manifest); `cairn-registry images` gains `--host`/`--namespace`/`--image` and provenance detail, with an exact `--namespace`+`--image` reading one repository directly (works against authenticated remotes like GHCR) rather than via the anonymous-only catalog endpoint |
 | [070-doctor-build-timer-check-all-walks-every-manifest.md](070-doctor-build-timer-check-all-walks-every-manifest.md) | `authoritative` | `cairn-build doctor`'s new build-timer check takes explicit `--manifest` (one) or `--all` (every manifest under `/srv/cairn/`) rather than defaulting to a scope; bare invocation is unchanged but now names the check as skipped rather than omitting it silently |
+| [076-primary-branch-is-version-nn-tracking-the-erpnext-major.md](076-primary-branch-is-version-nn-tracking-the-erpnext-major.md) | `authoritative` | cairn's primary branch is named for the ERPNext major it supports (`version-16` today), mirroring `frappe/frappe`'s own release-branch convention; `main` is deleted rather than kept as a stale ancestor |

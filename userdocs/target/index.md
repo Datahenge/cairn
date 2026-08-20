@@ -288,13 +288,16 @@ timer that repeats it unattended — see **[Reconcile Automation](automation.md)
 
 ## Next steps
 
-- **[Operating the Stack](operating.md)** — the everyday verbs: logs, a shell, a console, and
-  taking the environment down for maintenance without the timer bringing it back.
+- **[Operating the Stack](operating.md)** — the everyday verbs: logs, a shell, a console,
+  taking the environment down for maintenance without the timer bringing it back, and
+  reclaiming the disk that superseded images hold.
 - **[Reconcile Automation](automation.md)** — install the systemd timer that polls the
   environment's tag and converges automatically.
 - **[Build Automation](../builder/automation.md)** — if you haven't already, automate the
   build side too, so a `git push` reaches this host without a manual step on either end.
 
-*This page is written ahead of a live run against a real target — check back for a note once
-it's been verified, the same way [Get Started](../get-started/index.md) and
+*Partly verified in the field. `doctor` has been run against a live target, and `reconcile`'s
+converge path has been exercised there as part of `cairn-adopt restart`. `examine`, `setup`,
+and the reconcile timer have not yet been run end-to-end against a real host — check back for
+a note once they have been, the same way [Get Started](../get-started/index.md) and
 [Builder](../builder/index.md) already have been.*

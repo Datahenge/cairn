@@ -1,8 +1,8 @@
 # Operating the Stack
 
 Once a target is under cairn's management, `cairn-adopt` gives you verbs for the everyday work
-— looking at logs, opening a console, taking the stack down for maintenance — so you never need
-to reach for `docker compose` yourself.
+— looking at logs, opening a console, taking the stack down for maintenance, reclaiming the disk
+old images hold — so you never need to reach for `docker compose` yourself.
 
 That matters more than convenience. cairn builds each `docker compose` invocation from the
 environment descriptor: the project name, the compose file and its overrides, and the image
@@ -113,5 +113,63 @@ cairn-adopt start
 effect. `cairn-adopt restart` would have done the same in one step, without holding it in
 between — use `stop`/`start` when you want the environment to stay down while you work.
 
-*These commands are written ahead of a live run against a real target — check back for a note
-once they have been verified in the field.*
+## Reclaiming disk
+
+Every image this host has ever run stays in local storage after the stack moves on to a newer
+one. That's deliberate — it's what makes a rollback a tag change rather than a download — but
+left alone it grows without bound, and an ERPNext image is not small.
+
+```bash
+cairn-adopt prune --dry-run
+```
+
+```
+Will remove 2 image(s) this host previously ran:
+  7b3c1d9e0a42     1.4 GB  input hash a1b2c3d4e5f6  registry.acmecorp.net/erpnext-v16:v16-a1b2c3d4e5f6
+  2f88ba60c715     1.4 GB  input hash 4d5e6f708192  registry.acmecorp.net/erpnext-v16:v16-4d5e6f708192
+Reclaims 2.8 GB.
+
+Keeping 1 image(s) for rollback headroom.
+Currently running: d47f139c6ffe. Never removed.
+3 other image(s) in local storage are not cairn-adopt's and are not listed — including
+anything `cairn-build` produced here itself.
+```
+
+Drop `--dry-run` to be asked for confirmation, which defaults to **no**; add `--yes` to skip
+the prompt when running unattended. If an individual image can't be removed, cairn says so and
+carries on with the rest rather than abandoning the run.
+
+### What it will not remove
+
+- **The image the stack is currently running.** This is read from the running container, not
+  guessed from which image is newest — the distinction matters after a rollback, where the
+  running image is deliberately *older* than one that superseded it. `--keep` does not override
+  this.
+- **Volumes and containers.** `prune` removes images and nothing else. Your database and sites
+  volume are not reachable from this command.
+- **Images `cairn-build` made on this host.** On a machine that both builds and runs, the two
+  roles share one local image store, and each cleans up only its own. They're counted in the
+  summary so the omission is visible, not itemized.
+
+### Choosing `--keep`
+
+`--keep` is how many superseded images to retain beyond the running one, and it defaults to
+**1**.
+
+Treat that as a grace window, not a rollback guarantee. It buys you the immediately-previous
+image — enough to reverse a deploy you regret within minutes of making it, without waiting on a
+pull. It is not an archive, and it is not the mechanism you should rely on to reach a specific
+older release: a registry that still holds the tag is. Raise it if the target has disk to spare
+and you want more headroom; there is no reason to lower it.
+
+!!! note "Why the builder's prune won't do this for you"
+    `cairn-build prune` deliberately leaves these images alone. Once an image has been pushed,
+    the builder has no way to know whether something on the host is still running it — so it
+    refuses to guess. `cairn-adopt prune` is the side that *can* know, because it reads the
+    running container. On a host with both roles, run both.
+
+*Verified against a live target: `doctor`, `logs`, `shell`, `console`, `mariadb`, and
+`restart`. Not yet exercised in the field: the held state itself — `stop` placing a hold,
+`doctor` warning about one, `restart` clearing a hold that genuinely exists, and a hold
+surviving a reboot — along with `prune`. Treat those as documented-but-unproven, and check
+back for a note once they have been run.*

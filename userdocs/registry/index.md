@@ -136,5 +136,5 @@ Every `cairn-registry` command, with its flags and examples, lives on its own pa
   images against it.
 
 *This page is written ahead of a live run past `--dry-run` — check back, or see
-[`docs/requirements/08-registry.md`](https://github.com/Datahenge/cairn/blob/main/docs/requirements/08-registry.md)
+[`docs/requirements/08-registry.md`](https://github.com/Datahenge/cairn/blob/version-16/docs/requirements/08-registry.md)
 in the meantime for the full requirements reference.*

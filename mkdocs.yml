@@ -5,7 +5,7 @@ site_description: >-
   ERPNext image builds and pull-based deploys on a single VPS.
 repo_url: https://github.com/Datahenge/cairn
 repo_name: Datahenge/cairn
-edit_uri: edit/main/userdocs/
+edit_uri: edit/version-16/userdocs/
 
 docs_dir: userdocs
 

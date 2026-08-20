@@ -9,6 +9,41 @@ code changes live in git history.
 
 ---
 
+## 2026-08-20 (`ADR-076`: the primary branch is `version-16`, and there is no `main`)
+
+Brian: cairn stays pinned to the ERPNext major it supports, so its primary branch is named for
+that major — `version-16` today, `version-17` when support moves. `main` is deleted rather than
+kept as a stale ancestor. Rationale and consequences in
+[`docs/decisions/076-primary-branch-is-version-nn-tracking-the-erpnext-major.md`](decisions/076-primary-branch-is-version-nn-tracking-the-erpnext-major.md).
+
+No requirement changed: `BR-DOCS-005` already said the site publishes on **the default branch**
+and never named one. `.github/workflows/docs.yml` hardcoding `main` was drift from that
+requirement, and is now corrected along with `mkdocs.yml`'s `edit_uri`, `pyproject.toml`'s
+`Changelog` URL, and one `blob/main/` link in `userdocs/registry/index.md`.
+
+Surfaced by a user-documentation review the same day, which found three weeks of `userdocs/`
+work unpublished for exactly this reason — including `userdocs/target/operating.md`, a page
+absent from the live site entirely.
+
+**Also from that review:** `cairn-adopt prune` (`BR-CLI-028`, `BR-DEPLOY-006`) had shipped with
+no user documentation at all, while the build- and registry-side prune verbs both had coverage.
+`userdocs/target/operating.md` gains a "Reclaiming disk" section — the protected running image
+(read from the container, not from recency, which is what makes it survive a rollback), the
+volumes-and-containers exclusion, the colocated-builder image split, and why `--keep` is a grace
+window rather than a rollback guarantee. No requirement changed; this documents behavior that
+already matched its requirement.
+
+**Stale verification trailers corrected.** Three pages still claimed to be written entirely
+ahead of a live run, and `userdocs/index.md` still called Guides a placeholder months after a
+real guide landed there. The trailers on `userdocs/target/index.md` and
+`userdocs/target/operating.md` now name **which** verbs have been run against the client VPS
+and which have not, rather than blanket-disclaiming the page — the split recorded in the
+2026-08-19 field-verification entry above. `userdocs/index.md`'s status note is rewritten to
+match and to stop overstating Reference, which covers the file formats but not the command
+surface. Nothing here claims verification beyond what that entry records: `prune`, the held
+state, `examine`, `setup`, and the reconcile timer all remain explicitly unproven in the
+field.
+
 ## 2026-08-19 (field verification: inspection verbs done, the held state still open)
 
 Brian verified `doctor`, `console`, `mariadb`, `shell`, `logs` and `restart` on the client VPS.

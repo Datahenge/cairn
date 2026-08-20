@@ -11,13 +11,14 @@ data.
 
 !!! note "This site is a work in progress"
     [Get Started](get-started/index.md) is verified against a real deployment as it's written,
-    as is [Builder](builder/index.md). [Self-Hosted Registry](registry/index.md) and
-    [Target](target/index.md) are written ahead of a live run against real infrastructure —
-    decide the registry question first anyway (see [Get
+    as is [Builder](builder/index.md). [Target](target/index.md) is partly verified — see
+    [Operating the Stack](target/operating.md), which says exactly which verbs have been run
+    against a live host and which have not. [Self-Hosted Registry](registry/index.md) is still
+    written ahead of a live run — decide the registry question first anyway (see [Get
     Started](get-started/index.md#next-steps)), since Builder's push/automation and the target
     role both assume the registry decision is already made. [Reference](reference/index.md)
-    now covers the manifest, build config, and target descriptor in full. Guides is still a
-    placeholder.
+    covers the manifest, build config, and target descriptor in full, but not yet the command
+    surface.
 
 ## Where to go next
 
