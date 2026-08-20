@@ -9,6 +9,30 @@ code changes live in git history.
 
 ---
 
+## 2026-08-20 (command-surface reference pages, one per binary)
+
+`userdocs/reference/` gains **`cairn-build.md`** and **`cairn-adopt.md`** — every command and
+every flag, sourced from each binary's actual `--help` output rather than from the code, so the
+pages describe what a user's installed version prints. Closes the gap `reference/index.md` had
+been openly deferring ("Command surface reference will land here later").
+
+No third page was written for `cairn-registry`: `userdocs/registry/cli.md` already *is* that
+page, and says so in its own first paragraph. Duplicating it would have created a second
+authority for the same surface. `reference/index.md` now lists all three binaries and links the
+registry entry across to where it already lives — the asymmetry is deliberate but was flagged to
+Brian, since filing it under Reference for symmetry is a reasonable alternative he may prefer.
+
+`reference/index.md` is restructured into "Command surface" and "File formats", and keeps the
+rule the deferral paragraph already stated: where a page and `--help` disagree, **`--help`
+wins**, because it ships with the installed version and the site does not.
+
+**Fixed in passing:** `userdocs/registry/ghcr-setup.md` linked to
+`ghcr-ownership-and-cost.md#what-it-costs`, an anchor that does not exist — the heading is "What
+it costs — read this before you push several images", which python-markdown slugifies to the
+full phrase. Found by an anchor-resolution sweep of the whole tree; it was the only genuine
+break in 100-plus internal links. Note that `ai/tools/docs_check.py` verifies link *targets* but
+not *fragments*, which is why this survived.
+
 ## 2026-08-20 (`ADR-076`: the primary branch is `version-16`, and there is no `main`)
 
 Brian: cairn stays pinned to the ERPNext major it supports, so its primary branch is named for

@@ -11,7 +11,7 @@ working end to end.
     **GHCR is not cairn's recommended default.** It is one option, and it is the weakest of
     them on cost: GitHub Packages prices multi-gigabyte artifacts poorly, and an ERPNext image
     is roughly 2.75 GB with no cheap incremental layer (see [Ownership &
-    Cost](ghcr-ownership-and-cost.md#what-it-costs)).
+    Cost](ghcr-ownership-and-cost.md#what-it-costs-read-this-before-you-push-several-images)).
 
     This page is most useful for **your own projects**, or for a client already committed to
     GitHub. For client work generally, the ownership and least-privilege rules in [Choosing a

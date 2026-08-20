@@ -81,6 +81,8 @@ nav:
       - Docker Storage on a Multi-Volume Host: guides/docker-storage-layout.md
   - Reference:
       - Overview: reference/index.md
+      - "cairn-build (commands)": reference/cairn-build.md
+      - "cairn-adopt (commands)": reference/cairn-adopt.md
       - "cairn.toml (manifest)": reference/manifest.md
       - "builder.toml (build config)": reference/builder-config.md
       - "Target descriptor": reference/target-descriptor.md

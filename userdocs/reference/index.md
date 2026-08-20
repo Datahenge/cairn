@@ -1,6 +1,19 @@
 # Reference
 
-File-format reference material:
+## Command surface
+
+One page per binary — every command, every flag:
+
+- **[`cairn-build`](cairn-build.md)** — building images and moving environment pointers.
+- **[`cairn-adopt`](cairn-adopt.md)** — converging and operating a target host.
+- **[`cairn-registry`](../registry/cli.md)** — provisioning and operating a self-hosted
+  registry. (Filed under Registry, alongside the narrative that explains it.)
+
+These describe the same surface as `--help`, with the context a help string has no room for.
+Where the two ever disagree, **`--help` is authoritative** — it ships with the version you
+actually have installed, and these pages do not.
+
+## File formats
 
 - **[cairn.toml (manifest)](manifest.md)** — the image declaration: Frappe source, apps,
   build knobs, environments, registry.
@@ -8,11 +21,6 @@ File-format reference material:
   the private-`github.com`-app token, and shared `/etc/cairn` provisioning.
 - **[Target descriptor](target-descriptor.md)** — `/etc/cairn/adopt.toml`, what a target
   host runs.
-
-Command surface reference will land here later. Until it's written, run
-`cairn-build --help` / `cairn-adopt --help` / `cairn-registry --help` (or `<command>
-<subcommand> --help`) for the current command surface — it stays authoritative for the
-CLI's exact flags and behavior.
 
 ## Contributing
 
