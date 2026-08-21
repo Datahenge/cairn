@@ -51,6 +51,7 @@ thin audience-specific summary.
 | Lightweight dated decisions | [../decisions/](../decisions/) |
 | Coding standards, naming, lint/format tooling, design patterns | [00-coding-standards.md](00-coding-standards.md) |
 | Documentation conventions and Markdown headers | [01-documentation-conventions.md](01-documentation-conventions.md) |
+| User-documentation voice, structure, reader path, vocabulary (`userdocs/`) | [26-userdocs-style.md](26-userdocs-style.md) |
 | Dorwin Analysis / Hardin Version compression technique | [02-dorwin-analysis-and-hardin-version.md](02-dorwin-analysis-and-hardin-version.md) |
 | Durable technical findings about tools cairn builds on | [04-lessons-learned.md](04-lessons-learned.md) |
 | Current implementation inventory | [05-implementation-index.md](05-implementation-index.md) |

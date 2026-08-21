@@ -42,6 +42,7 @@ real host). Do not infer status from this file.
 | Task | Read |
 | --- | --- |
 | General project work | `docs/requirements/00-overview.md`, `AGENTS.md` |
+| Writing or changing `userdocs/` (Path 1) | `docs/technical/26-userdocs-style.md` — read in full first |
 | Writing or changing code | `docs/technical/00-coding-standards.md` |
 | Requirements or scope work | `docs/requirements/00-overview.md`, `docs/open/OPEN_QUESTIONS.md` |
 | "What's done, what remains?" / implementation status | `docs/technical/05-implementation-index.md`, `docs/open/OPEN_WORK.md` |
@@ -53,6 +54,8 @@ real host). Do not infer status from this file.
 ## Standing Rules
 
 - `BR`/`ADR` identifiers never reach a user — see `AGENTS.md` and `tests/test_conventions.py`.
+- `userdocs/` work is Path 1: `AGENTS.md`'s fork sends it to `docs/technical/26-userdocs-style.md`
+  for voice and structure. Everything else is Path 2.
 - The data-plane boundary (`ADR-022`) is a hard invariant, not a preference — cairn cannot touch SQL.
 - `src/cairn/recipe/` is cairn's own Docker build recipe, freely edited by hand — no
   vendoring, no pin, no drift check (`ADR-059`).

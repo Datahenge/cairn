@@ -56,6 +56,13 @@ Create a new document only when it has a distinct owner, audience, lifecycle, or
 Avoid: multiple documents owning the same rule, unlabeled drafts, long notes with mixed
 authority, loading archive material without a specific reason.
 
+Entries in `docs/CHANGELOG.md` are separated by a `---` rule on its own line, with a blank line
+either side. Write one, but a forgotten one is no longer a problem: `changelog_rotate.py` now
+slices the file at the `## <date>` headers themselves and restores the separators when it writes.
+Until 2026-08-20 it split on the rule alone, so appended entries without one merged into their
+neighbours; enough of them and the whole file parsed as a single entry, at which point rotation
+silently declined to run and reported "within budget" while the file sat over its ceiling.
+
 `docs/CHANGELOG.md` specifically grows by same-day append and needs periodic archiving on its
 own, separate from this review cadence — run `ai/tools/changelog_rotate.py` (`--dry-run` first)
 rather than hand-writing another `docs/archive/CHANGELOG-*.md`; it archives the oldest entries

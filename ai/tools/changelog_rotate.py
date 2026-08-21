@@ -8,11 +8,16 @@ Run from the project root, or point --root elsewhere:
     python ai/tools/changelog_rotate.py --dry-run   # report what would move, change nothing
     python ai/tools/changelog_rotate.py             # do it
 
-Structural assumption this script depends on (true of every entry in the file today): each
-dated entry is a block starting with a `## <YYYY-MM-DD> ...` header, and consecutive entries
-are separated by a blank line, a `---` line, and another blank line — the exact shape every
-entry in `docs/CHANGELOG.md` already has. If that separator pattern is ever hand-broken,
-re-run with --dry-run first; the parser raises rather than guessing.
+Structural assumption this script depends on: each dated entry is a block starting with a
+`## <YYYY-MM-DD> ...` header. Entries are conventionally separated by a blank line, a `---`
+line, and another blank line, and this tool writes that shape back out, but it no longer
+*depends* on it — the parser slices the file at the headers themselves and treats a separator,
+where present, as decoration to drop.
+
+It used to split on the `---` rule alone, which failed quietly: entries had been appended
+without one for weeks, so on 2026-08-20 the whole file parsed as a single entry, `MIN_LIVE_ENTRIES`
+left nothing safe to move, and the run reported "within budget" while `docs_check.py` reported the
+same file over its ceiling. A header this tool cannot date still raises rather than guessing.
 
 The trailing "archived entries" block at the end of the live file is never hand-edited or
 parsed as prose — this tool owns it outright, regenerating it in full each run from
@@ -51,11 +56,23 @@ HEADROOM_FRACTION = 0.75
 #: entries out of the way, it never hides the thing someone just wrote.
 MIN_LIVE_ENTRIES = 1
 
+class NothingToMove(Exception):
+    """Over budget, but rotation cannot help. Distinct from being *under* budget, which is
+    the ordinary quiet case — reporting both as "within budget" is how a real over-ceiling
+    file once looked like a clean run while `docs_check.py` disagreed about the same file.
+    """
+
+
 ENTRY_SEP = "\n\n---\n\n"
 HEADER_DATE_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b")
 ARCHIVE_ROW_RE = re.compile(r"^\| \[([^\]]+)\]\(([^)]+)\) \| `([^`]+)` \| (.+) \|$", re.MULTILINE)
 ARCHIVE_TABLE_HEADING = "## Index — archived-for-size"
 FOOTER_HEADING = "## Archived entries"
+ENTRY_HEADING_PREFIX = "## "
+#: Both fence styles CommonMark allows. A `## ` line inside pasted terminal output is not a
+#: heading, and slicing the file there would either split an entry mid-body or raise on a
+#: header with no date in it.
+FENCE_RE = re.compile(r"^\s{0,3}(```|~~~)")
 
 
 @dataclass
@@ -84,17 +101,54 @@ def _rebase_archive_links(text: str) -> str:
     return text.replace("](archive/", "](")
 
 
+def _strip_trailing_rule(block: str) -> str:
+    """Drop one trailing `---` separator line, if the block ends in one.
+
+    Slicing at headers leaves the separator that preceded the next header attached to the end
+    of the previous block. `render_changelog` puts separators back when it writes, so leaving
+    them in a body would double them on every round trip.
+    """
+    stripped = block.rstrip("\n")
+    if stripped == "---":
+        return ""
+    if stripped.endswith("\n---"):
+        return stripped[: -len("\n---")].rstrip("\n")
+    return stripped
+
+
+def _slice_at_headings(text: str) -> tuple[str, list[str]]:
+    """Split into (text before the first `## ` heading, one block per heading).
+
+    Headings inside a fenced code block are content, not structure, and are skipped.
+    """
+    lines = text.rstrip("\n").split("\n")
+    starts: list[int] = []
+    in_fence = False
+    for i, line in enumerate(lines):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if not in_fence and line.startswith(ENTRY_HEADING_PREFIX):
+            starts.append(i)
+    if not starts:
+        return "\n".join(lines), []
+    bounds = [*starts[1:], len(lines)]
+    blocks = ["\n".join(lines[start:end]) for start, end in zip(starts, bounds, strict=True)]
+    return "\n".join(lines[: starts[0]]), blocks
+
+
 def parse_changelog(text: str) -> tuple[str, list[Entry]]:
     """Split into (preamble, entries newest-first). A trailing hand-written or previously
     machine-written footer, if present, is discarded here — `render_changelog` always
     regenerates it fresh rather than trying to preserve or extend it in place.
+
+    Entry boundaries are the `## <YYYY-MM-DD>` headers themselves. The `---` rule between
+    entries is conventional and gets written back out, but a missing one no longer silently
+    merges two entries into one.
     """
-    blocks = text.rstrip("\n").split(ENTRY_SEP)
-    preamble = blocks[0]
+    preamble, blocks = _slice_at_headings(text)
     entries: list[Entry] = []
-    for block in blocks[1:]:
-        if not block.startswith("## "):
-            continue  # a footer block with no heading of its own, if this file has one
+    for block in blocks:
         header_line, _, rest = block.partition("\n")
         if header_line == FOOTER_HEADING:
             continue  # the machine-generated footer this same tool writes — see render_footer
@@ -103,8 +157,9 @@ def parse_changelog(text: str) -> tuple[str, list[Entry]]:
             raise ValueError(
                 f"entry header does not start with a date, refusing to guess: {header_line!r}"
             )
-        entries.append(Entry(header=header_line, body=rest.strip("\n"), entry_date=match.group(1)))
-    return preamble, entries
+        body = _strip_trailing_rule(rest).strip("\n")
+        entries.append(Entry(header=header_line, body=body, entry_date=match.group(1)))
+    return _strip_trailing_rule(preamble), entries
 
 
 def read_archive_index_rows(archive_index_path: Path) -> list[tuple[str, str, str, str]]:
@@ -235,7 +290,13 @@ def build_plan(root: Path, max_words_default: int) -> Plan | None:
 
     archived = entries[len(remaining) :]
     if not archived:
-        return None  # nothing left that's safe to move — over budget, but MIN_LIVE_ENTRIES bites
+        # Over budget, but MIN_LIVE_ENTRIES bites: the newest entry is never archived, so a
+        # single entry larger than the whole budget has nothing behind it to move.
+        raise NothingToMove(
+            f"{CHANGELOG_REL} is {before_words} words, over its {budget}-word ceiling, but the "
+            f"only entry left is the newest one, which is never archived. Split or trim that "
+            f"entry by hand, or raise the ceiling in {ALLOWLIST_REL}."
+        )
     archive_path = choose_archive_filename(
         root / ARCHIVE_DIR_REL, archived[-1].entry_date, archived[0].entry_date
     )
@@ -338,7 +399,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = args.root.resolve()
 
-    plan = build_plan(root, args.max_words)
+    try:
+        plan = build_plan(root, args.max_words)
+    except NothingToMove as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     if plan is None:
         print(f"{CHANGELOG_REL} is within budget — nothing to rotate.")
         return 0

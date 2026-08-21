@@ -6,6 +6,7 @@ Adapted from the generic checker in brian-pond/scribe_coding. Checks:
   DOC002  document exceeds the word-count sprawl limit
   DOC003  decision/ADR index status doesn't match the linked file's frontmatter
   DOC004  a path under the current user's home directory leaked into a doc
+  DOC005  a Markdown link's #fragment matches no heading or anchor in its target
 
 Run from the project root, or point --root elsewhere:
 
@@ -18,6 +19,7 @@ import argparse
 import getpass
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -90,6 +92,90 @@ def frontmatter_value(text: str, key: str) -> str | None:
     return None
 
 
+#: An `attr_list` id on a heading: `## Heading {#custom-id}`.
+ATTR_LIST_ID_RE = re.compile(r"\{[^}]*#([A-Za-z0-9_:.-]+)[^}]*\}\s*$")
+#: A hand-written HTML anchor, either spelling.
+HTML_ANCHOR_RE = re.compile(r"<a\s[^>]*\b(?:id|name)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+FENCE_RE = re.compile(r"^\s{0,3}(```|~~~)")
+
+
+def _strip_inline_markdown(text: str) -> str:
+    """Reduce a heading to the text a renderer would put inside the tag.
+
+    Both slug functions below work on rendered text, not source: a heading that wraps a name
+    in backticks yields an id with no trace of them.
+    """
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)  # links and images
+    text = re.sub(r"</?[^>]+>", "", text)  # inline HTML
+    return text.replace("`", "").replace("**", "").replace("*", "").replace("_", " ")
+
+
+def _slug_pymarkdown(text: str) -> str:
+    """python-markdown's `toc` default, which is what mkdocs-material renders `userdocs/` with.
+
+    Non-ASCII is dropped rather than transliterated, so an em dash in a heading vanishes and
+    the spaces around it collapse into a single hyphen.
+    """
+    value = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^\w\s-]", "", value).strip().lower()
+    return re.sub(r"[-\s]+", "-", value)
+
+
+def _slug_github(text: str) -> str:
+    """GitHub's slugger, which is what renders `docs/` when read in the web UI.
+
+    It differs from python-markdown's on exactly the case that bit this repo: punctuation is
+    deleted in place, leaving the spaces that surrounded it, so each becomes its own hyphen.
+    """
+    value = unicodedata.normalize("NFKD", text)
+    value = re.sub(r"[^\w\s-]", "", value).strip().lower()
+    return value.replace(" ", "-")
+
+
+def collect_anchors(text: str) -> set[str]:
+    """Every id a link in this repo could legitimately aim at, in one document.
+
+    Both slug conventions are accepted for every heading. The two renderers disagree, the
+    same file can be read through either, and the goal here is to catch an anchor that exists
+    under *no* convention — which is what a hand-written or invented fragment looks like.
+    """
+    anchors: set[str] = set(HTML_ANCHOR_RE.findall(text))
+    seen: dict[str, int] = {}
+    in_fence = False
+    for line in text.split("\n"):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = HEADING_RE.match(line)
+        if not match:
+            continue
+        heading = match.group(2)
+        explicit = ATTR_LIST_ID_RE.search(heading)
+        if explicit:
+            anchors.add(explicit.group(1))
+            heading = ATTR_LIST_ID_RE.sub("", heading).strip()
+        stripped = _strip_inline_markdown(heading)
+        for slug in (_slug_pymarkdown(stripped), _slug_github(stripped)):
+            if not slug:
+                continue
+            # Repeated headings get a numeric suffix, in both renderers.
+            count = seen.get(slug, 0)
+            seen[slug] = count + 1
+            anchors.add(slug if count == 0 else f"{slug}-{count}")
+            anchors.add(f"{slug}-{count + 1}")
+    return anchors
+
+
+def link_fragment(link: str) -> str:
+    _, _, fragment = link.strip().partition("#")
+    if " " in fragment:  # a Markdown title: [x](y#z "title")
+        fragment = fragment.split(" ", 1)[0]
+    return fragment
+
+
 def link_target(link: str) -> str:
     target = link.strip().split("#", 1)[0]
     if " " in target:
@@ -121,10 +207,22 @@ def load_word_count_allowlist(root: Path) -> dict[Path, int]:
     return overrides
 
 
+def anchors_for(path: Path, cache: dict[Path, set[str]]) -> set[str]:
+    """`collect_anchors` for one file, parsed once per run — a hub document is linked at
+    from many others, and the whole tree is re-read on every check."""
+    if path not in cache:
+        try:
+            cache[path] = collect_anchors(path.read_text(encoding="utf-8"))
+        except OSError:
+            cache[path] = set()
+    return cache[path]
+
+
 def check_links_and_word_count(
     root: Path, max_words_default: int, overrides: dict[Path, int]
 ) -> list[DocIssue]:
     issues: list[DocIssue] = []
+    cache: dict[Path, set[str]] = {}
     for path in markdown_files(root):
         rel = repo_relative(path, root)
         text = path.read_text(encoding="utf-8")
@@ -141,19 +239,44 @@ def check_links_and_word_count(
             )
 
         for match in MARKDOWN_LINK_RE.finditer(text):
-            target = link_target(match.group(1))
+            link = match.group(1)
+            target = link_target(link)
+            fragment = link_fragment(link)
+            line_no = text.count("\n", 0, match.start()) + 1
+
             if should_skip_link(target):
+                # A bare "#anchor" points into this same document.
+                if fragment and not target and fragment not in anchors_for(path, cache):
+                    issues.append(
+                        DocIssue(
+                            "DOC005",
+                            rel,
+                            f"link {link!r} on line {line_no} matches no heading in this file",
+                        )
+                    )
                 continue
+
             target_path = (path.parent / target).resolve()
             if not target_path.exists():
-                line_no = text.count("\n", 0, match.start()) + 1
                 issues.append(
                     DocIssue(
                         "DOC001",
                         rel,
-                        f"broken relative link {match.group(1)!r} on line {line_no}",
+                        f"broken relative link {link!r} on line {line_no}",
                     )
                 )
+                continue
+
+            if fragment and target_path.suffix == ".md":
+                if fragment not in anchors_for(target_path, cache):
+                    issues.append(
+                        DocIssue(
+                            "DOC005",
+                            rel,
+                            f"link {link!r} on line {line_no} points at "
+                            f"{repo_relative(target_path, root)}, which has no such heading",
+                        )
+                    )
     return issues
 
 

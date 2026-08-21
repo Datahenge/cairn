@@ -60,6 +60,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Why cairn: why-cairn.md
   - Get Started: get-started/index.md
   - Registry:
       - Choosing a Registry: registry/choosing-a-registry.md

@@ -41,6 +41,8 @@ needed.
 | [CHANGELOG-2026-08-04-to-2026-08-05.md](CHANGELOG-2026-08-04-to-2026-08-05.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-04 through 2026-08-05 |
 | [CHANGELOG-2026-08-05-to-2026-08-06.md](CHANGELOG-2026-08-05-to-2026-08-06.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-05 through 2026-08-06 |
 | [CHANGELOG-2026-08-06.md](CHANGELOG-2026-08-06.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-06 |
+| [CHANGELOG-2026-08-06-to-2026-08-18.md](CHANGELOG-2026-08-06-to-2026-08-18.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-06 through 2026-08-18 |
+| [CHANGELOG-2026-08-18-to-2026-08-19.md](CHANGELOG-2026-08-18-to-2026-08-19.md) | `docs/CHANGELOG.md` | Dated entries 2026-08-18 through 2026-08-19 |
 
 ## Index — archived open-work
 

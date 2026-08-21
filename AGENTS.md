@@ -6,6 +6,34 @@ This project follows **Scribe Coding** — Document-Driven AI Development:
 Documentation is a living contract that **precedes and governs** code. These are the
 ground rules for how the human and the AI collaborate here. They bind the AI.
 
+## Two Paths
+
+Decide which path the task is on before doing anything else.
+
+**Path 1 — user documentation.** Any change to a file under `userdocs/`. The authority is
+[`docs/technical/26-userdocs-style.md`](docs/technical/26-userdocs-style.md); read it in full
+before writing a line, and work its "Before committing" checklist before considering the change
+done. It owns voice, page structure, the reader's funnel, the approved vocabulary, and the
+honesty conventions. Where it and the rest of this file disagree about *how documentation
+reads*, it wins.
+
+**Path 2 — everything else.** Code, requirements, ADRs, `docs/`, `README.md`, `ai/`, tooling.
+The rest of this file governs, unchanged.
+
+A change that touches both trees is on both paths, per file. A commit that adds a flag and
+documents it follows Path 2 for `src/` and Path 1 for `userdocs/`.
+
+**Binding on both paths:**
+
+- `BR`/`ADR` identifiers never reach a user (see "For the AI" below).
+- No command, flag, or configuration key is documented without verifying it exists in
+  `src/cairn/`.
+- Never assume. A gap in the docs is a question for Brian, not something to fill in.
+- A change that alters behavior, scope, or design updates `docs/CHANGELOG.md` in the same
+  change.
+
+Path 1 does **not** require stating `BR` IDs before writing, unlike Path 2.
+
 ## The One Rule
 
 Docs precede code. If a behavior is not described in `docs/`, it is not implemented. If a
@@ -82,6 +110,7 @@ traceability.
 | `docs/00-project-scope.md` | Purpose, pillars, what it is/isn't, principles | — |
 | `docs/requirements/` | Numbered requirement docs + ToC (`00-overview.md`, then per-area) | `BR-<AREA>-NNN` |
 | `docs/technical/` | Coding standards, doc conventions, lessons learned, implementation index, documentation-authority map, plus ad-hoc reference docs | — |
+| `docs/technical/26-userdocs-style.md` | Path 1 authority: voice, structure, and reader path for `userdocs/` | — |
 | `docs/adr/` | Consequential decisions, one file per `ADR-NNN` | `ADR-NNN` |
 | `docs/decisions/` | Lightweight dated decisions, one file per `ADR-NNN` | `ADR-NNN` |
 | `docs/archive/` | Fully-retired ADRs/decisions, with a forwarding stub left at the original path | — |
@@ -91,7 +120,7 @@ traceability.
 | `docs/CHANGELOG.md` | Living-documentation revisions (requirements + decisions + discussion) | — |
 | `CHANGELOG.md` (root) | Software release history | — |
 | `docs/plans/` | Narrative implementation plans, downstream of requirements | — |
-| `userdocs/` | Published end-user documentation (mkdocs-material → GitHub Pages, `ADR-045`) — the only tree a user ever sees | — |
+| `userdocs/` | Published end-user documentation (mkdocs-material → GitHub Pages, `ADR-045`) — the only tree a user ever sees; **Path 1** | — |
 | `src/cairn/recipe/` | Owned Docker build recipe (Containerfile + compose YAML), authored and maintained directly by cairn — no vendoring, no pin, freely edited (`ADR-059`) | — |
 
 ## Workflow (Scribe Coding phases)
@@ -104,8 +133,9 @@ traceability.
 4. **Modular code** — only once requirements are solid; one small module at a time;
    each module cites the `BR` IDs it implements.
 5. **Testing** — tests reference the same `BR` IDs as the code.
-6. **User documentation** — `README.md` / `userdocs/` last. See the identifier rule below;
-   it applies from the first line of code, not from this phase.
+6. **User documentation** — `README.md` / `userdocs/` last. `userdocs/` is Path 1 work and
+   follows `docs/technical/26-userdocs-style.md`. See the identifier rule below; it applies
+   from the first line of code, not from this phase.
 
 ## When Something Is Ambiguous
 

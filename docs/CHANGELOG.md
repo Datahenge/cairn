@@ -9,6 +9,141 @@ code changes live in git history.
 
 ---
 
+## 2026-08-20 (orientation pages promoted; README rewritten)
+
+`userdocs/index.md` is replaced by the funnel-ordered rewrite from `docs/scratch/`, and
+`why-cairn.md` is new. Both follow `26-userdocs-style.md`. The old front page opened with "a
+thin, opinionated wrapper" (§3.4's verbatim *before* example) and carried "Two pillars",
+"low-thought", "a strict data-plane boundary", and "it ships code, not data" — all four of
+§3.3's banned-by-example slogans — plus a project-status admonition inventorying unverified
+pages, which §6 says must not appear on `index.md`.
+
+Two changes to the drafts as promoted. The mermaid diagram is dropped: `mkdocs.yml` configures
+`pymdownx.superfences` with no mermaid custom fence, so it would have rendered as a literal code
+block. And `why-cairn.md`'s sample `cairn-build images` listing is replaced with prose, because
+it was composed rather than captured — faithful to `images.render()`'s shape but missing the
+per-image line that function always emits, which is exactly the drift §5 warns about. This
+workstation has no container engine, so no real capture was possible; the page's footer says so.
+
+Links are retargeted at today's page tree rather than the funnel filenames the drafts assumed,
+per `W-039`. `docs/scratch/workflow.md` stays in scratch: it depends on `concepts.md` and
+`install.md`, which do not exist yet.
+
+The root `README.md` is rewritten in the same pass, at Brian's direction: mermaid diagram
+removed, slogans out, and a "How it works" paragraph that says what actually happens instead of
+asserting that it is magic. `README.md` is outside `26-userdocs-style.md`'s scope by that
+document's own first paragraph, but the voice rules were applied anyway.
+
+---
+
+## 2026-08-20 (`docs_check.py` gains DOC005: unresolved link fragments)
+
+`docs_check.py` verified that a link's target file existed but never that its `#anchor`
+resolved, which is how `ghcr-setup.md` pointed at `#what-it-costs` while the heading was "What
+it costs — read this before you push several images". Found by hand earlier the same day; now
+mechanical.
+
+Both slug conventions are accepted for every heading, because `docs/` is read on GitHub and
+`userdocs/` through mkdocs and the two disagree: python-markdown drops the em dash and collapses
+the surrounding spaces into one hyphen, GitHub deletes it in place and turns each remaining
+space into its own. Accepting both catches an anchor that exists under *neither*, which is what
+an invented fragment looks like, without inventing false positives. `attr_list` ids, hand-written
+HTML anchors, duplicate-heading suffixes, and code spans in headings are all handled; a `## ` line
+inside a fenced block is not an anchor.
+
+44 fragment links across `docs/` and `userdocs/` — all currently resolve. `tests/test_docs_check.py`
+is new (10 tests), including the historical break as a regression test.
+
+---
+
+## 2026-08-20 (`W-034` closed, both halves)
+
+The crash originally reported was real and Brian fixed it on 2026-08-06 in `cb1ffd5`, which added
+`parse_changelog`'s `header_line == FOOTER_HEADING` guard — the same day the item was filed,
+which is why the 2026-08-18 re-check could not reproduce it. That was never recorded, so the row
+stayed open on a "close if it stays quiet" clause for two weeks.
+
+The second half is fixed here: `build_plan` returned `None` both when the file was under budget
+and when it was over budget with nothing movable, and `main` printed the same reassuring line for
+both. It now raises `NothingToMove`, naming the file, its size, its ceiling, and the two ways out.
+`.docs_check_allowlist`'s stopgap note about rotation being blocked is removed, since it isn't.
+
+---
+
+## 2026-08-20 (`changelog_rotate.py` splits on dated headings, not on the `---` rule)
+
+Brian: fix the parser rather than rely on the separators staying put. `parse_changelog` now
+slices `docs/CHANGELOG.md` at its `## <YYYY-MM-DD>` headers. A `## ` line inside a fenced code
+block is content, not a boundary, and the separator that slicing leaves attached to the end of
+the preceding entry is dropped, since `render_changelog` writes one back. A file missing its
+separators parses correctly and is written back out repaired. A header the tool cannot date
+still raises rather than guessing, which is the one thing that should stay loud.
+
+`tests/test_changelog_rotate.py` is new, and is the tool's first test coverage — the parser was
+untested, which is why the failure was silent for weeks. Ten tests, including the exact
+regression (a separator-less file parsing as one entry) and a byte-for-byte round trip against
+the live changelog. Full suite: 981 passing.
+
+No `BR` ID: `ai/tools/` is documentation-hygiene tooling, outside every requirement area.
+`01-documentation-conventions.md`'s separator note is corrected in the same change, and `W-034`
+records what remains — `build_plan` still reports "within budget" on every `None`, including the
+`MIN_LIVE_ENTRIES` case.
+
+---
+
+## 2026-08-20 (changelog rotation was a silent no-op; separators restored)
+
+Adding the two entries above put `docs/CHANGELOG.md` over its 6,500-word ceiling, and
+`changelog_rotate.py` answered "within budget — nothing to rotate" while `docs_check.py` reported
+`DOC002` on the same file.
+
+Cause: `parse_changelog` splits entries on the `---` rule and nothing else. Those separators had
+been dropping out of appended entries for some time, so all 23 entries parsed as one, and
+`MIN_LIVE_ENTRIES` left nothing safe to archive. Restoring the separators (no content changed,
+23 words added) made rotation work normally: 7 entries covering 2026-08-06 through 2026-08-18
+moved to `docs/archive/CHANGELOG-2026-08-06-to-2026-08-18.md`, leaving 4,761 words live, and the
+archive index, this file's footer, and `.docs_check_allowlist` updated mechanically.
+
+The separator requirement is now stated in `01-documentation-conventions.md`, and `W-034` records
+the root cause. This is not the crash `W-034` originally reported, which still has not
+reproduced.
+
+---
+
+## 2026-08-20 (`userdocs/` navigation refactor deferred until the page catalog is known)
+
+`26-userdocs-style.md` §2 forbids organizing top-level navigation around cairn's three roles,
+and the shipped `userdocs/` tree does exactly that (`registry/`, `builder/`, `target/`). Brian
+deferred the restructure until roughly 90% of the pages exist: the right grouping is easier and
+more obvious to see once the full catalog of pages is known, rather than guessed at now.
+
+Recorded as `W-039` (`deferred`) in `docs/open/OPEN_WORK.md`, and as a blockquote in §2 itself so
+the rule is not read as an indictment of the current tree. The standing instruction until then:
+write new pages in the new voice, place them where the current tree puts them, and do not move
+navigation one page at a time.
+
+---
+
+## 2026-08-20 (`AGENTS.md` forks into two paths; `userdocs/` gains a style authority)
+
+Brian: work on published user documentation follows a different set of rules than everything
+else, and `AGENTS.md` now says so before it says anything else. **Path 1** is any file under
+`userdocs/`; its authority is the new
+[`docs/technical/26-userdocs-style.md`](technical/26-userdocs-style.md), promoted verbatim from
+`docs/scratch/STYLE.md` with a status header and a paragraph placing it in the fork. **Path 2**
+is everything else, governed by `AGENTS.md` unchanged. A change touching both trees is on both
+paths, per file.
+
+Brian confirmed Path 1 **layers on** rather than replaces: the style guide wins on how
+documentation reads, while four invariants still bind on both paths (no internal identifiers in
+user-visible text, no command or key documented without verifying it in `src/cairn/`, never
+assume, and same-change `docs/CHANGELOG.md` entries). Path 1 alone does not require stating `BR`
+IDs before writing.
+
+`25-documentation-authority.md` and `ai/CURRENT_CONTEXT.md` route to the new document.
+
+---
+
 ## 2026-08-20 (command-surface reference pages, one per binary)
 
 `userdocs/reference/` gains **`cairn-build.md`** and **`cairn-adopt.md`** — every command and
@@ -32,6 +167,8 @@ it costs — read this before you push several images", which python-markdown sl
 full phrase. Found by an anchor-resolution sweep of the whole tree; it was the only genuine
 break in 100-plus internal links. Note that `ai/tools/docs_check.py` verifies link *targets* but
 not *fragments*, which is why this survived.
+
+---
 
 ## 2026-08-20 (`ADR-076`: the primary branch is `version-16`, and there is no `main`)
 
@@ -68,6 +205,8 @@ surface. Nothing here claims verification beyond what that entry records: `prune
 state, `examine`, `setup`, and the reconcile timer all remain explicitly unproven in the
 field.
 
+---
+
 ## 2026-08-19 (field verification: inspection verbs done, the held state still open)
 
 Brian verified `doctor`, `console`, `mariadb`, `shell`, `logs` and `restart` on the client VPS.
@@ -89,530 +228,6 @@ untested live are `stop` placing a hold, `reconcile` reporting *held* and conver
 reboot. That is precisely the half that can silently suspend deployments on a client host, so
 it is the half worth exercising on purpose rather than encountering by accident.
 
-## 2026-08-19 (`ai/CURRENT_CONTEXT.md` compacted: 1865 words to 494)
-
-The session router had accreted into a second changelog — its Current Phase section ran to
-roughly eight times the length the file's own header asks for, narrating every decision from
-`ADR-046` to `ADR-075` in prose. Every one of those already has an ADR or decision file and a
-dated entry here, so the section was duplication, and duplication in the one file every fresh
-session reads first is the most expensive kind: it is what a session trusts before it has read
-anything else, and it was already stale by a week when this session started.
-
-Replaced with standing state only — the three-binary split, four load-bearing invariants as a
-table (recipe ownership, compose-file ownership, how a target is operated, the data-plane
-boundary), the live reference target and what makes it interesting, and an explicit instruction
-*not* to infer status from this file but to read `docs/open/OPEN_WORK.md` and
-`docs/technical/05-implementation-index.md`. A blockquote states that the section records
-standing state only and that narrative belongs here, so the same accretion is at least
-discouraged next time.
-
-One thing was promoted rather than deleted: the 2026-08-19 field lesson — *removing a silent
-default surfaces everything that quietly depended on it, so search for other readers before
-shipping that kind of change* — is now a Standing Rule, since it governs how future changes
-should be made rather than recording something that happened. It cites `BR-VEND-006` as the
-case that earned it. Nothing else in the removed narrative was unique to that file.
-
-## 2026-08-19 (release prep for `0.4.12`: user docs, router, CLI tests)
-
-Three gaps closed before cutting the release, none of them optional for a version going onto a
-client host.
-
-**`userdocs/target/operating.md`** — the seven new verbs and the hold had no user-facing
-documentation at all; the target walkthrough stopped at `reconcile`/automate. The new page
-covers inspection (`logs`/`shell`/`console`/`mariadb`), lifecycle (`stop`/`start`/`restart`),
-and the hold — including that it survives a reboot and therefore has no expiry, which is why
-`doctor` mentions it every run. It states plainly that cairn has no verb printing
-`site_config.json` and why, and points the reader at `shell` instead. A worked example covers
-publishing MariaDB on loopback, with a danger admonition about `"3306:3306"` versus
-`"127.0.0.1:3306:3306"` — Docker writes its own firewall rules, so `ufw` will not save an
-operator who gets that wrong. Linked from the target overview and added to the mkdocs nav;
-`mkdocs build --strict` passes and no internal identifiers leaked.
-
-**`ai/CURRENT_CONTEXT.md`** — stale at 2026-08-08 and missing this entire session, which
-matters because it is the file that routes a fresh session. Now carries the `ADR-073`/`074`/
-`075` arc and both field lessons. A housekeeping note flags that its Current Phase section has
-grown to roughly eight times the length its own header asks for and has become a second
-changelog; compacting it needs Brian's call on what to keep.
-
-**CLI wiring tests** — `tests/test_cli_adopt.py` invoked no verb by name, so `--help` output
-was the only evidence the new commands were connected to anything. Now covers `--reason`
-reaching the hold, `--tail`/`--follow`/service reaching the logs builder, `shell`'s service
-argument, `become` being called for the interactive verbs, and a failing lifecycle verb exiting
-2 rather than printing a traceback. Mutation-checked by severing two argument paths.
-
-971 tests pass. Version bumped to `0.4.12`.
-
-## 2026-08-19 (`W-035` landed: the maintenance hold and the lifecycle verbs)
-
-`ADR-073`'s decision implemented. `BR-DEPLOY-024`'s hold is a file at `/etc/cairn/hold` whose
-*presence* is the whole signal — contents are advisory, and an unreadable hold is still a hold,
-because failing open would resume deploys on a host somebody deliberately stopped. *Held* is now
-a third `reconcile` outcome alongside converged and failed, which is the state cairn could not
-previously express: `State.is_converged` requires `stack_up`, so a deliberately-stopped stack
-read identically to a dead one.
-
-`reconcile.run` checks the hold **before** acquiring the deploy lock, so a held host answers
-immediately rather than queueing behind a deploy already in flight — its answer does not depend
-on that deploy's outcome.
-
-The self-deadlock `ADR-073` predicted is resolved structurally rather than by care: `run` is
-split into `run` (acquires the lock) and `run_locked` (assumes it), with a public
-`single_flight` for verbs that must hold it across several steps. `stop`/`start`/`restart` take
-the lock once and call `run_locked`; calling `run` would block a second `flock` against the
-process's own lock and hang with no output. A parametrized test makes a second acquisition
-fatal for all three verbs, mutation-checked by pointing them back at `run` — both `start` and
-`restart` fail as they should.
-
-`stop` places the hold *before* stopping, so a command that dies between the two steps dies
-having recorded intent. `restart` follows Brian's two rules: clear any hold found, set none of
-its own — one that outlived a crashed `restart` would freeze the host, inverting the command's
-meaning — and it reports having cleared someone else's rather than resuming silently.
-`doctor` gains a `maintenance hold` check that reports on every run, WARN not FAIL: being held
-is a state an operator chose; silence about it would be the actual defect. That check is the
-price `ADR-073` accepted for making the hold durable.
-
-963 tests pass. Not yet exercised on a real host.
-
-## 2026-08-19 (`ADR-075`/`BR-CLI-030`: named inspection verbs)
-
-`ADR-073` forbade running `docker compose` by hand and gave the operator `stop`/`start`/
-`restart`. Using it revealed the gap that left: Brian needed a SQL console on a client VPS, had
-no cairn verb for one, and was keeping two shell scripts in his home directory on that host to
-compensate — the signal that the tool was missing something, not that the operator was misusing
-it.
-
-Answered with three **named** verbs rather than by reviving `W-037`'s general
-`cairn-adopt compose -- <args>` passthrough: `console`, `mariadb`, and
-`logs [--follow] [--tail N] [SERVICE]`, each taking site, project and compose files from the
-descriptor so none needs an argument. The distinction is the whole decision — a passthrough
-makes *arbitrary* compose use easy, which is what `ADR-073` set out to discourage; named verbs
-make the **specific** legitimate things easy and leave everything else deliberately awkward.
-
-Three properties, each with a reason recorded rather than assumed. **No `-T`**: the MariaDB
-client silently drops to batch mode without a TTY, which is indistinguishable from a hang — the
-exact confusion that prompted these verbs, and the reason `bench console` seemed to tolerate
-`-T` while `bench mariadb` did not (Python's console prints prompts regardless of `isatty`).
-Both interactive verbs `execvp` and replace the cairn process, so the terminal and its signals
-belong to the client. **No single-flight lock**: a console may be open for hours and would
-otherwise block every deploy — the hazard of a console open during `bench migrate` is
-acknowledged, not hidden. **They work while a hold is set** (`BR-DEPLOY-024`), since a hold is
-when an operator most wants to look.
-
-`mariadb` keeps Frappe's own name rather than a neutral `db`; because cairn's recipe ships a
-Postgres override, it refuses with a message naming the engine when the descriptor layers it —
-best-effort, since a hand-built stack may use Postgres without declaring one. Guarded by tests
-including a parametrized `-T` assertion over both interactive verbs, mutation-checked by
-reintroducing the flag. 942 pass. `W-037` closes as superseded, retained because the rejected
-alternative is what explains `BR-CLI-030`'s shape.
-
-## 2026-08-19 (packaging: core-metadata version pinned to 2.4)
-
-The `0.4.11` upload failed with `InvalidDistribution: '2.5' is not a valid metadata version`.
-Neither the package nor its metadata was at fault, and upgrading `packaging` could never have
-helped.
-
-`python -m build` resolves the build backend in an **isolated environment**, so a release is
-built by whatever hatchling PyPI serves that day — here **1.32.0**, recorded in the wheel's own
-`Generator:` tag, not the 1.31.0 pinned in the local venv. 1.32.0 moved its default
-core-metadata version to 2.5. Meanwhile `twine` 6.2.0 monkeypatches
-`packaging.metadata._VALID_METADATA_VERSIONS` at import (`twine/package.py:31-40`) to re-add
-2.0 support, and does it by **assigning a hardcoded list that ends at 2.4** — clobbering the
-installed `packaging` 26.2's own list, which does include 2.5. So the venv's `twine check`
-failed even though calling `packaging` directly on the same file validated cleanly.
-
-Fixed at the project level rather than by chasing tool versions: `core-metadata-version =
-"2.4"` is now set explicitly for both the `wheel` and `sdist` targets, with a comment recording
-why. A release's metadata version is now a property of this repository instead of a moving
-default inherited from an isolated build environment. Raise it once twine accepts 2.5.
-
-Both artifacts rebuilt at `Metadata-Version: 2.4`; `twine check` passes. `0.4.11` was never
-published, so the version number is unchanged. Packaging/tooling, so no identifier.
-
-## 2026-08-19 (bug: cairn's read-path compose probes ran without the image variables)
-
-Found live on Life Scientific's test VPS hours after `BR-VEND-006` reached it. Reconcile
-converged — pulled, recreated, and migrated correctly — then failed health with "the stack did
-not report itself healthy" after the full 600s, while ERPNext itself was demonstrably online and
-writing to MariaDB.
-
-`_capture()` hardcoded `env=os.environ.copy()` and had no parameter for the compose variables,
-unlike `_run`/`_try`. Three compose invocations therefore ran without `CUSTOM_IMAGE`/
-`CUSTOM_TAG`: `running_digest`'s `ps -q`, `stack_is_up`'s `ps --format json`, and
-`_site_answers`' `exec`. That was **latent and harmless** for as long as
-`${CUSTOM_IMAGE:-frappe/erpnext}` absorbed the omission — the probes resolved the default and
-succeeded. `BR-VEND-006` replaced it with `${CUSTOM_IMAGE:?...}`, at which point those three
-exited non-zero, `_capture` returned `None`, and cairn could no longer see a stack that was
-running fine.
-
-The consequence was worse than the visible error. `stack_is_up` reading false made health time
-out; `running_digest` reading `None` made `is_first_deploy` true, so `is_converged` could never
-be true and **every pass re-converged** — pull, `up -d`, and `bench migrate` — roughly
-back-to-back at ~10.5 minutes per cycle against a live site.
-
-**Verified live 2026-08-19**: `0.4.11` installed on the client VPS, `cairn-adopt reconcile` completed with no errors. The same run is the first end-to-end proof of `ADR-074`'s layout — a compose file at `/etc/cairn/`, seeded from the client's own rather than cairn's recipe, carrying `BR-VEND-006`'s `${VAR:?...}` guard, reconciled cleanly by a cairn that supplies the variables itself and no `.env` anywhere on the host.
-
-Fixed: `_capture` takes `env_overrides`, and all three call sites pass
-`_compose_environment(descriptor)`. Guarded by a test asserting that *every* `docker compose`
-invocation carries `CUSTOM_IMAGE` — over the class, not the three known instances, since the
-next probe added would repeat the mistake. Mutation-checked by reverting one site.
-
-Scope confirmed the next day, empirically rather than by reasoning. Two further sites were
-suspected — `adopt.py`'s `self_compose` (used by `examine`) and `provision.py`'s
-`stage_backup` (the pre-install backup) — and both proved **immune**. The distinguishing factor
-is `--file`: `reconcile` passes `--project-directory`/`--file`, which forces Compose to parse
-and interpolate the file, while those two address the project by `--project-name` alone and
-resolve from container labels. Brian verified on the live host that
-`docker compose --project-name erpnext ps` succeeds both inside and outside the compose file's
-directory. `self_compose` chose that form for an unrelated reason — its docstring says a
-reconstructed `--file` set "could describe a different one" — and was incidentally immune to
-this entire failure mode as a result. The pre-install backup was never at risk.
-
-Hardened structurally rather than by patching sites: `_compose_run`/`_compose_capture`/
-`_compose_try` now pair command construction with `_compose_environment`, and
-`_compose_command` has exactly three callers, all of them those helpers. A future probe cannot
-omit the environment because there is no longer a way to build a compose invocation and execute
-it separately. `W-038` queues the remaining defence in depth — read-only probes could address
-by project name and stop depending on interpolation entirely — as deferred, since the seam
-already closes the defect.
-
-The durable lesson, which is not about this bug: **removing a silent default surfaces every
-latent place that depended on it.** `BR-VEND-006` was correct and stays; what it did was
-convert a hidden assumption into a loud failure, which is the point of it. The exposure was
-the fix working, not the fix misfiring — but it landed on a live client host, and a search for
-other readers of those variables should precede that kind of change, not follow it.
-
-## 2026-08-18 (`06-cli.md` split into three)
-
-Brian asked whether the requirements docs could be split. Measurement said yes, and said which:
-`06-cli.md` had reached 4585 words against a ceiling raised twice in one session, and its
-role-specific sections (A `cairn-build`, B `cairn-adopt`, C `cairn-registry`) were **57%** of
-the file against 42% shared convention.
-
-That mattered because the file's own header justified keeping it whole — "most of what governs
-the CLI is shared UX convention applying identically across binaries." True when written,
-false by now. Rather than split around a stale justification, the header was rewritten to say
-what the structure is and why it changed.
-
-Sections **A** and **B** moved to new `06a-cli-build.md` (1738 words) and `06b-cli-adopt.md`
-(831), leaving `06-cli.md` as the area's entry point — substrate, the `cairn-registry` verbs,
-the all-three commands, and shared conventions — at 2198 words, **under the 2200 default**, so
-its allowlist override was retired outright rather than bumped a third time. Section C stayed
-put: at 91 words it would have been a stub.
-
-Worth recording because it validates the mechanism: the retired override carried a note saying
-~4500 words was where "an actual split becomes the right call — this ceiling is set to trip a
-fresh review before that point, not at it." It did exactly that. It guessed section E (shared
-conventions) would be the one to move; measurement pointed at A and B instead.
-
-All 30 `BR-CLI` identifiers verified preserved across the three files, none lost and none
-defined twice — the IDs are cited in docstrings and test names, so only their file moved.
-`00-overview.md`'s index gained `06a`/`06b` rows and
-`docs/technical/25-documentation-authority.md` gained explicit per-file rows, so the routing
-rule in `AGENTS.md` still resolves. Documentation process, so no new identifier.
-
-## 2026-08-18 (`BR-DEPLOY-024` + `BR-CLI-029`: the hold and the lifecycle verbs)
-
-`ADR-073`'s decision written into requirements. **`BR-DEPLOY-024`** defines the maintenance
-hold — the file `/etc/cairn/hold`, whose presence is the whole signal — and makes *held* a
-third `reconcile` outcome, distinct from converged and failed, which is precisely what
-`cairn-adopt` could not previously express. Durable rather than in `/run`, with `doctor`
-reporting a live hold on every run as a stated condition of that durability.
-
-**`BR-CLI-029`** covers `stop`, `start`, and `restart` in one requirement rather than three,
-because their correctness is a property of their interaction: all three run under the
-single-flight lock, held once per command. Brian added `restart` with two rules — it clears any
-hold it finds, and sets none of its own between the down and the up. The lock, not a hold, is
-what protects that interval; a hold would outlive a crashed `restart` and freeze the host,
-inverting the command's meaning.
-
-Brian accepted that `restart` is `stop` then `start` rather than `docker compose restart`, and
-asked for the divergence from `cairn-registry restart` (`BR-REG-004`) to be documented clearly.
-It now appears on **both** sides — `BR-CLI-029` and `BR-REG-004` each state it and its reason —
-so neither reads as an oversight. The reason is asymmetric ownership: `compose restart` does not
-recreate containers and so cannot pick up an edited compose file; the target's file is
-operator-editable by design (`ADR-074`) and picking up such an edit is the motivating case,
-while the registry's is cairn-written, leaving the thin wrapper correct there.
-
-An implementation hazard is recorded in `ADR-073` rather than left to be rediscovered:
-`reconcile.run()` already acquires the single-flight lock, so a verb that takes the lock and
-then delegates to `run()` would block against its own lock.
-
-Three ceilings bumped in `ai/tools/.docs_check_allowlist` to admit this work — `03-deploy.md`
-(2700 → 2900), `06-cli.md` (4250 → 4600, which had ten words of headroom), and `ADR-073` itself
-(2200 → 2600). Unlike the grandfathered pre-migration entries, these are growth from new
-content, and each carries a dated note saying so. Three bumps in one session is the signal that
-a split is due rather than another bump; `06-cli.md` is the candidate, and Brian asked for it as
-a separate change.
-
-This file itself then tripped its own ceiling by three words. Rather than a fourth bump, `ai/tools/changelog_rotate.py` was run — and **did not crash**, contrary to `W-034`, archiving 2026-08-05 and 2026-08-06 cleanly and leaving 4624 words live. `W-034` is left `open` with the non-reproduction recorded, since nobody has identified what changed.
-
-## 2026-08-18 (`ADR-073` decided: cairn owns the stack's lifecycle verbs)
-
-Brian settled both halves. A human should **not** run `docker compose` directly against a
-cairn-managed stack — so `W-037` (an `.env` cairn maintains, or a `compose --` passthrough) is
-rejected outright, and `BR-VEND-006`'s `${VAR:?...}` guard stands as the entire answer for an
-unsupported attempt: it fails loudly instead of silently starting another vendor's image.
-Instead, cairn offers its own verbs so an operator can bring the stack up and down.
-
-That makes the hold state load-bearing rather than optional. `State.is_converged` requires
-`stack_up`, so without a hold the timer resurrects a deliberately-stopped stack — `bench
-migrate` included — within the poll interval, which would make a `down` verb actively
-misleading. Sketch recorded in `ADR-073`: `down` sets the hold and brings the stack down; `up`
-clears it and delegates to the existing reconcile path, which already does the right thing for
-a stack that is down, so no new convergence logic is needed; `reconcile` reports *held* and
-converges nothing while set; `doctor` surfaces it so a forgotten hold cannot hide.
-
-Both remaining details settled the same day. The hold is **durable**, at `/etc/cairn/hold`:
-a host rebooting mid-maintenance must stay down, so "down" honestly means down — which makes
-`doctor` reporting a live hold on *every* run a requirement of the decision rather than a
-nicety, since the cost of durability is that a forgotten hold freezes deploys indefinitely. The
-verbs are **`start`/`stop`**, matching `cairn-registry`. A concern raised while deciding — that
-compose-`stop` semantics would leave an edited `compose.yaml` ineffective — proved unfounded:
-`cairn-registry start` already runs `compose up -d` rather than `compose start`
-(`registry_provision.py:294`), and Compose recreates any container whose config hash changed.
-Also verified that `stack_is_up` requires `State == "running"` and a stopped container reports
-`exited`, so a released hold registers as not-converged with no change to that function.
-
-`ADR-073` is `approved` and fully specified; `W-035` is ready to implement.
-
-## 2026-08-18 (`ADR-074`: cairn seeds the compose file, the operator owns it)
-
-Brian resolved the ownership question `ADR-073` surfaced, framing it across two horizons — this
-particular VPS today, and cairn used by dozens of operators tomorrow with `frappe_docker` never
-in the picture. His statement of it: **"Help them. But don't take away their control."**
-
-Four commitments: cairn writes the *first* compose file on a fresh install from its owned
-recipe; it **never regenerates** it (seed-once, the same pattern `registry_provision.py`
-already uses for the fully-commented starter `/etc/cairn/registry.toml`, and what makes
-operator edits safe from clobbering); `${CUSTOM_IMAGE}`/`${CUSTOM_TAG}` stay, so cairn keeps
-control of *which image* while the operator keeps everything else; and the file is readable and
-editable by the operator. Location `/etc/cairn/`, matching `registry.toml` — an earlier draft
-argued for `/opt/cairn-target/` by analogy with `ADR-063`, which was the wrong analogy: that
-tier is for files cairn *rewrites*, and this one is seeded once. The recipe's `compose.yaml`
-uses named volumes exclusively, so no path resolution constrains the choice.
-
-A first draft of `ADR-074` also claimed the decision settled `ADR-073`'s fork, by making an
-on-disk `.env` permanent architecture. Brian rejected the premise — the live VPS has no `.env`
-at all and works fine — and he was right: cairn injects `CUSTOM_IMAGE`/`CUSTOM_TAG` per
-invocation and needs nothing on disk. The claim came from the AI silently widening "the
-operator may see and edit the file" into "…and run it by hand", then deriving a requirement
-from its own addition. Withdrawn the same day; `ADR-074` and `ADR-073` both carry the
-correction in place rather than a quiet deletion, and `W-037` was rewritten from a work item
-into the open question it actually is — *is hand-running wanted at all?* — with a
-`cairn-adopt compose --` passthrough noted as an alternative that avoids the group-shared
-directory entirely. `W-032`/`W-033` updated with the decided shape. `ADR-073` stays open for
-factor 3 alone: file ownership gives cairn no way to express "intentionally down", so `W-035`
-is unaffected.
-
-## 2026-08-18 (`BR-VEND-006`: the owned recipe no longer substitutes another vendor's image)
-
-Brian's call on `W-036`: drop the default so it fails loudly. New **`BR-VEND-006`** forbids a
-fallback on the image reference in the owned recipe, and requires Compose's error-on-unset
-form. `src/cairn/recipe/compose.yaml` and `overrides/compose.migrator.yaml` now read
-`${CUSTOM_IMAGE:?...}:${CUSTOM_TAG:?...}`, halting before any container starts and naming the
-remedy. Plain `${CUSTOM_IMAGE}` was considered and rejected: Compose substitutes an empty
-string and emits only a `WARN`, so the failure still arrives late and quietly. `example.env`'s
-`ERPNEXT_VERSION` — read by nothing once the fallback was gone — is replaced by explicit
-`CUSTOM_IMAGE`/`CUSTOM_TAG` placeholders. The requirement is deliberately scoped to image
-*identity*: `PULL_POLICY` and `RESTART_POLICY` keep their defaults, since substituting one of
-those cannot silently run somebody else's software.
-
-Guarded by a parametrized test over every compose file in the recipe tree, not just the two
-that carried the line, since it gets copied whenever an override is added; mutation-checked by
-reinstating the old line and confirming the test fails. Full suite 929 passed. The `${VAR:?...}`
-form was then confirmed live the same day on Life Scientific's test VPS (same Compose
-syntax, applied by hand to that host's own file): `docker compose config` fails on an unset
-variable and renders the correct image when both are supplied.
-
-## 2026-08-18 (`ADR-073` opened: the target stack has no usable lifecycle)
-
-Brian asked how to stop and restart the containers on a client VPS after changing the Compose
-YAML. cairn has no answer — `start`/`stop`/`restart` exist only for `cairn-registry`
-(`BR-REG-003`/`004`). The working procedure is five steps around a hand-assembled `docker
-compose` invocation transcribed out of `/etc/cairn/adopt.toml`; Brian's assessment was
-"extremely awkward and impractical."
-
-Tracing why separated inherited awkwardness from self-inflicted. The multi-file override
-layering is upstream `frappe_docker`'s, though `BR-DEPLOY-010`'s render-never-store choice
-does forgo upstream's usual render-once workaround. The other two factors are cairn's: the
-compose variables (`CUSTOM_IMAGE`/`CUSTOM_TAG`/`PULL_POLICY`/`SITES`) are injected per
-invocation and never written to disk, so a manual `docker compose up -d` succeeds against a
-stale `.env` and silently starts the previous image — a drift cairn's own `_survey_image` and
-`stage_reconnoitre` already treat as known; and `State.is_converged` requires `stack_up`, so
-an intentionally-stopped stack is indistinguishable from a dead one and the timer resurrects
-it, `bench migrate` included. That last one is the real blocker: cairn has no way to express
-"intentionally down."
-
-Verified against Life Scientific's test VPS the same day, which **refuted** the guess that it
-used the rendered single-file `gitops` pattern its directory name suggests. `erpnext.yaml`
-still interpolates; `CUSTOM_IMAGE`/`CUSTOM_TAG` are its only two variables, both carrying
-upstream defaults (`${CUSTOM_IMAGE:-frappe/erpnext}`); and no `.env` exists beside it. So a
-hand-run `docker compose up -d` on that host silently starts stock `frappe/erpnext:v16.26.1`
-— another vendor's image, never carrying the client's apps — with no warning, because a `:-`
-default suppresses Compose's unset-variable message. Factor 2 is more severe than first
-written, and `ADR-073` was amended accordingly: candidate (a) (write-through `.env`) is
-re-rated from "heavier, defer it" to worth doing close behind (b), since on this host the
-`.env` cairn would write carries no secret and its creation removes the hazard outright.
-`reconcile` was confirmed *not* looping there (zero converge passes in 24h).
-
-Brian then supplied the host's history, which reframed the finding twice over. The client
-built the VPS themselves from `frappe_docker`, which reached for **`pwd.yml`** — the
-disposable, explicitly non-production demo file — and cairn adopted it later; `/opt/vps-setup/`
-is surviving client tooling cairn superseded without displacing. The `.env` that does exist
-there sits one directory *above* the Compose project directory, so Compose never reads it, and
-carries neither `CUSTOM_IMAGE` nor `CUSTOM_TAG` regardless. That makes the VPS the first
-concrete instance of **`W-033`** (`ADR-068`'s take-ownership path), now cross-referenced.
-
-More consequentially, the same fallback turned out to live in **cairn's own recipe**:
-`src/cairn/recipe/compose.yaml:5` and `overrides/compose.migrator.yaml:9` both carry
-`${CUSTOM_IMAGE:-frappe/erpnext}`, inherited byte-for-byte from `frappe_docker` but owned by
-cairn since `ADR-059` — and `W-032` would ship it to every newly-provisioned host. Queued as
-`W-036`, with the choice between "drop the default so it fails loudly" and "keep it but detect
-the substitution" left to Brian.
-
-**Brian ruled the fix in scope** (an operator has no practical alternative route); the design
-is open. `ADR-073` records both candidates — write-through `.env`, and owned lifecycle
-commands plus a hold state — with two sub-questions still needing his answer: whether a hold
-survives reboot, and whether cairn writing `.env` collides with `BR-DEPLOY-011`'s
-secret-agnostic boundary. Queued as `ADR-073` (`needs_user`) in `docs/open/OPEN_DECISIONS.md`
-and `W-035` (`blocked`) in `docs/open/OPEN_WORK.md`. No requirement changed yet.
-
-## 2026-08-08 (`ADR-072`: `cairn-adopt-owned` marker; `cairn-adopt prune` fully specified)
-
-Brian asked why `cairn-build images` still held six images on a client VPS after most had
-been pushed. Tracing the code against `ADR-061`/`BR-BUILD-008`/`014`/`018` found no bug — six
-genuinely distinct input hashes, none superseded, marker correctly stripped on the five
-already pushed. The real gap: `ADR-061`'s `cairn-build prune` protects *every* pushed image
-unconditionally, forever, because it has no signal for "still in use by a colocated target
-role." `ADR-072` closes it: `cairn-adopt` gains a symmetric `cairn-adopt-owned` marker
-(`BR-DEPLOY-023`), applied to the image its `backend` container is currently running and
-refreshed on **every** `reconcile` pass (including a converged no-op, closing the rollout gap
-for hosts that pulled images before this feature existed). `cairn-build prune`'s Restriction 2
-(`BR-CLI-018`) is rewritten to protect the `cairn-build-owned` or `cairn-adopt-owned` markers
-specifically, rather than any tag at all — a pushed image nothing local is running is now
-eligible. `cairn-build images` (`BR-CLI-005`) excludes `cairn-adopt-owned` images entirely
-rather than showing them with an absent build marker.
-
-This also fully specifies `BR-DEPLOY-006`/`W-003` (target-side GC), open since 2026-07-24
-with no concrete selection rule: a new `BR-CLI-028`, `cairn-adopt prune [--keep <n>]
-[--dry-run] [--yes]`, keeps the currently-running image (unconditionally, via the same
-running-container digest read `BR-DEPLOY-003b` already uses) plus the newest `--keep`
-`cairn-adopt-owned` images, mirroring `cairn-build prune`'s removal mechanics exactly.
-`ADR-061` gets a short inline amendment note; its own core decision is unchanged.
-`docs/adr/README.md`, `docs/open/OPEN_WORK.md` (`W-003`), and both requirement files' headers
-updated to match.
-
-## 2026-08-06 (new lessons-learned topic: Docker & host storage)
-
-Closing out the same client-VPS disk-space incident as the two entries below: six durable
-findings recorded in new **`docs/technical/04d-lessons-docker-and-host-storage.md`** —
-Docker's `data-root` vs. containerd's independent `root`; disproving a plausible-looking
-double-counting theory with `stat -f` rather than trusting matching sizes/timestamps; not
-nesting one service's data inside another's managed tree; `sudo`'s glob-expansion-happens-
-first gotcha; verifying a device explicitly rather than trusting an implicit `mount
-<path>` → `/etc/fstab` lookup on a live migration; and when collapsing to one shared
-volume beats textbook per-service isolation. `docs/technical/04-lessons-learned.md`'s
-topic index updated to route to it.
-
-## 2026-08-06 (`changelog_rotate.py` could not parse its own generated footer)
-
-Found immediately after writing the entry below: `docs/CHANGELOG.md` tripped `DOC002`'s word
-budget, and running the prescribed fix (`ai/tools/changelog_rotate.py --dry-run`) crashed
-instead of archiving anything. `render_footer` writes the footer heading as `## Archived
-entries`; `parse_changelog`'s block loop only skips a trailing block that does *not* start with
-`## ` — so the tool's own output, fed back in on a later run, hit the "not a dated entry"
-branch and raised. Bug found and fixed, no requirement redesign: both sites now reference one
-`FOOTER_HEADING` constant, and `parse_changelog` explicitly recognizes and discards that exact
-block rather than only the no-heading case. Rotation re-run after the fix; archived the five
-oldest entries (2026-08-04 through 2026-08-05) to `docs/archive/CHANGELOG-2026-08-04-to-
-2026-08-05.md`, confirmed against `docs_check.py` and the full test suite.
-
-## 2026-08-06 (new userdocs guide: Docker storage on a multi-volume host)
-
-Same VPS relocation session that surfaced the `disk-headroom` doctor bug (below): after fixing
-`cairn-registry`'s `data_dir`, Brian tried to solve the client VPS's small-root-disk problem
-generally by pointing containerd at the big Docker volume too — nesting a directory inside
-`/var/lib/docker` and moving files there. That doesn't work: containerd's `root` setting
-(`/etc/containerd/config.toml`) is completely independent of Docker's own `data-root`
-(`/etc/docker/daemon.json`), and on a host with Docker's containerd image store enabled
-(`driver-type: io.containerd.snapshotter.v1`), containerd — not Docker's own graphdriver — is
-what actually holds the growing image/container layer bytes. Redirecting only `data-root`
-leaves containerd silently defaulting to `/var/lib/containerd`, on whatever volume holds
-ordinary `/var/lib` — the small one. Brian: "a huge footgun for anyone running multiple volumes
-on a VPS," and asked for it in published docs before it bites someone else.
-
-Not a cairn requirement — this is host-level Docker/containerd configuration, nothing cairn's
-own code touches (confirmed: no reference to `containerd` anywhere in `src/` or `docs/`) — so no
-`BR`/`ADR` ID, just a new userdocs page: **`userdocs/guides/docker-storage-layout.md`**,
-covering how to tell which daemon actually holds the space (`ncdu`, `docker info`, the `moby`
-namespace check on containerd's shims) and how to relocate containerd's `root` onto its own
-volume rather than nesting it inside `/var/lib/docker` (the same data-root-blast-radius caution
-`ADR-060` already applied to `cairn-registry`'s own `data_dir`, here generalized to any
-Docker host). Linked from `userdocs/guides/index.md` and, since this needs deciding *before*
-first use, from `userdocs/get-started/index.md`'s Prerequisites section. `mkdocs.yml` nav gained
-a `Guides` submenu (previously a single flat page) to hold it.
-
-## 2026-08-06 (`cairn-registry doctor`: a `PermissionError` on `data_dir` no longer crashes the disk-headroom check)
-
-Found live while helping Brian relocate a client VPS's `data_dir` off a disk-space-constrained
-root filesystem: he'd pointed `[registry] data_dir` at a path under `/var/lib/docker`, which
-Docker keeps locked down against non-root traversal by design. `cairn-registry doctor` crashed
-with an unhandled `PermissionError` instead of reporting a normal `FAIL` row.
-
-Bug found and fixed, no requirement redesign — `BR-REG-011` already requires `doctor` to report
-three checks, not throw: `_check_disk_headroom` (`cli_registry.py`) called `config.data_dir.
-exists()` *outside* the function's own `try`/`except OSError` block, so an `EACCES` on an
-unreadable parent directory (raised by `exists()` itself, not just the `shutil.disk_usage()`
-call two lines below that was already guarded) propagated as an internal-error crash. Fixed by
-moving the `.exists()` call inside the existing `try` block — one-line fix, same error-message
-shape the `disk_usage()` path already used. New test
-(`test_check_disk_headroom_reports_permission_error_as_fail`, `test_cli_registry.py`) exercises
-the exact failure mode by monkeypatching `Path.exists` to raise `PermissionError`. Full suite
-passes.
-
-## 2026-08-06 (`cairn-build doctor` reports build-timer status; `--all` walks every manifest)
-
-Brian suggested `doctor` mention whether `setup-timer`'s systemd units exist and are
-enabled/started — currently only checkable by hand, one `systemctl` call at a time.
-`cairn-adopt doctor` already had this for the reconcile timer (`check_reconcile_timer`); the
-build side had no equivalent.
-
-Design settled through a short back-and-forth: single-manifest scope (mirroring `github
-reachability`) was the obvious first cut, but Brian rejected it — `/srv/cairn/` is a static,
-known directory (`BR-CLI-022`), and a build host commonly serves more than one client, so
-scoping to one manifest at a time would force an operator to script their own enumeration to
-be sure every timer on the host is actually running. Settled on two mutually exclusive scope
-flags: `--manifest <path>` (one manifest) and `--all` (every manifest under
-`/srv/cairn/*/*.toml`, one result per manifest) — recorded as `ADR-070`. A further question —
-whether `--all` should also broaden `config`/`github reachability` into a full per-manifest
-host audit — was deliberately deferred rather than folded in; tracked as `ADR-071`
-(`docs/open/OPEN_DECISIONS.md`). Bare `cairn-build doctor` (neither flag) is unchanged and
-still runs every host-level check, but now reports the build-timer check as skipped, with the
-fix, rather than omitting it silently the way `github reachability` does.
-
-**`BR-CLI-007`** (`docs/requirements/06-cli.md`) amended in place: the `cairn-build doctor`
-bullet documents the new check and its two scope flags.
-
-**Code:** `provision.build_unit_name`'s naming logic extracted into a pure
-`unit_name_for(client, image_name, environment)` so `doctor.py` can compute the same unit name
-`setup-timer` would install for any manifest it walks, without duplicating the f-string.
-`doctor.py` gains `check_build_timers`/`_check_one_build_timer`/`_known_manifest_paths`; wired
-into `run_build_checks`. `cli_build.py`'s `doctor_command` gains `--all`, checked against
-`--manifest` via `typer.BadParameter` before either check family runs. Tests added to
-`tests/test_doctor.py` and `tests/test_cli_build.py`.
-
-**Same-day follow-up.** Brian, re-reviewing, suspected the *service* also needed to be active,
-not just the timer. Checking the actual unit definitions showed both cairn-build's build
-service and cairn-adopt's reconcile service are `Type=oneshot` — they run, exit, and return to
-`inactive` between firings, so "active" is the unusual state, not the healthy one; his
-suggested check would have false-WARNed on every healthy install. The real gap underneath the
-hunch was genuine, though: neither check asked whether the *last* run had actually succeeded.
-Added `systemctl is-failed` on the service to both `check_build_timers` and — since
-`cairn-adopt doctor`'s pre-existing `check_reconcile_timer` had the identical blind spot —
-`check_reconcile_timer` too, taking priority over each check's existing enabled/active read. A
-failed last run now FAILs the check outright rather than reporting the more benign "not yet
-started." `ADR-070` and `BR-CLI-007` amended in place; no new ID minted.
-
 ---
 
 ## Archived entries
@@ -628,3 +243,5 @@ contiguous range, newest-first within it same as here.
 - [CHANGELOG-2026-08-04-to-2026-08-05.md](archive/CHANGELOG-2026-08-04-to-2026-08-05.md)
 - [CHANGELOG-2026-08-05-to-2026-08-06.md](archive/CHANGELOG-2026-08-05-to-2026-08-06.md)
 - [CHANGELOG-2026-08-06.md](archive/CHANGELOG-2026-08-06.md)
+- [CHANGELOG-2026-08-06-to-2026-08-18.md](archive/CHANGELOG-2026-08-06-to-2026-08-18.md)
+- [CHANGELOG-2026-08-18-to-2026-08-19.md](archive/CHANGELOG-2026-08-18-to-2026-08-19.md)

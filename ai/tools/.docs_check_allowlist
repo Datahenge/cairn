@@ -5,17 +5,17 @@
 # structural reorganization. See docs/technical/01-documentation-conventions.md for
 # the sprawl-control policy new documents should follow.
 
-docs/CHANGELOG.md = 6500
-# ^ tripled 2026-08-04: the 2000 ceiling set earlier the same day re-tripped within
-# hours, mid-session, forcing an archive pass that interrupts the work generating the entries.
-# This file grows by same-day append, unlike a settled requirements doc — the next archive
-# pass happens on its own schedule, not forced by a ceiling sized for a single quiet day.
-# Bumped 2026-08-06 (6000 -> 6500), not rotated: ai/tools/changelog_rotate.py's parser
-# currently crashes on this file's own machine-generated "## Archived entries" footer
-# (raises "entry header does not start with a date" — parse_changelog's skip-non-dated-
-# block logic only skips blocks that don't start with "## ", but the footer heading does)
-# — confirmed pre-existing against git HEAD, not caused by this session's entries. Rotation
-# is blocked until that's fixed; this bump is a stopgap, not a replacement for it.
+docs/CHANGELOG.md = 3000
+# ^ lowered 2026-08-20 from 6500. The 6000 -> 6500 bump on 2026-08-06 was a stopgap taken
+# because changelog_rotate.py could not run; that is fixed (see W-034), so the ceiling no
+# longer has to absorb what rotation was supposed to remove. This file's job is to be
+# readable; the archive keeps everything, indexed.
+# Measured, not estimated: the first rotation at this ceiling archived 11 entries and left 10
+# live, holding two days of a heavy session. A quiet week fits comfortably; a session like
+# 2026-08-20's does not. If rotation starts firing mid-session, that is the signal the entries
+# are too long, not that the ceiling is too low — check them against 01-documentation-
+# conventions.md before reaching for a bump.
+
 docs/archive/CHANGELOG-2026-07.md = 12500
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
@@ -68,5 +68,11 @@ docs/archive/CHANGELOG-2026-08-05-to-2026-08-06.md = 3000
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
 docs/archive/CHANGELOG-2026-08-06.md = 2300
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.
+docs/archive/CHANGELOG-2026-08-06-to-2026-08-18.md = 3000
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.
+docs/archive/CHANGELOG-2026-08-18-to-2026-08-19.md = 5700
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
