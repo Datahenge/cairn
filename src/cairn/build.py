@@ -25,6 +25,7 @@ import json
 import shlex
 import subprocess
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -121,8 +122,13 @@ class BuildPlan:
             entry["url"] = github_auth.authenticated(entry["url"], token)
         return json.dumps(entries, indent=2, sort_keys=False) + "\n"
 
-    def command(self, apps_json: Path) -> list[str]:
-        """Return the exact engine invocation, with *apps_json* mounted as a secret."""
+    def command(self, apps_json: Path, github_token: Path | None = None) -> list[str]:
+        """Return the engine invocation, with *apps_json* — and any token — mounted as secrets.
+
+        *github_token* is omitted entirely when no token is configured, rather than passed as
+        an empty file: a manifest with no private app builds without one and always has
+        (`BR-BUILD-019`).
+        """
         command = [self.engine_name, "build"]
         if self.plain_progress and self.engine_name == engine.DOCKER:
             command.append("--progress=plain")
@@ -134,6 +140,8 @@ class BuildPlan:
         for key, value in self.labels.items():
             command += ["--label", f"{key}={value}"]
         command += ["--secret", f"id={appsjson.SECRET_ID},src={apps_json}"]
+        if github_token is not None:
+            command += ["--secret", f"id={github_auth.TOKEN_SECRET_ID},src={github_token}"]
         for reference in self.references:
             command += ["--tag", reference]
         command += ["--file", str(self.containerfile), str(self.context)]
@@ -149,7 +157,7 @@ class BuildPlan:
         """The name given to the build-cache stage (`BR-BUILD-015`)."""
         return f"{CACHE_STAGE_REPOSITORY}/{self.local_name}:{CACHE_STAGE_TARGET}"
 
-    def cache_stage_command(self, apps_json: Path) -> list[str]:
+    def cache_stage_command(self, apps_json: Path, github_token: Path | None = None) -> list[str]:
         """Return the pass that *names* the cache stage rather than building anything.
 
         Deliberately omits two things the real build has. **Labels**, because they belong
@@ -162,6 +170,8 @@ class BuildPlan:
             command += ["--build-arg", f"{key}={value}"]
         command += ["--build-arg", f"{CACHE_BUST_ARG}={self.cache_bust}"]
         command += ["--secret", f"id={appsjson.SECRET_ID},src={apps_json}"]
+        if github_token is not None:
+            command += ["--secret", f"id={github_auth.TOKEN_SECRET_ID},src={github_token}"]
         command += ["--tag", self.cache_stage_reference]
         command += ["--file", str(self.containerfile), str(self.context)]
         return command
@@ -186,7 +196,13 @@ class BuildPlan:
             *(f"  {key}={value}" for key, value in self.labels.items()),
             "",
             "build command:",
-            "  " + shlex.join(self.command(Path("<apps.json>"))),
+            "  "
+            + shlex.join(
+                self.command(
+                    Path("<apps.json>"),
+                    Path("<github-token>") if github_auth.github_token() else None,
+                )
+            ),
         ]
         return "\n".join(lines)
 
@@ -305,26 +321,55 @@ def run(build_plan: BuildPlan, sink: Transcript | None = None) -> None:
     On failure the exact command is quoted back, since that is what makes the failure
     reproducible by hand (`BR-CLI-015`).
     """
-    with appsjson.written(build_plan.apps_json_secret) as apps_json:
-        command = build_plan.command(apps_json)
+    token = github_auth.github_token()
+    if not token:
+        _notify(github_auth.unauthenticated_clone_warning(), sink)
+
+    refused: bool | None = None
+    with ExitStack() as held:
+        apps_json = held.enter_context(appsjson.written(build_plan.apps_json_secret))
+        # The same owner-only temporary file `apps.json` gets: the token exists on disk only
+        # for the duration of this build, and only for this process's owner.
+        github_token = held.enter_context(appsjson.written(token)) if token else None
+        command = build_plan.command(apps_json, github_token)
         try:
-            returncode = (
-                _tee(command, sink) if sink else subprocess.run(command, check=False).returncode
-            )
+            if sink:
+                returncode, refused = _tee(command, sink)
+            else:
+                returncode = subprocess.run(command, check=False).returncode
         except FileNotFoundError as exc:
             raise BuildError(
                 f"`{build_plan.engine_name}` not found on PATH when starting the build."
             ) from exc
 
     if returncode != 0:
-        raise BuildError(
+        message = (
             f"{build_plan.engine_name} build failed with exit code {returncode}.\n"
             f"Command:\n  {shlex.join(command)}"
         )
+        # `refused is None` is the un-teed path, where the engine's output never crossed back
+        # to cairn. A missing token is then the only signal available, so it is offered rather
+        # than asserted.
+        if refused or (refused is None and not token):
+            message = f"{github_auth.anonymous_refusal_hint()}\n\n{message}"
+        raise BuildError(message)
 
 
-def _tee(command: list[str], sink: Transcript) -> int:
-    """Run *command*, streaming its output to stderr and *sink* at once.
+def _notify(text: str, sink: Transcript | None) -> None:
+    """Put *text* in front of the operator, and in the transcript when one is open."""
+    line = f"{text}\n"
+    sys.stderr.write(line)
+    sys.stderr.flush()
+    if sink:
+        sink.write(line)
+
+
+def _tee(command: list[str], sink: Transcript) -> tuple[int, bool]:
+    """Run *command*, streaming to stderr and *sink*; report the exit code and whether
+    `github.com` refused an unauthenticated request along the way (`BR-BUILD-019`).
+
+    The refusal is read out of the stream rather than looked up afterwards because it happens
+    inside the build sandbox: git's message is the only trace that ever reaches cairn.
 
     stderr is merged into stdout so the transcript preserves interleaving exactly as the
     terminal showed it — two separately-drained pipes would reorder the two streams
@@ -340,12 +385,14 @@ def _tee(command: list[str], sink: Transcript) -> int:
         bufsize=1,
     )
     assert process.stdout is not None  # guaranteed by stdout=PIPE
+    refused = False
     with process.stdout as stream:
         for line in stream:
             sys.stderr.write(line)
             sys.stderr.flush()
             sink.write(line)
-    return process.wait()
+            refused = refused or github_auth.looks_like_anonymous_refusal(line)
+    return process.wait(), refused
 
 
 def tag_cache_stage(build_plan: BuildPlan) -> str | None:

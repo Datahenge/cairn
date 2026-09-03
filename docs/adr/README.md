@@ -91,6 +91,7 @@ unarchived.
 | [ADR-073](073-target-stack-lifecycle-and-a-maintenance-state.md) | `exploratory` | Whether `cairn-adopt` should own target-stack lifecycle (`stop`/`start`) and a maintenance state `reconcile` respects |
 | [ADR-074](074-cairn-seeds-the-compose-file-the-operator-owns-it.md) | `authoritative` | cairn writes the first compose file on a fresh install and never regenerates it; `${CUSTOM_IMAGE}` stays so cairn keeps image control while the operator keeps the file |
 | [ADR-075](../decisions/075-inspection-verbs-not-a-compose-passthrough.md) | `authoritative` | `cairn-adopt` gains named `console`/`mariadb`/`logs` verbs rather than the general compose passthrough `W-037` rejected |
+| [ADR-077](077-the-frappe-clone-authenticates-through-a-build-secret.md) | `authoritative` | The builder stage's frappe clone authenticates through a build secret, reversing `BR-BUILD-016`'s frappe exclusion; anonymous `github.com` access is not a guaranteed floor |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../decisions/](../decisions/)
 instead, as lightweight decisions.

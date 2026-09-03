@@ -324,6 +324,105 @@ def test_run_writes_the_authenticated_apps_json_to_the_real_secret_file(monkeypa
     assert "ghp_secret@github.com" in contents["apps_json"]
 
 
+# --- the frappe clone's credential (BR-BUILD-016, BR-BUILD-019, ADR-077) -----
+
+
+def test_no_token_secret_is_mounted_when_none_is_configured(monkeypatch):
+    """A manifest with no private app builds without a token, and always has."""
+    monkeypatch.delenv(github_auth.GITHUB_TOKEN_ENV_VAR, raising=False)
+
+    command = _plan().command(Path("/tmp/apps.json"))
+
+    assert not any(github_auth.TOKEN_SECRET_ID in part for part in command)
+
+
+def test_the_token_reaches_the_builder_as_a_secret_never_a_build_arg(monkeypatch):
+    """BR-BUILD-016: frappe's URL travels as a build-arg; its credential must not."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+    contents: dict[str, str] = {}
+
+    def _run(command, **kwargs):
+        flag = next(
+            part for part in command if part.startswith(f"id={github_auth.TOKEN_SECRET_ID}")
+        )
+        contents["token"] = Path(flag.split("src=", 1)[1]).read_text(encoding="utf-8")
+        build_args = [command[i + 1] for i, part in enumerate(command) if part == "--build-arg"]
+        contents["build_args"] = "\n".join(build_args)
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(build.subprocess, "run", _run)
+    build.run(_plan())
+
+    assert contents["token"] == "ghp_secret"
+    assert "ghp_secret" not in contents["build_args"], "a build-arg is readable via history"
+
+
+def test_dry_run_names_the_token_secret_without_revealing_it(monkeypatch):
+    """BR-BUILD-012: the printed command shows the mount; the value stays out of it."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
+
+    report = _plan().render()
+
+    assert github_auth.TOKEN_SECRET_ID in report
+    assert "ghp_secret" not in report
+
+
+def test_a_build_without_a_token_warns_that_the_clone_is_unauthenticated(monkeypatch, capsys):
+    """BR-BUILD-019: the token stays optional, but the operator is told what it depends on."""
+    monkeypatch.delenv(github_auth.GITHUB_TOKEN_ENV_VAR, raising=False)
+    monkeypatch.setattr(build.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 0})())
+
+    build.run(_plan())
+
+    assert github_auth.GITHUB_TOKEN_ENV_VAR in capsys.readouterr().err
+
+
+def test_an_anonymous_refusal_is_named_rather_than_passed_through(monkeypatch, tmp_path):
+    """BR-BUILD-019: git blames a terminal prompt; the failure must not stop there."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_stale")
+    refusal = "fatal: could not read Username for 'https://github.com': No such device\n"
+
+    class _Process:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.StringIO(refusal)
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(build.subprocess, "Popen", _Process)
+
+    with (
+        transcript.recording(tmp_path / "build.log") as recorder,
+        pytest.raises(BuildError) as caught,
+    ):
+        build.run(_plan(), recorder)
+
+    assert github_auth.GITHUB_TOKEN_ENV_VAR in str(caught.value)
+    assert "rate-limited" in str(caught.value)
+
+
+def test_an_ordinary_build_failure_is_not_blamed_on_the_token(monkeypatch, tmp_path):
+    """The hint must stay specific, or it becomes noise on every unrelated failure."""
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_fine")
+
+    class _Process:
+        def __init__(self, *args, **kwargs):
+            self.stdout = io.StringIO("#8 ERROR: process did not complete successfully\n")
+
+        def wait(self):
+            return 1
+
+    monkeypatch.setattr(build.subprocess, "Popen", _Process)
+
+    with (
+        transcript.recording(tmp_path / "build.log") as recorder,
+        pytest.raises(BuildError) as caught,
+    ):
+        build.run(_plan(), recorder)
+
+    assert github_auth.GITHUB_TOKEN_ENV_VAR not in str(caught.value)
+
+
 # --- preconditions and failure (BR-BUILD-009) -------------------------------
 
 
@@ -365,7 +464,12 @@ def test_run_succeeds_quietly(monkeypatch):
 
 
 def test_engine_output_is_teed_to_terminal_and_transcript(monkeypatch, capsys, tmp_path):
-    """BR-CLI-016: the transcript is *in addition to* live output, never instead of it."""
+    """BR-CLI-016: the transcript is *in addition to* live output, never instead of it.
+
+    A token is configured so `BR-BUILD-019`'s unauthenticated-clone warning stays out of the
+    way; what this asserts is the teeing, not the notice.
+    """
+    monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_teeing")
     engine_output = "#1 [base 1/3] FROM python:3.14.2\n#2 DONE 0.1s\n"
 
     class _Process:

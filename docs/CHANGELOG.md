@@ -9,6 +9,70 @@ code changes live in git history.
 
 ---
 
+## 2026-09-03 (`02-build.md` split; `02a-build-tagging.md` is new)
+
+`docs/requirements/02-build.md` reached its 2200-word ceiling admitting `BR-BUILD-019`
+(previous entry). The bump taken then is retired one day later in favour of a split, at
+Brian's direction.
+
+The bump's own note guessed that "Private `github.com` apps" was the section to move.
+Measurement disagreed: that section is 486 words, while "Cache & tagging" is 887 — 39% of
+the file and nearly double the guess. "Cache & tagging" moved instead, to the new
+`02a-build-tagging.md`, carrying `BR-BUILD-007`, `008`, `014`, `014a`, and `018`. This is the
+same lesson the 2026-08-18 `06-cli.md` split recorded — measure the sections rather than guess
+which one grew — and it is now recorded twice, which is the argument for measuring first.
+
+The split is by *topic*, not merely by size: `02a` owns how an image is **named and reused**
+(cache invalidation, the deterministic primary tag, input-hash deduplication, the ownership
+marker), and `02-build.md` keeps what a build **is** (manifest inputs, ref resolution,
+invocation, provenance, the reproducibility bar, and the `github.com` credential rules).
+
+No requirement was renumbered, reworded, or withdrawn — IDs are stable across a move. The
+spine is ~1419 words and `02a` ~1011, so the allowlist override is retired outright rather
+than re-pointed, matching how `06-cli.md`'s was handled. `00-overview.md`'s area table gains
+an `02a` row, `25-documentation-authority.md` gains an authority row, and
+`05-implementation-index.md`'s Build and Images/prune rows now cite the document that
+actually owns the requirement they implement.
+
+---
+
+## 2026-09-02 (frappe clone authenticates; `ADR-077`, `BR-BUILD-019`)
+
+A `cairn-build build` on the Life Scientific test VPS failed in the builder stage at
+`bench init`, with git's `could not read Username for 'https://github.com'`. Diagnosis:
+GitHub refused an *unauthenticated* git operation from that host's IP — `GET /info/refs`
+returned `200`, the protocol-v2 `POST /git-upload-pack` returned `401` with
+`www-authenticate: Basic realm="GitHub"`. The repository is public; anonymous access is
+rate-limited per IP and is not a guaranteed floor.
+
+`ADR-077` records the decision and its rejected alternatives. `BR-BUILD-016`'s closing
+paragraph — which excluded frappe on the reasoning that "a token has no safe channel to
+reach it" — is replaced. Two errors in that reasoning: it conflated frappe's URL (which
+must stay a plain build-arg, since provenance depends on it) with frappe's credential
+(which needs no build-arg at all), and `apps.json` had been demonstrating the safe channel
+all along. The exclusion was also only half-observed in practice: `resolve.resolve_manifest()`
+already tokenizes frappe's `ls-remote` exactly as it does every app's, so only the
+in-container clone was ever anonymous.
+
+`BR-BUILD-016`'s "both places" clause becomes three. New `BR-BUILD-019` keeps the token
+optional — a build with none configured proceeds anonymously with a warning — and requires
+cairn to name `$CAIRN_GITHUB_TOKEN` when a build fails on an anonymous refusal, rather than
+passing through git's message, which names a terminal prompt that was never the problem.
+
+Brian's calls at decision time: token optional rather than mandatory (requiring one would
+fail every manifest with no private app, and every timer provisioned without the
+`EnvironmentFile=-` token file `ADR-065` permits); and a `credential.helper` reading the
+mount rather than a `url.insteadOf` rewrite, which would write the literal token into a
+gitconfig file and leave it in the builder layer. `doctor` is unchanged — detecting this
+pre-build would mean shelling out to a container, which is not what a host-side tool is for.
+
+`BR-BUILD-017`/`-018` were not available: `-017` is reserved by the git-mirror plan
+(`W-009`, `ADR-044`) and `-018` by `ADR-061`. The mirror is complementary, not a
+substitute — as scoped it covers `[[cairn.apps]]` entries, not frappe, and its
+start-of-build `git fetch` is still a `github.com` operation from the same IP.
+
+---
+
 ## 2026-08-20 (orientation pages promoted; README rewritten)
 
 `userdocs/index.md` is replaced by the funnel-ordered rewrite from `docs/scratch/`, and

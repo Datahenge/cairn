@@ -27,6 +27,18 @@ GITHUB_TOKEN_ENV_VAR = "CAIRN_GITHUB_TOKEN"
 #: The only host a token is ever injected for.
 _GITHUB_HOST = "github.com"
 
+#: The secret id the owned Containerfile mounts for the builder stage's frappe clone.
+#: Frappe's URL and ref travel as build-args, but its credential never does — a build-arg is
+#: permanently readable via image history, so the token rides the same secret channel
+#: `apps.json` uses (`BR-BUILD-016`, `ADR-077`).
+TOKEN_SECRET_ID = "github_token"
+
+#: Git's wording when `github.com` refuses an operation for want of credentials. It names a
+#: terminal prompt, which is never the actual problem: GitHub rate-limits unauthenticated git
+#: operations per IP and answers the `git-upload-pack` POST with a 401, so a *public*
+#: repository fails exactly as a private one would (`BR-BUILD-019`, `ADR-077`).
+_ANONYMOUS_REFUSAL_MARKER = "could not read Username for 'https://github.com'"
+
 #: The only schemes a token can authenticate over. An SSH form (`git@github.com:...`, or
 #: `ssh://`) needs a live handshake, not Basic-auth credentials — injecting into one of those
 #: would silently produce a URL that does not mean what it looks like it means.
@@ -90,3 +102,41 @@ def redacted(text: str, token: str | None) -> str:
     if not token:
         return text
     return text.replace(token, "***")
+
+
+def looks_like_anonymous_refusal(text: str) -> bool:
+    """Whether *text* carries git's wording for a credential-less `github.com` refusal.
+
+    Matched on git's own message rather than an HTTP status, because that message is all
+    that reaches cairn: the failure happens inside the build sandbox, and only the engine's
+    streamed output crosses back out (`BR-BUILD-019`).
+    """
+    return _ANONYMOUS_REFUSAL_MARKER in text
+
+
+def anonymous_refusal_hint() -> str:
+    """The remedy appended to a build that failed on an unauthenticated `github.com` clone.
+
+    Deliberately contradicts git's own line rather than merely supplementing it: an operator
+    who reads "could not read Username" reaches for a terminal or a prompt setting, neither
+    of which is involved (`BR-BUILD-019`).
+    """
+    return (
+        "github.com refused an unauthenticated git request during the build. This is not a "
+        "terminal or prompt problem, despite git's wording, and the repository does not have "
+        f"to be private: unauthenticated git operations are rate-limited per IP address. Set "
+        f"${GITHUB_TOKEN_ENV_VAR} and retry."
+    )
+
+
+def unauthenticated_clone_warning() -> str:
+    """The notice emitted when a build starts with no token configured.
+
+    A token stays optional — a manifest with no private app builds without one, and always
+    has (`BR-BUILD-019`). This says what the build is about to depend on, so an eventual
+    refusal is recognisable rather than surprising.
+    """
+    return (
+        f"No ${GITHUB_TOKEN_ENV_VAR} is set; the frappe clone will run unauthenticated. "
+        "That works until github.com rate-limits anonymous requests from this host."
+    )

@@ -68,7 +68,8 @@ added below as they are drafted.
 | --- | --- | --- | --- | --- |
 | 00 | — | `00-overview.md` | This index + conventions | living |
 | 01 | `VEND` | `01-vendoring.md` | Vendoring upstream frappe_docker (ventwig, pin, drift) | **approved** |
-| 02 | `BUILD` | `02-build.md` | Custom image build: manifest → apps.json → tagged image + marker | **approved** |
+| 02 | `BUILD` | `02-build.md` | Custom image build: manifest inputs, ref resolution, invocation, provenance | **approved** |
+| 02a | `BUILD` | `02a-build-tagging.md` | Cache-busting, tag scheme, input-hash reuse, ownership marker | **approved** |
 | 03 | `DEPLOY` | `03-deploy.md` | Reconcile/lifecycle: desired-state, pull loop, migration, rollback | **approved** |
 | 04 | `DATA` | `04-data.md` | Data-plane **boundary** (off-limits; `migrate` auto, `install-app` opt-in) | **approved** |
 | 05 | `CFG` | `05-config.md` | Configuration: target (on the sites volume) + build (local: registry, engine) | **approved** |

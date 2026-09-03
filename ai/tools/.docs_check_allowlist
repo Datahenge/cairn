@@ -27,6 +27,14 @@ docs/archive/CHANGELOG-2026-08-04-early.md = 1200
 # invitation to keep adding to it.
 docs/discussions/discussion-log.md = 5500
 docs/plans/next-steps.md = 2200
+# docs/requirements/02-build.md — override RETIRED 2026-09-03, one day after it was added.
+# The 2350 bump admitted BR-BUILD-019 and BR-BUILD-016's rewritten frappe clause (ADR-077);
+# Brian called for the split instead. The bump note guessed "Private github.com apps" (486
+# words) was the section to move. Measurement said otherwise: "Cache & tagging" was 887 words,
+# 39% of the file and nearly double the guess, so that moved to 02a-build-tagging.md. Same
+# lesson the 06-cli.md split recorded below — measure the sections, do not guess which one
+# grew. The spine is ~1419 words and 02a ~1011; neither needs an entry.
+
 docs/requirements/03-deploy.md = 2900
 # ^ bumped 2026-08-06 -> 2900 on 2026-08-18 to admit BR-DEPLOY-024 (the maintenance hold,
 # ADR-073). Unlike the grandfathered entries above, this is growth from NEW content, not
