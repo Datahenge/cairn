@@ -24,7 +24,7 @@ Split by topic (2026-08-03) once the single file grew past the point of being lo
 a narrow task. Add new findings to the topic file they belong to; add a new topic file here
 only when a finding doesn't fit any existing one.
 
-_Last updated: 2026-08-06_
+_Last updated: 2026-09-05_
 
 ## Topics
 
@@ -34,3 +34,4 @@ _Last updated: 2026-08-06_
 | [04b-lessons-caching-and-provenance.md](04b-lessons-caching-and-provenance.md) | Cache invalidation (`CACHE_BUST`), provenance capture, image labelling, dangling/stage images |
 | [04c-lessons-process-notes.md](04c-lessons-process-notes.md) | Method and process — sandbox constraints, convention enforcement, corrections worth remembering |
 | [04d-lessons-docker-and-host-storage.md](04d-lessons-docker-and-host-storage.md) | Docker Engine vs. containerd storage, host disk layout, diagnosing a live VPS disk-space incident |
+| [04e-lessons-github-rate-limits.md](04e-lessons-github-rate-limits.md) | `github.com` rate limiting of unauthenticated git, why it presents as a `401`, and what a reachability probe does and does not prove |

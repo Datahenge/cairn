@@ -9,6 +9,42 @@ code changes live in git history.
 
 ---
 
+## 2026-09-05 (github.com rate limiting documented; both paths)
+
+Follow-up to `ADR-077`. The fix shipped, but nothing told an operator why they would want a
+token for a build of entirely public repositories, which is the situation that produced the
+incident.
+
+**Path 2.** New `docs/technical/04e-lessons-github-rate-limits.md`, a durable finding indexed
+from `04-lessons-learned.md`. Records what was measured (rate limits are keyed on the caller,
+not the repository; the refusal arrives as a `401` credential challenge rather than a `429`;
+protocol v2 meters only the `git-upload-pack` POST, so a `curl` against `/info/refs` returns
+`200` while a clone fails) separately from what was reasoned (a credential helper
+authenticates on the retry; `CACHE_BUST` makes cairn clone more often than a hand-run build).
+It also records what could **not** be established: GitHub publishes no figures for
+git-over-HTTPS, and a rate limit is indistinguishable from an abuse block at the client, so
+no threshold in that document is stated as known.
+
+The `/info/refs` finding is the one worth re-reading. That probe was run early in diagnosis,
+returned `200`, and sent the investigation toward Docker networking for about an hour.
+
+**Path 1.** `userdocs/reference/builder-config.md`'s "Private `github.com` apps" is retitled
+"Authenticating to `github.com`" and gains a "Why a public build can still need a token"
+subsection, since the old title told a reader with public apps that the section was not for
+them. `userdocs/reference/manifest.md`'s pointer is reworded to match and its anchor updated.
+`userdocs/builder/index.md` gains a note admonition beside the build command, which is where
+a first-time builder meets this.
+
+Terminal output on those pages is real, taken from the failing build and from the shipped
+message strings, per the userdocs style rules. The site builds under `mkdocs --strict` and
+both inbound anchors resolve.
+
+`builder-config.md` carried 21 em dashes before this change and still does. They predate the
+style guide, and restyling the whole page was out of scope here; only the added text follows
+the current rules.
+
+---
+
 ## 2026-09-03 (`02-build.md` split; `02a-build-tagging.md` is new)
 
 `docs/requirements/02-build.md` reached its 2200-word ceiling admitting `BR-BUILD-019`

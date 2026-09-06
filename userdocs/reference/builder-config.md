@@ -66,15 +66,18 @@ CAIRN_ENGINE=podman cairn-build build --manifest ./cairn.toml
 cairn stores no credentials in either file — authenticate with `docker login` or
 `podman login` before pushing.
 
-## Private `github.com` apps
+## Authenticating to `github.com`
 
-If a manifest's `[[cairn.apps]]` points at a private repository, set
-`$CAIRN_GITHUB_TOKEN` when you run a build:
+Set `$CAIRN_GITHUB_TOKEN` when you run a build:
 
 ```bash
 export CAIRN_GITHUB_TOKEN=github_pat_xxxxx
-cairn-build build --manifest ./cairn.toml
+cairn-build build --manifest /srv/cairn/acmecorp/cairn_production.toml
 ```
+
+You need this if a manifest's `[[cairn.apps]]` points at a private repository. You may also
+want it when every repository in the manifest is public. The second case is covered below,
+because it surprises people.
 
 This is deliberately **not** a `builder.toml` key — that file is machine-wide and, on a
 shared box, group-*writable* by design (see below), which makes it the wrong place for a
@@ -86,6 +89,42 @@ If you don't own the repository — the common case when building a client's pri
 repository (read-only "Contents" is enough), rather than a classic, account-wide token.
 A fine-grained PAT gives you the same one-repo isolation an SSH deploy key would, as a
 token you can hand off directly.
+
+### Why a public build can still need a token
+
+GitHub limits how much it serves an unauthenticated caller, and it counts that against the
+**IP address** the request came from. Every build clones Frappe, ERPNext, and each of your
+apps from `github.com`. On a VPS that address is often shared with other tenants, or
+recycled from a previous one, so the allowance can be spent by traffic you never generated.
+
+Once the allowance runs out, GitHub asks the caller to identify itself rather than refusing
+outright. Git has no terminal inside a build, so the build fails like this:
+
+```
+fatal: could not read Username for 'https://github.com': No such device or address
+fatal: expected flush after ref listing
+```
+
+That message names a terminal prompt. The prompt is not the problem, and the repository does
+not have to be private. cairn recognizes this failure and explains it above the exit code and
+the build command:
+
+```
+github.com refused an unauthenticated git request during the build. This is not a terminal or prompt problem, despite git's wording, and the repository does not have to be private: unauthenticated git operations are rate-limited per IP address. Set $CAIRN_GITHUB_TOKEN and retry.
+```
+
+A token moves the request from the machine's address to your GitHub account, which carries
+its own allowance. Access does not change. You could already read those repositories.
+
+A build with no token set says so before it starts, so the two situations stay
+distinguishable in a transcript:
+
+```
+No $CAIRN_GITHUB_TOKEN is set; the frappe clone will run unauthenticated. That works until github.com rate-limits anonymous requests from this host.
+```
+
+A token stays optional. A manifest of public apps builds without one, and on a build host
+that clones infrequently it will keep doing so.
 
 ## Sharing `/etc/cairn` across several operators
 

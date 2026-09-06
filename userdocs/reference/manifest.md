@@ -72,9 +72,11 @@ make "install order" ambiguous.
 An empty list is technically valid — nothing stops a Frappe-only image — but ERPNext is
 almost never omitted in practice.
 
-**Private repositories:** if an app's `url` points at a private `github.com` repo, set
-`$CAIRN_GITHUB_TOKEN` when you build — see [builder.toml](builder-config.md#private-githubcom-apps).
-The manifest itself never carries a credential.
+**Authenticating to `github.com`:** if an app's `url` points at a private `github.com` repo,
+set `$CAIRN_GITHUB_TOKEN` when you build. A manifest of entirely public apps can need one
+too, once GitHub starts rate-limiting anonymous requests from your build host. See
+[builder.toml](builder-config.md#authenticating-to-githubcom). The manifest itself never
+carries a credential.
 
 ## `[cairn.build]`
 

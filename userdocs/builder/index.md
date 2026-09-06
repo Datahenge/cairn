@@ -109,6 +109,14 @@ exact command a real build would run. Once it looks right, drop `--dry-run`:
 cairn-build build --manifest /srv/cairn/acmecorp/cairn_production.toml
 ```
 
+!!! note "A public build can still need a GitHub token"
+
+    A build clones Frappe, ERPNext, and each of your apps from `github.com`. GitHub limits
+    how much it serves an unauthenticated caller and counts that against your build host's
+    IP address, so a build of entirely public repositories can start failing on a host that
+    builds often. cairn warns when no token is set and explains the failure if it happens.
+    See [Authenticating to `github.com`](../reference/builder-config.md#authenticating-to-githubcom).
+
 Progress prints as it works — resolving refs, building, verifying the image landed,
 naming the reusable build-cache layer — and, at a terminal, the whole run is also saved to
 a transcript file, since nothing else is keeping it. It finishes with a per-phase timing
