@@ -24,7 +24,7 @@ Split by topic (2026-08-03) once the single file grew past the point of being lo
 a narrow task. Add new findings to the topic file they belong to; add a new topic file here
 only when a finding doesn't fit any existing one.
 
-_Last updated: 2026-09-05_
+_Last updated: 2026-09-29_
 
 ## Topics
 
@@ -35,3 +35,5 @@ _Last updated: 2026-09-05_
 | [04c-lessons-process-notes.md](04c-lessons-process-notes.md) | Method and process — sandbox constraints, convention enforcement, corrections worth remembering |
 | [04d-lessons-docker-and-host-storage.md](04d-lessons-docker-and-host-storage.md) | Docker Engine vs. containerd storage, host disk layout, diagnosing a live VPS disk-space incident |
 | [04e-lessons-github-rate-limits.md](04e-lessons-github-rate-limits.md) | `github.com` rate limiting of unauthenticated git, why it presents as a `401`, and what a reachability probe does and does not prove |
+| [04f-lessons-frappe-queues.md](04f-lessons-frappe-queues.md) | Frappe's three background-job queues, why the recipe has no `queue-default` service, and why job timeout follows the queue rather than the worker |
+| [04g-lessons-frappe-pdf-generation.md](04g-lessons-frappe-pdf-generation.md) | Why v16 needs both `wkhtmltopdf` and Chromium, why Frappe never finds the recipe's apt-installed Chromium, and how finished the chrome path actually is |

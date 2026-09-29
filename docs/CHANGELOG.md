@@ -9,6 +9,61 @@ code changes live in git history.
 
 ---
 
+## 2026-09-29 (v16 PDF generation: findings recorded, `W-040` filed)
+
+New `docs/technical/04g-lessons-frappe-pdf-generation.md`, indexed from `04-lessons-learned.md`.
+New `W-040` in `docs/open/OPEN_WORK.md`. No requirement or decision changed; no code changed.
+
+Traced while answering whether v16 prefers `wkhtmltopdf` or `chrome`. It prefers `wkhtmltopdf` —
+five defaults plus a patch that backfills existing rows — but `erpnext` ships nine print formats
+that declare `chrome`, all of them financial statements and ledgers. v16 therefore needs both
+generators, and dropping `wkhtmltopdf` to reach a newer Debian base would break documented ERPNext
+behavior, not merely change PDF output.
+
+The recipe's `INSTALL_CHROMIUM=true` does not satisfy the chrome half.
+`find_or_download_chromium_executable()` never searches `PATH` — with no `chromium_path` key it
+evaluates `shutil.which("")`, which is `None` — so `/usr/bin/chromium-headless-shell` is invisible
+to Frappe, which instead downloads Chromium at request time into a directory that is not a volume.
+The apt package is inert today.
+
+Recorded rather than fixed. `W-040` carries two candidate shapes; **neither is chosen** — the
+preference stated there is Claude's recommendation awaiting Brian's ruling, not a decision.
+
+---
+
+## 2026-09-29 (`nano` added to the image's base apt list)
+
+Recipe change under `BR-VEND-001`. No requirement text changed; no new decision.
+
+`images/Containerfile`'s base-stage `apt-get install` list now carries `nano` alongside `vim`.
+Brian asked for it: editing a file inside a running container is a routine support act, and `vim`
+alone is a needless obstacle when muscle memory says otherwise.
+
+Cost, stated plainly rather than assumed negligible: this is a change to the `base` stage, so the
+first build after it re-runs the whole apt/nvm/wkhtmltopdf layer for every target — the expensive
+layer `ADR-059`'s staging exists to pay only once. `nano` itself is a small package; the rebuild
+is the real cost, and it is paid once.
+
+---
+
+## 2026-09-29 (Frappe queue topology recorded as a lesson)
+
+New `docs/technical/04f-lessons-frappe-queues.md`, indexed from `04-lessons-learned.md`. No
+requirement or decision changed; no code changed.
+
+Brian asked whether Frappe v16 had dropped the `default` queue, having noticed the recipe's
+compose file names only `queue-short` and `queue-long`. It has not: `get_queues_timeout()` at
+`version-16` still returns `short`/`default`/`long`. The recipe is also correct — `bench worker
+--queue` takes a priority list and both worker services include `default`, so the queue is
+covered by two containers under neither's name.
+
+Recorded because the question is structurally repeatable: the service names are a lossy view of
+the queue coverage, so the absence reads as a fault to anyone counting queues. The note also
+captures that job timeout resolves from the queue at enqueue time, not from the worker that runs
+the job — the natural follow-on wrong guess.
+
+---
+
 ## 2026-09-28 (`gc` stops the registry instead of serving read-only)
 
 New `ADR-078`, amending `BR-REG-009` and adding `BR-REG-009a`.
