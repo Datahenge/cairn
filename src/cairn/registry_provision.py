@@ -84,12 +84,20 @@ def subject_alt_names(private_ip: str | None) -> str:
     return ",".join(names)
 
 
-#: The registry's own config path inside the container — baked into the official image,
-#: generated from the `REGISTRY_*` environment variables `registry_compose()` sets.
+#: The registry's own config path inside the container — shipped in the official image. Its
+#: `rootdirectory` is `/var/lib/registry`, which is where `data_dir` is mounted, so `gc`'s
+#: throwaway container finds the blob store using this file alone, with no environment set
+#: (`BR-REG-009a`). The `REGISTRY_*` variables `registry_compose()` sets override the serving
+#: process's config at startup; they do not rewrite this file.
 CONTAINER_CONFIG_PATH = "/etc/docker/registry/config.yml"
 
+#: One image reference for both the serving container and `gc`'s throwaway collect container.
+#: They must match: the collect relies on this image's own baked `CONTAINER_CONFIG_PATH`
+#: (`BR-REG-009a`).
+REGISTRY_IMAGE = "docker.io/library/registry:2"
 
-def registry_compose(config: RegistryConfig, *, read_only: bool = False) -> str:
+
+def registry_compose(config: RegistryConfig) -> str:
     """The registry, bound to *config*'s address/port, able to delete versions.
 
     ``REGISTRY_STORAGE_DELETE_ENABLED`` is what makes retention (`BR-REG-006`) possible at
@@ -104,19 +112,16 @@ def registry_compose(config: RegistryConfig, *, read_only: bool = False) -> str:
     the ``cairn-registry`` project name, which is only ``PROJECT_DIR``'s basename and asserts
     nothing on its own.
 
-    *read_only* is `gc`'s (`BR-REG-009`) maintenance-mode switch: with it set, the registry
-    still serves reads (pulls) but refuses writes (pushes) — the documented-safe way to run
-    `registry garbage-collect` without a concurrent push corrupting the blob store it is
-    walking.
+    There is deliberately no maintenance-mode variant of this file. `gc` obtains its write-free
+    window by stopping the registry, not by reconfiguring it (`BR-REG-009a`, `ADR-078`) — an
+    earlier read-only variant expressed `storage.maintenance.readonly` as a flattened
+    environment variable, which distribution rejects with a panic at startup.
     """
-    readonly_line = (
-        '\n      REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED: "true"' if read_only else ""
-    )
     return f"""\
 # Written by `cairn-registry setup`. A local OCI registry over self-signed TLS.
 services:
   registry:
-    image: docker.io/library/registry:2
+    image: {REGISTRY_IMAGE}
     restart: unless-stopped
     labels:
       - "{CAIRN_MANAGED_LABEL}=true"
@@ -126,7 +131,7 @@ services:
       REGISTRY_HTTP_ADDR: 0.0.0.0:{config.port}
       REGISTRY_HTTP_TLS_CERTIFICATE: /certs/registry.crt
       REGISTRY_HTTP_TLS_KEY: /certs/registry.key
-      REGISTRY_STORAGE_DELETE_ENABLED: "true"{readonly_line}
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
     volumes:
       - {CERT_DIR}:/certs:ro
       - {config.data_dir}:/var/lib/registry
@@ -305,51 +310,74 @@ def restart(runner: Runner) -> None:
 def gc(runner: Runner) -> None:
     """Reclaim blob storage for digests retention has already deleted (`BR-REG-009`).
 
-    The documented-safe sequence: recreate the container in read-only maintenance mode
-    (pulls, including `cairn-adopt reconcile`'s polling, are unaffected — only pushes are
-    refused for the duration), run the registry's own `garbage-collect` inside it, then
-    recreate back to read-write. Reported plainly before running, since it briefly blocks
-    pushes — `cli_registry.py`'s `gc` command is what gates this behind `--yes`/`--dry-run`.
+    Stop the registry, run the registry's own `garbage-collect` in a throwaway container over
+    the same `data_dir`, start the registry again, and confirm it is serving. The registry is
+    fully unavailable for the window — both pulls and pushes fail, `cairn-adopt reconcile`'s
+    polling included, which fails that tick and succeeds on the next (`ADR-078`).
+
+    Stopping rather than reconfiguring is deliberate (`BR-REG-009a`). The original design served
+    read-only during the collect, set through a flattened
+    `REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED` variable; distribution requires that key to
+    be a map and panics at startup on the flattened form, which crash-looped the first live gc.
+    A stopped registry also cannot accept the concurrent push that read-only mode only refuses —
+    a push landing a blob before its manifest during the walk is what corrupts a blob store.
+
+    The restart runs in a `finally`: a failed collect must never leave the registry down.
     """
     config = registry_config.load()
+    host = config.host
     runner.report.warnings.append(
-        "the registry is briefly read-only during gc — pulls are unaffected, pushes are "
-        "refused until it completes"
+        "the registry is stopped for the duration of gc — pulls and pushes both fail until it "
+        "comes back"
     )
 
-    _write_compose(runner, config, read_only=True, what="entering read-only maintenance mode")
-    runner.run(compose_command("up", "-d", "--force-recreate"), what="recreating in read-only mode")
+    runner.run(compose_command("stop"), what="stopping the registry for maintenance")
 
-    runner.run(
-        compose_command(
-            "exec", "-T", "registry", "registry", "garbage-collect", CONTAINER_CONFIG_PATH
-        ),
-        what="reclaiming blob storage",
-    )
+    collected = False
+    try:
+        runner.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-v",
+                f"{config.data_dir}:/var/lib/registry",
+                REGISTRY_IMAGE,
+                "registry",
+                "garbage-collect",
+                CONTAINER_CONFIG_PATH,
+            ],
+            what="reclaiming blob storage",
+        )
+        collected = True
+    finally:
+        runner.run(compose_command("up", "-d"), what="restarting the registry")
+        _confirm_serving(runner, host, collected=collected)
 
-    _write_compose(runner, config, read_only=False, what="returning to read-write mode")
-    runner.run(
-        compose_command("up", "-d", "--force-recreate"), what="recreating in read-write mode"
-    )
     runner.report.done.append("garbage collection complete")
 
 
-def _write_compose(runner: Runner, config: RegistryConfig, *, read_only: bool, what: str) -> None:
-    """Write the compose file unconditionally.
+def _confirm_serving(runner: Runner, host: str, *, collected: bool) -> None:
+    """Check the registry answers after gc's restart (`BR-REG-009`).
 
-    Unlike every other file `Runner.write` protects (`BR-DEPLOY-021` rule 3), this one is
-    entirely cairn-generated — "Written by `cairn-registry setup`", never hand-edited — and
-    `gc` must be able to toggle it on every run without an operator-facing `--force` flag to
-    pass. `stage_registry` still goes through `runner.write` for the initial write, so a
-    config change picked up by re-running `setup` still asks for `--force` there.
+    Called from `gc`'s `finally`, so it must not mask a collect failure: when the collect
+    already failed, an unreachable registry is appended as a warning and the original error
+    propagates. Only on the success path does this raise — a gc that reports success while the
+    registry never came back is the reporting failure this exists to prevent.
     """
-    path = PROJECT_DIR / "compose.yaml"
-    content = registry_compose(config, read_only=read_only)
-    runner.say(f"    write {path} ({what})")
     if runner.dry_run:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    if runner.probe(["curl", "-fsS", f"https://{host}/v2/"]) is not None:
+        runner.report.done.append(f"registry serving again at https://{host}")
+        return
+
+    message = (
+        f"the registry at https://{host}/v2/ did not answer after gc restarted it — "
+        f"run `cairn-registry doctor`"
+    )
+    if collected:
+        raise Aborted(f"garbage collection finished, but {message}.")
+    runner.report.warnings.append(message)
 
 
 #: `cairn-registry setup-timer`'s own stage table — one stage, no `--only` needed, mirroring

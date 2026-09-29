@@ -165,10 +165,12 @@ def test_the_registry_is_printed_once_not_per_repository(local_registry, monkeyp
         monkeypatch,
         {
             "acme/erpnext-v16": (
-                ["latest"], {"latest": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+                ["latest"],
+                {"latest": _remote_image("sha256:" + "a" * 64, _cairn_labels())},
             ),
             "acme/other": (
-                ["latest"], {"latest": _remote_image("sha256:" + "b" * 64, _cairn_labels())}
+                ["latest"],
+                {"latest": _remote_image("sha256:" + "b" * 64, _cairn_labels())},
             ),
         },
     )
@@ -191,7 +193,8 @@ def test_repositories_with_no_cairn_images_are_counted_not_listed(local_registry
         monkeypatch,
         {
             "erpnext-btu-v16": (
-                ["v16"], {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+                ["v16"],
+                {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())},
             ),
             "someone-elses": (["latest"], {"latest": _remote_image("sha256:" + "b" * 64, {})}),
         },
@@ -279,7 +282,8 @@ def test_namespace_and_image_filter_the_catalog(local_registry, monkeypatch):
         monkeypatch,
         {
             "acme/erpnext-v16": (
-                ["v16"], {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+                ["v16"],
+                {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())},
             )
         },
     )
@@ -306,7 +310,8 @@ def test_exact_namespace_and_image_bypasses_the_catalog(local_registry, monkeypa
         monkeypatch,
         {
             "acme/erpnext-v16": (
-                ["v16"], {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())}
+                ["v16"],
+                {"v16": _remote_image("sha256:" + "a" * 64, _cairn_labels())},
             )
         },
     )
@@ -468,10 +473,19 @@ def test_gc_with_yes_runs_and_reports(monkeypatch):
     assert "garbage collection complete" in result.stdout
 
 
-def test_gc_warns_that_pushes_are_refused_before_running():
+def test_gc_states_the_registry_goes_down_before_running():
+    """The operator is told the registry stops, not merely that pushes are refused.
+
+    `gc` stops the registry outright since `ADR-078`, so the window is a short full outage. An
+    operator deciding whether now is a safe moment needs that, and needs to know a target
+    polling for an image will fail its check and retry.
+    """
     result = runner.invoke(cli_registry.app, ["gc", "--dry-run"])
 
-    assert "read-only" in result.stderr
+    assert "stops the registry" in result.stderr
+    assert "pulls and pushes" in result.stderr
+    assert "retries" in result.stderr
+    assert "read-only" not in result.stderr
 
 
 # --- doctor (BR-CLI-007, BR-REG-011) ------------------------------------------

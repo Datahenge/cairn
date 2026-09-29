@@ -255,24 +255,27 @@ def prune_command(
 @app.command(
     "gc",
     help=(
-        "Reclaim blob storage for digests `prune` already deleted. Briefly makes the "
-        "registry read-only; requires --yes or --dry-run."
+        "Reclaim blob storage for digests `prune` already deleted. Briefly stops the "
+        "registry; requires --yes or --dry-run."
     ),
 )
 def gc_command(
     dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Report the read-only window, then stop.")
+        bool, typer.Option("--dry-run", help="Report the maintenance window, then stop.")
     ] = False,
     yes: Annotated[bool, typer.Option("--yes", help="Confirm running gc now.")] = False,
 ) -> None:
     def _action() -> int:
-        step("gc briefly makes the registry read-only: pulls continue, pushes are refused.")
+        step(
+            "gc briefly stops the registry: pulls and pushes both fail until it comes back. "
+            "A target polling for a new image fails that check and retries on its next one."
+        )
         if dry_run:
             note("--dry-run: nothing was run.")
             return 0
         if not yes:
             raise CairnError(
-                "Refusing to run without --yes or --dry-run — gc briefly blocks pushes."
+                "Refusing to run without --yes or --dry-run — gc briefly stops the registry."
             )
 
         runner = Runner(dry_run=False, force=False)

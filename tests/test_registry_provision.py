@@ -18,6 +18,7 @@ import sys
 import pytest
 
 from cairn import registry_config, registry_provision, setup_runner
+from cairn.setup_runner import Aborted
 
 
 def _options(**overrides) -> setup_runner.SetupOptions:
@@ -27,11 +28,14 @@ def _options(**overrides) -> setup_runner.SetupOptions:
 class Recorder(setup_runner.Runner):
     """A Runner that records instead of executing, answering probes from a script."""
 
-    def __init__(self, *, dry_run=False, force=False, answers=None):
+    def __init__(self, *, dry_run=False, force=False, answers=None, failures=None):
         super().__init__(dry_run=dry_run, force=force)
         self.commands: list[list[str]] = []
         self.probes: list[list[str]] = []
         self.answers = answers or {}
+        #: fragment -> message; a matching command raises instead of recording a success, so a
+        #: stage's cleanup path (`gc`'s restart) can be exercised.
+        self.failures = failures or {}
         self.said: list[str] = []
 
     def say(self, message=""):
@@ -39,6 +43,10 @@ class Recorder(setup_runner.Runner):
 
     def run(self, command, *, what, timeout=600):
         self.commands.append(command)
+        joined = " ".join(str(part) for part in command)
+        for fragment, message in self.failures.items():
+            if fragment in joined:
+                raise setup_runner.Aborted(message)
         return ""
 
     def probe(self, command, timeout=120):
@@ -377,14 +385,26 @@ def test_compose_command_addresses_the_registry_project_by_directory(sandbox):
     assert command[-2:] == ["up", "-d"]
 
 
-def test_read_only_mode_adds_the_maintenance_env_var():
-    config = registry_config.RegistryConfig()
+def test_the_compose_file_never_sets_a_maintenance_variable():
+    """`gc` stops the registry rather than reconfiguring it (`BR-REG-009a`).
 
-    normal = registry_provision.registry_compose(config)
-    read_only = registry_provision.registry_compose(config, read_only=True)
+    The original design set `storage.maintenance.readonly` through a flattened
+    `REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED` variable. distribution requires that key to
+    be a map and panics at startup on the flattened form, which crash-looped the first live gc —
+    so no maintenance variable is emitted at all, in any code path.
+    """
+    rendered = registry_provision.registry_compose(registry_config.RegistryConfig())
 
-    assert "REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED" not in normal
-    assert 'REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED: "true"' in read_only
+    assert "MAINTENANCE" not in rendered.upper()
+    assert "READONLY" not in rendered.upper()
+
+
+def test_the_serving_and_collect_containers_use_one_image_reference():
+    """`gc`'s throwaway collect container relies on the serving image's own baked config to
+    locate the blob store, so the two must not be able to drift (`BR-REG-009a`)."""
+    rendered = registry_provision.registry_compose(registry_config.RegistryConfig())
+
+    assert f"image: {registry_provision.REGISTRY_IMAGE}" in rendered
 
 
 # --- lifecycle (BR-REG-004) ---------------------------------------------------
@@ -414,55 +434,102 @@ def test_status_returns_composes_own_output(sandbox):
 # --- gc (BR-REG-009) -----------------------------------------------------
 
 
-def test_gc_toggles_read_only_mode_around_the_collect(sandbox, monkeypatch):
-    monkeypatch.setattr(registry_config, "load", lambda path=None: registry_config.RegistryConfig())
-    runner = Recorder()
+def _stub_config(monkeypatch, **kwargs):
+    config = registry_config.RegistryConfig(**kwargs)
+    monkeypatch.setattr(registry_config, "load", lambda path=None: config)
+    return config
+
+
+def test_gc_stops_the_registry_collects_then_starts_it_again(sandbox, monkeypatch):
+    """`BR-REG-009`'s sequence, in order: stop, collect, start."""
+    config = _stub_config(monkeypatch)
+    runner = Recorder(answers={"curl": "{}"})
 
     registry_provision.gc(runner)
 
-    compose_writes = [c for c in runner.said if "compose.yaml" in c and "write" in c]
-    assert any("read-only maintenance mode" in c for c in compose_writes)
-    assert any("read-write mode" in c for c in compose_writes)
-    # two recreates (read-only, then read-write) bracketing the collect itself
-    up_calls = [c for c in runner.commands if c[:2] == ["docker", "compose"] and "up" in c]
-    assert len(up_calls) == 2
-    assert runner.ran("garbage-collect")
+    order = [" ".join(c) for c in runner.commands]
+    stopped = next(i for i, c in enumerate(order) if c.endswith("stop"))
+    collected = next(i for i, c in enumerate(order) if "garbage-collect" in c)
+    started = next(i for i, c in enumerate(order) if "up -d" in c)
+    assert stopped < collected < started
+    assert f"{config.data_dir}:/var/lib/registry" in order[collected]
 
 
-def test_gc_warns_that_pushes_are_briefly_refused(sandbox, monkeypatch):
-    monkeypatch.setattr(registry_config, "load", lambda path=None: registry_config.RegistryConfig())
-    runner = Recorder()
+def test_gc_never_writes_the_compose_file(sandbox, monkeypatch):
+    """`BR-REG-009a` — gc obtains its window by stopping, never by reconfiguring.
+
+    The original design rewrote compose.yaml twice per run, bypassing the overwrite protection
+    every other generated file gets; a failed gc therefore left the file altered and the
+    registry unable to start.
+    """
+    _stub_config(monkeypatch)
+    runner = Recorder(answers={"curl": "{}"})
 
     registry_provision.gc(runner)
 
-    assert any("pushes are" in warning for warning in runner.report.warnings)
+    assert not any("compose.yaml" in said for said in runner.said)
+    assert not (registry_provision.PROJECT_DIR / "compose.yaml").exists()
 
 
-def test_gc_dry_run_writes_no_compose_file(sandbox, monkeypatch):
-    stub_config = registry_config.RegistryConfig(data_dir=sandbox / "data")
-    monkeypatch.setattr(registry_config, "load", lambda path=None: stub_config)
+def test_gc_collects_in_a_throwaway_container_with_no_environment(sandbox, monkeypatch):
+    """The collect container passes no `REGISTRY_*` variable: it uses the image's baked config,
+    whose rootdirectory is where `data_dir` is mounted (`BR-REG-009a`)."""
+    config = _stub_config(monkeypatch)
+    runner = Recorder(answers={"curl": "{}"})
+
+    registry_provision.gc(runner)
+
+    call = next(c for c in runner.commands if "garbage-collect" in c)
+    assert call[:4] == ["docker", "run", "--rm", "-v"]
+    assert call[4] == f"{config.data_dir}:/var/lib/registry"
+    assert call[5] == registry_provision.REGISTRY_IMAGE
+    assert call[-1] == registry_provision.CONTAINER_CONFIG_PATH
+    assert "-e" not in call
+    assert not any("REGISTRY_" in part for part in call)
+
+
+def test_gc_restarts_the_registry_even_when_the_collect_fails(sandbox, monkeypatch):
+    """The incident's real damage: a failed collect left the registry down (`BR-REG-009`)."""
+    _stub_config(monkeypatch)
+    runner = Recorder(failures={"garbage-collect": "collect exploded"})
+
+    with pytest.raises(Aborted):
+        registry_provision.gc(runner)
+
+    assert any("up -d" in " ".join(c) for c in runner.commands)
+
+
+def test_gc_reports_the_registry_is_unavailable_not_merely_read_only(sandbox, monkeypatch):
+    _stub_config(monkeypatch)
+    runner = Recorder(answers={"curl": "{}"})
+
+    registry_provision.gc(runner)
+
+    warning = " ".join(runner.report.warnings)
+    assert "stopped" in warning
+    assert "pulls and pushes" in warning
+
+
+def test_gc_fails_if_the_registry_does_not_come_back(sandbox, monkeypatch):
+    """A gc that reports success while the registry is down is the reporting failure the
+    post-restart check exists to prevent (`BR-REG-009`)."""
+    _stub_config(monkeypatch)
+    runner = Recorder()  # no curl answer: the probe finds nothing
+
+    with pytest.raises(Aborted) as caught:
+        registry_provision.gc(runner)
+
+    assert "did not answer" in str(caught.value)
+    assert "garbage collection complete" not in runner.report.done
+
+
+def test_gc_dry_run_touches_nothing(sandbox, monkeypatch):
+    _stub_config(monkeypatch, data_dir=sandbox / "data")
     runner = Recorder(dry_run=True)
 
     registry_provision.gc(runner)
 
     assert not (registry_provision.PROJECT_DIR / "compose.yaml").exists()
-
-
-def test_gc_runs_garbage_collect_against_the_containers_own_config_path(sandbox, monkeypatch):
-    monkeypatch.setattr(registry_config, "load", lambda path=None: registry_config.RegistryConfig())
-    runner = Recorder()
-
-    registry_provision.gc(runner)
-
-    gc_call = next(c for c in runner.commands if "garbage-collect" in c)
-    assert gc_call[-1] == registry_provision.CONTAINER_CONFIG_PATH
-    assert gc_call[:5] == [
-        "docker",
-        "compose",
-        "--project-directory",
-        str(registry_provision.PROJECT_DIR),
-        "exec",
-    ]
 
 
 # --- setup-timer (BR-CLI-027, BR-REG-010) -------------------------------------

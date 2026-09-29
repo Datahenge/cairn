@@ -9,6 +9,42 @@ code changes live in git history.
 
 ---
 
+## 2026-09-28 (`gc` stops the registry instead of serving read-only)
+
+New `ADR-078`, amending `BR-REG-009` and adding `BR-REG-009a`.
+
+The first `cairn-registry gc` ever run against a live registry left that registry crash-looping.
+`registry_compose()` expressed read-only maintenance mode as the flattened environment variable
+`REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED`; distribution requires that key to be a map, and
+`handlers.NewApp` panics on the flattened form before the HTTP server starts. Because `gc()` had
+no `try`/`finally`, it never ran its return-to-read-write step, so the compose file kept the
+variable and every later `cairn-registry start` reproduced the panic — recoverable only by
+hand-editing a cairn-generated file.
+
+`gc` now stops the registry, runs `garbage-collect` in a throwaway container against the same
+`data_dir`, restarts the registry in a `finally`, and verifies it is serving before reporting
+success. No `REGISTRY_*` maintenance variable is involved, so that fault class is gone; a stopped
+registry is also a stronger write guarantee than read-only mode. `gc` no longer writes the compose
+file at all, which removes `_write_compose`'s deliberate bypass of the overwrite protection every
+other generated file gets.
+
+**What this costs, recorded rather than glossed:** `BR-REG-009`'s promise that pulls continue
+throughout the window is withdrawn — during gc the registry answers nothing. A `reconcile` tick
+landing inside the window raises `ReconcileError`, deploys nothing, and succeeds on the next tick,
+so a target is left alone rather than half-deployed.
+
+The rejected alternative — keeping read-only mode and emitting
+`REGISTRY_STORAGE_MAINTENANCE_READONLY: '{"enabled":true}'` so the value parses as a map — is
+recorded in `ADR-078` with its reasoning: it preserves the pulls promise, but retains the twice-per-gc
+recreate, a dependency on distribution's env-value parsing that cairn had already guessed wrong
+about once, and `gc`'s ability to rewrite the compose file.
+
+Two diagnostic gaps the incident exposed are closed alongside: `gc` verifies the registry is
+serving before reporting success, and the operator-facing warning now says the registry is briefly
+unavailable rather than that pushes are briefly refused.
+
+---
+
 ## 2026-09-05 (github.com rate limiting documented; both paths)
 
 Follow-up to `ADR-077`. The fix shipped, but nothing told an operator why they would want a
@@ -210,126 +246,6 @@ reproduced.
 
 ---
 
-## 2026-08-20 (`userdocs/` navigation refactor deferred until the page catalog is known)
-
-`26-userdocs-style.md` §2 forbids organizing top-level navigation around cairn's three roles,
-and the shipped `userdocs/` tree does exactly that (`registry/`, `builder/`, `target/`). Brian
-deferred the restructure until roughly 90% of the pages exist: the right grouping is easier and
-more obvious to see once the full catalog of pages is known, rather than guessed at now.
-
-Recorded as `W-039` (`deferred`) in `docs/open/OPEN_WORK.md`, and as a blockquote in §2 itself so
-the rule is not read as an indictment of the current tree. The standing instruction until then:
-write new pages in the new voice, place them where the current tree puts them, and do not move
-navigation one page at a time.
-
----
-
-## 2026-08-20 (`AGENTS.md` forks into two paths; `userdocs/` gains a style authority)
-
-Brian: work on published user documentation follows a different set of rules than everything
-else, and `AGENTS.md` now says so before it says anything else. **Path 1** is any file under
-`userdocs/`; its authority is the new
-[`docs/technical/26-userdocs-style.md`](technical/26-userdocs-style.md), promoted verbatim from
-`docs/scratch/STYLE.md` with a status header and a paragraph placing it in the fork. **Path 2**
-is everything else, governed by `AGENTS.md` unchanged. A change touching both trees is on both
-paths, per file.
-
-Brian confirmed Path 1 **layers on** rather than replaces: the style guide wins on how
-documentation reads, while four invariants still bind on both paths (no internal identifiers in
-user-visible text, no command or key documented without verifying it in `src/cairn/`, never
-assume, and same-change `docs/CHANGELOG.md` entries). Path 1 alone does not require stating `BR`
-IDs before writing.
-
-`25-documentation-authority.md` and `ai/CURRENT_CONTEXT.md` route to the new document.
-
----
-
-## 2026-08-20 (command-surface reference pages, one per binary)
-
-`userdocs/reference/` gains **`cairn-build.md`** and **`cairn-adopt.md`** — every command and
-every flag, sourced from each binary's actual `--help` output rather than from the code, so the
-pages describe what a user's installed version prints. Closes the gap `reference/index.md` had
-been openly deferring ("Command surface reference will land here later").
-
-No third page was written for `cairn-registry`: `userdocs/registry/cli.md` already *is* that
-page, and says so in its own first paragraph. Duplicating it would have created a second
-authority for the same surface. `reference/index.md` now lists all three binaries and links the
-registry entry across to where it already lives — the asymmetry is deliberate but was flagged to
-Brian, since filing it under Reference for symmetry is a reasonable alternative he may prefer.
-
-`reference/index.md` is restructured into "Command surface" and "File formats", and keeps the
-rule the deferral paragraph already stated: where a page and `--help` disagree, **`--help`
-wins**, because it ships with the installed version and the site does not.
-
-**Fixed in passing:** `userdocs/registry/ghcr-setup.md` linked to
-`ghcr-ownership-and-cost.md#what-it-costs`, an anchor that does not exist — the heading is "What
-it costs — read this before you push several images", which python-markdown slugifies to the
-full phrase. Found by an anchor-resolution sweep of the whole tree; it was the only genuine
-break in 100-plus internal links. Note that `ai/tools/docs_check.py` verifies link *targets* but
-not *fragments*, which is why this survived.
-
----
-
-## 2026-08-20 (`ADR-076`: the primary branch is `version-16`, and there is no `main`)
-
-Brian: cairn stays pinned to the ERPNext major it supports, so its primary branch is named for
-that major — `version-16` today, `version-17` when support moves. `main` is deleted rather than
-kept as a stale ancestor. Rationale and consequences in
-[`docs/decisions/076-primary-branch-is-version-nn-tracking-the-erpnext-major.md`](decisions/076-primary-branch-is-version-nn-tracking-the-erpnext-major.md).
-
-No requirement changed: `BR-DOCS-005` already said the site publishes on **the default branch**
-and never named one. `.github/workflows/docs.yml` hardcoding `main` was drift from that
-requirement, and is now corrected along with `mkdocs.yml`'s `edit_uri`, `pyproject.toml`'s
-`Changelog` URL, and one `blob/main/` link in `userdocs/registry/index.md`.
-
-Surfaced by a user-documentation review the same day, which found three weeks of `userdocs/`
-work unpublished for exactly this reason — including `userdocs/target/operating.md`, a page
-absent from the live site entirely.
-
-**Also from that review:** `cairn-adopt prune` (`BR-CLI-028`, `BR-DEPLOY-006`) had shipped with
-no user documentation at all, while the build- and registry-side prune verbs both had coverage.
-`userdocs/target/operating.md` gains a "Reclaiming disk" section — the protected running image
-(read from the container, not from recency, which is what makes it survive a rollback), the
-volumes-and-containers exclusion, the colocated-builder image split, and why `--keep` is a grace
-window rather than a rollback guarantee. No requirement changed; this documents behavior that
-already matched its requirement.
-
-**Stale verification trailers corrected.** Three pages still claimed to be written entirely
-ahead of a live run, and `userdocs/index.md` still called Guides a placeholder months after a
-real guide landed there. The trailers on `userdocs/target/index.md` and
-`userdocs/target/operating.md` now name **which** verbs have been run against the client VPS
-and which have not, rather than blanket-disclaiming the page — the split recorded in the
-2026-08-19 field-verification entry above. `userdocs/index.md`'s status note is rewritten to
-match and to stop overstating Reference, which covers the file formats but not the command
-surface. Nothing here claims verification beyond what that entry records: `prune`, the held
-state, `examine`, `setup`, and the reconcile timer all remain explicitly unproven in the
-field.
-
----
-
-## 2026-08-19 (field verification: inspection verbs done, the held state still open)
-
-Brian verified `doctor`, `console`, `mariadb`, `shell`, `logs` and `restart` on the client VPS.
-
-`BR-CLI-030`'s inspection verbs are now fully confirmed. That matters more than a checkmark:
-the TTY handling (`execvp`, never `-T`) was the one thing unit tests could only approximate,
-since the failure it prevents is the real MariaDB client silently entering batch mode. It
-behaves as designed against the actual client.
-
-`restart` proves more than itself. It exercises the deploy lock taken **once** across several
-steps, `run_locked`, `compose stop`, and the reconcile pass that follows — so the self-deadlock
-`ADR-073` predicted, and which the split into `run`/`run_locked` was written to prevent, is now
-confirmed absent on real infrastructure rather than only under a test double.
-
-What remains unverified is deliberately noted rather than rounded up: **the held state itself.**
-`restart` cleared no hold because none existed, and `doctor` exercised only its OK path. Still
-untested live are `stop` placing a hold, `reconcile` reporting *held* and converging nothing,
-`doctor`'s WARN path, `restart` clearing a hold that genuinely exists, and a hold surviving a
-reboot. That is precisely the half that can silently suspend deployments on a client host, so
-it is the half worth exercising on purpose rather than encountering by accident.
-
----
-
 ## Archived entries
 
 Older entries are moved out once this file grows past its word-count budget
@@ -345,3 +261,4 @@ contiguous range, newest-first within it same as here.
 - [CHANGELOG-2026-08-06.md](archive/CHANGELOG-2026-08-06.md)
 - [CHANGELOG-2026-08-06-to-2026-08-18.md](archive/CHANGELOG-2026-08-06-to-2026-08-18.md)
 - [CHANGELOG-2026-08-18-to-2026-08-19.md](archive/CHANGELOG-2026-08-18-to-2026-08-19.md)
+- [CHANGELOG-2026-08-19-to-2026-08-20.md](archive/CHANGELOG-2026-08-19-to-2026-08-20.md)

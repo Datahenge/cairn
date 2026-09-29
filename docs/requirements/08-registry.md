@@ -168,12 +168,22 @@ full disposition list; it deletes nothing. Retention must be turned on deliberat
 ## Garbage collection
 
 **`BR-REG-009`** — `cairn-registry gc` reclaims blob storage for digests `prune` has already
-deleted. It MUST put the registry into read-only maintenance mode before running the
-registry's own `garbage-collect`, then return it to normal — reads (pulls, including
-`cairn-adopt reconcile`'s polling) continue throughout; writes (pushes) are refused for the
-duration. `gc` MUST report this window plainly before running and MUST require `--yes` or
-`--dry-run`, mirroring the confirmation gate `BR-CLI-010` already uses for production-affecting
-actions.
+deleted. It MUST **stop** the registry, run the registry's own `garbage-collect` in a
+throwaway container mounting the same `data_dir`, and start the registry again — the restart
+MUST happen even when the collect fails, so a failed `gc` can never leave the registry down or
+its compose file altered (`ADR-078`). Having restarted it, `gc` MUST verify the registry is
+serving again before reporting success. The registry is **unavailable** for the duration: both
+pulls and pushes fail, including `cairn-adopt reconcile`'s polling, which fails that tick,
+changes nothing, and succeeds on the next one. `gc` MUST report this window plainly before
+running and MUST require `--yes` or `--dry-run`, mirroring the confirmation gate `BR-CLI-010`
+already uses for production-affecting actions. *(ADR-078 — amends the original read-only
+maintenance-mode design, which could not be entered without crashing the registry)*
+
+**`BR-REG-009a`** *(gc does not reconfigure the registry)* — `gc` MUST NOT write the compose
+file or set any `REGISTRY_*` maintenance variable. The registry runs in exactly one
+configuration, the one `setup` wrote; stopping it is how a write-free window is obtained. The
+throwaway collect container MUST use the same registry image as the serving container, since it
+relies on that image's own baked config to locate the blob store. *(ADR-078)*
 
 ## Timer
 
