@@ -87,3 +87,17 @@ docs/archive/CHANGELOG-2026-08-18-to-2026-08-19.md = 5700
 docs/archive/CHANGELOG-2026-08-19-to-2026-08-20.md = 1800
 # ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
 # invitation to keep adding to it.
+
+docs/open/OPEN_WORK.md = 4400
+# ^ 2026-09-29: doubled from the 2200 default at Brian's direction, after W-041 and W-042
+# pushed the file over and their detail was trimmed twice to fit. Note this file's own
+# standing rule, which is the intended size control: `done` rows are swept to
+# docs/archive/OPEN_WORK-done.md once a completion judgment is recorded in
+# docs/technical/05-implementation-index.md. W-034, W-035, W-036 and W-037 are `done` and
+# awaiting that sweep; the ceiling is a backstop, not a substitute for it.
+docs/archive/CHANGELOG-2026-08-20.md = 1500
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.
+docs/archive/CHANGELOG-2026-09-02-to-2026-09-28.md = 2000
+# ^ archived-for-size, not sprawl — frozen content, headroom is just slack, not an
+# invitation to keep adding to it.

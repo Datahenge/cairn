@@ -167,6 +167,32 @@ current group, permissions, and the invoking user's membership, but MUST NOT mut
 them — diagnostic only, matching every other doctor check. *(ADR-042, ADR-043, ADR-046,
 BR-DEPLOY-021)*
 
+**`BR-CFG-016`** *(build-machine retention config, `ADR-079`)* — `/etc/cairn/builder.toml` MAY
+carry a `[retention]` table governing what `cairn-build prune` reclaims (`BR-CLI-018`). It reuses
+`[registry.retention]`'s key names (`BR-REG-002`) so an operator learns one vocabulary across
+roles:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Whether the per-manifest sweep runs at all. Deleting nothing is the safe default, as on the registry side. |
+| `keep_last` | `10` | Images retained per manifest, newest first. MUST be an integer of at least 1. |
+| `require_pushed` | `true` | When true, an image that exists nowhere but this machine is exempt from the sweep. |
+
+**`max_age_days` is deliberately absent**, unlike `[registry.retention]`. An age ceiling cannot
+bound disk: a burst of builds inside the window is retained however large it grows, which is the
+defect `W-041` records on the registry side. A count can.
+
+**`require_pushed = true` restores by default a protection `ADR-072` had dropped.** That decision
+made pushed-ness not a protection, and it still governs whenever the knob is `false`; the default
+is nonetheless the stricter reading, since an unpushed image is the only copy in existence. A
+reader of `ADR-072` alone would not predict this default, which is why it is stated here.
+
+The table is read from `builder.toml` only — absent, the documented defaults apply. Values MUST
+be validated on read and an invalid one MUST be an error naming the file and key, never a silent
+fallback (`BR-CFG-012`'s discovery model is otherwise unchanged; retention adds no `CAIRN_*`
+environment override and no CLI flag of its own). *(BR-CLI-018, BR-REG-002, ADR-042, ADR-072,
+ADR-079)*
+
 ---
 
 ## Cross-references

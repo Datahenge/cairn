@@ -1,7 +1,7 @@
 ---
-status: exploratory
+status: authoritative
 owner: technical
-purpose: ADR-073 — Whether cairn-adopt should own target-stack lifecycle (stop/start) and a maintenance state reconcile respects
+purpose: ADR-073 — cairn-adopt owns target-stack lifecycle (start/stop) and a durable maintenance hold reconcile honours
 ---
 
 # ADR-073 — Target-stack lifecycle and an "intentionally down" state

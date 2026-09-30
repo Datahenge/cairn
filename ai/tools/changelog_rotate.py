@@ -19,6 +19,13 @@ without one for weeks, so on 2026-08-20 the whole file parsed as a single entry,
 left nothing safe to move, and the run reported "within budget" while `docs_check.py` reported the
 same file over its ceiling. A header this tool cannot date still raises rather than guessing.
 
+Selection is positional — the tool takes entries off the **end** of the file — which is only
+the oldest material while the file is genuinely newest-first. That is a premise about the file,
+not a fact about it, so `ordering_objection` re-checks it against the dates already parsed and
+`build_plan` refuses rather than archiving the wrong entries. Borrowed from the same guard in
+the Foundation project's `tools/changelog_archive.py`, where the positional premise did break in
+practice once a section holding current work grew at the bottom of the file.
+
 The trailing "archived entries" block at the end of the live file is never hand-edited or
 parsed as prose — this tool owns it outright, regenerating it in full each run from
 `docs/archive/README.md`'s own "archived-for-size" index, so it can never drift from what
@@ -56,10 +63,20 @@ HEADROOM_FRACTION = 0.75
 #: entries out of the way, it never hides the thing someone just wrote.
 MIN_LIVE_ENTRIES = 1
 
+
 class NothingToMove(Exception):
     """Over budget, but rotation cannot help. Distinct from being *under* budget, which is
     the ordinary quiet case — reporting both as "within budget" is how a real over-ceiling
     file once looked like a clean run while `docs_check.py` disagreed about the same file.
+    """
+
+
+class OutOfOrder(Exception):
+    """The entries at the end of the file are not its oldest ones.
+
+    Positional selection would archive the wrong material, so rotation refuses. Refusing is
+    the point: the alternative is a silent mis-archive of recent work, the same class of quiet
+    wrong answer `NothingToMove` exists to prevent.
     """
 
 
@@ -167,9 +184,7 @@ def read_archive_index_rows(archive_index_path: Path) -> list[tuple[str, str, st
     'archived-for-size' index — filtering to `docs/CHANGELOG.md`'s rows is the caller's job,
     since the same row shape is reused by the 'archived open-work' table further down."""
     text = archive_index_path.read_text(encoding="utf-8")
-    return [
-        (m.group(1), m.group(2), m.group(3), m.group(4)) for m in ARCHIVE_ROW_RE.finditer(text)
-    ]
+    return [(m.group(1), m.group(2), m.group(3), m.group(4)) for m in ARCHIVE_ROW_RE.finditer(text)]
 
 
 def render_footer(archive_index_path: Path) -> str:
@@ -266,6 +281,24 @@ class Plan:
     after_words: int
 
 
+def ordering_objection(archived: list[Entry], remaining: list[Entry]) -> str | None:
+    """Why *archived* is not actually the oldest material in the file — or None if it is.
+
+    Dates are `YYYY-MM-DD`, so a string comparison is a chronological one. Entries sharing a
+    date are not an objection: position is the legitimate tiebreak between them.
+    """
+    if not archived or not remaining:
+        return None
+    newest_archived = max(archived, key=lambda entry: entry.entry_date)
+    oldest_remaining = min(remaining, key=lambda entry: entry.entry_date)
+    if newest_archived.entry_date <= oldest_remaining.entry_date:
+        return None
+    return (
+        f"{newest_archived.header} would be archived while {oldest_remaining.header} "
+        f"({oldest_remaining.entry_date}) stays live"
+    )
+
+
 def build_plan(root: Path, max_words_default: int) -> Plan | None:
     changelog_path = root / CHANGELOG_REL
     preamble, entries = parse_changelog(changelog_path.read_text(encoding="utf-8"))
@@ -297,6 +330,14 @@ def build_plan(root: Path, max_words_default: int) -> Plan | None:
             f"only entry left is the newest one, which is never archived. Split or trim that "
             f"entry by hand, or raise the ceiling in {ALLOWLIST_REL}."
         )
+    objection = ordering_objection(archived, remaining)
+    if objection:
+        raise OutOfOrder(
+            f"{CHANGELOG_REL} is not in newest-first order: {objection}. Rotation selects by "
+            f"position and so moves the entries at the end of the file; it will not act on a "
+            f"file whose order it cannot trust. Reorder the entries by date, then rerun."
+        )
+
     archive_path = choose_archive_filename(
         root / ARCHIVE_DIR_REL, archived[-1].entry_date, archived[0].entry_date
     )
@@ -319,9 +360,7 @@ def apply_plan(root: Path, plan: Plan, run_date: str) -> None:
     _update_archive_index(root / ARCHIVE_INDEX_REL, plan)
 
     footer = render_footer(root / ARCHIVE_INDEX_REL)  # re-read: now includes the new row
-    changelog_path.write_text(
-        render_changelog(preamble, plan.remaining, footer), encoding="utf-8"
-    )
+    changelog_path.write_text(render_changelog(preamble, plan.remaining, footer), encoding="utf-8")
 
     _append_allowlist_entry(root / ALLOWLIST_REL, plan.archive_path, root)
 
@@ -354,10 +393,7 @@ def _update_archive_index(index_path: Path, plan: Plan) -> None:
         if oldest == newest
         else f"Dated entries {oldest} through {newest}"
     )
-    row = (
-        f"| [{plan.archive_path.name}]({plan.archive_path.name}) | `{CHANGELOG_REL}` | "
-        f"{covers} |"
-    )
+    row = f"| [{plan.archive_path.name}]({plan.archive_path.name}) | `{CHANGELOG_REL}` | {covers} |"
     lines.insert(i, row)
     index_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -401,7 +437,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         plan = build_plan(root, args.max_words)
-    except NothingToMove as exc:
+    except (NothingToMove, OutOfOrder) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     if plan is None:
@@ -419,8 +455,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     apply_plan(root, plan, date.today().isoformat())
-    print(f"Wrote {plan.archive_path.relative_to(root)}, updated the archive index and "
-          f"{CHANGELOG_REL}'s own footer, and gave the new file a .docs_check_allowlist entry.")
+    print(
+        f"Wrote {plan.archive_path.relative_to(root)}, updated the archive index and "
+        f"{CHANGELOG_REL}'s own footer, and gave the new file a .docs_check_allowlist entry."
+    )
 
     # `_rebase_archive_links` only knows how to fix one relative-link shape. Anything else
     # broken by the move is reported here, not silently shipped — reuses docs_check's own

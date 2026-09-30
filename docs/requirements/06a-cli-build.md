@@ -138,8 +138,8 @@ execution contexts** (`ADR-031`), and writes a transcript in exactly one of them
 
 *(ADR-031, BR-CFG-008, BR-DEPLOY-019)*
 
-**`BR-CLI-018`** *(prune — build machine, `ADR-061`, `ADR-072`)* — `cairn-build prune
-[--keep <n>] [--dry-run] [--yes]` reclaims space on the **build** machine, under three
+**`BR-CLI-018`** *(prune — build machine, `ADR-061`, `ADR-072`, `ADR-079`)* — `cairn-build prune
+[--keep <n>] [--dry-run] [--yes]` reclaims space on the **build** machine, under four
 concentric restrictions:
 
 1. Only images carrying cairn's own provenance labels (`BR-BUILD-011`) are candidates — and,
@@ -157,6 +157,26 @@ concentric restrictions:
    status, so this reads as a grace window rather than rollback headroom: build-machine
    storage is not a registry and offers no such guarantee (`BR-BUILD-018`), it is simply
    giving a just-built, not-yet-pushed image a moment before it is considered fair game.
+4. **Only, where `[retention]` is enabled (`BR-CFG-016`), images beyond the newest `keep_last`
+   per manifest** — grouped by the `com.datahenge.cairn.manifest` id (`BR-BUILD-011`), never by
+   any readable environment name. This is the restriction that bounds disk, and restriction 3
+   cannot do its work: collapsing each input hash to its newest still retains one image per
+   hash forever, so N distinct hashes retain N images. Restriction 3 bounds duplicates *within*
+   a build; this bounds how many builds a manifest keeps. With `[retention]` absent or
+   `enabled = false`, this restriction does not apply and prune behaves exactly as it did
+   before `ADR-079`.
+
+**Two exemptions from restriction 4 only** — restrictions 1 to 3 continue to apply in both cases:
+
+- **Legacy images.** An image carrying no manifest id is never removed by restriction 4. cairn
+  cannot tell which manifest built it, and an image predating the label cannot be relabelled
+  because labels are immutable. It is left for the administrator to remove by hand, and MUST be
+  reported as left alone — an operator cannot exercise a judgment about images they are not
+  shown.
+- **Unpushed images, where `require_pushed` is true (the default).** An image still carrying
+  `cairn-build-owned` (`BR-BUILD-018`) exists nowhere but this machine, and removing it destroys
+  the only copy. `ADR-072` is not overturned: with the knob set to `false` such an image is
+  eligible exactly as that decision has it.
 
 Removing an eligible image MUST NOT pass the engine's `--force`: a removal needing it is one
 to report, not perform. Since an eligible-but-still-owned image typically carries multiple

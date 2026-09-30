@@ -93,13 +93,29 @@ Constraints, each load-bearing:
 ## Provenance
 
 **`BR-BUILD-011`** — On a successful build, cairn MUST stamp provenance onto the image as OCI
-labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; resolved Frappe + app commits
+labels (via the build engine's `--label`, `ADR-027`), recording: `image_name`; the **client**
+owning the manifest, where one is derivable (`ADR-079`); resolved Frappe + app commits
 with their source refs; effective build args; both tags; the owned recipe's own provenance
 (cairn's package version and the git commit covering `src/cairn/recipe/` at
 build time — there is no separate upstream pin to record, `ADR-059`); the input-hash; and a
 timestamp. cairn MAY emit a sidecar marker into the deployment working directory, and MUST NOT
 write markers into its own installation or source tree. The concrete label schema is
-`ADR-030`. *(ADR-011, ADR-030, ADR-059)*
+`ADR-030`. *(ADR-011, ADR-030, ADR-059, ADR-079)*
+
+The **client** is the client segment of the manifest's canonical home (`BR-CLI-022`,
+`provision.client_from_manifest`). cairn MUST also stamp a **manifest id**: a short, deterministic
+digest of `(client, image_name, environment)`, built so that no combination of values can be
+re-partitioned into a different triple with the same digest, and so that a manifest declaring no
+environment cannot collide with one that does. A manifest outside the canonical home has no
+derivable client, and cairn MUST omit **both** labels rather than guess at either.
+
+The manifest's declared `environment` MUST NOT be stamped in plain text: the image stays
+environment-agnostic (`BR-BUILD-001`, `BR-DEPLOY-009a`) so that promotion moves a tag rather than
+rebuilding. A label is immutable, so one naming an environment would state an intent that is
+wrong the moment the image is promoted; the opaque id states no intent and records only which
+manifest produced the image, which does not expire. The id MUST NOT enter the input hash — like
+`series` (`ADR-032`) it is a label, not an input, and were it an input, renaming an environment
+would invalidate every existing image. *(ADR-079)*
 
 **`BR-BUILD-012`** — cairn MUST offer a `--dry-run` that emits the resolved `apps.json`, the
 exact build command, the computed tags, and the intended provenance, without

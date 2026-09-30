@@ -9,6 +9,228 @@ code changes live in git history.
 
 ---
 
+## 2026-09-29 (staleness sweep of the open queues)
+
+`docs/open/OPEN_QUESTIONS.md` swept; `ADR-073` reconciled in three places; `ADR-079` and
+`ADR-071`'s queue row corrected. No requirement changed; no code changed.
+
+Prompted by finding that `ADR-073`'s `OPEN_DECISIONS.md` row had been advertising two answered
+sub-questions as needing Brian, and being read back to him as fact. The sweep looked for the same
+shape elsewhere and found it three more times:
+
+- **`ADR-073` was stale in two further places** beyond the queue row: its own frontmatter still
+  read `status: exploratory` with a purpose phrased as an open question, and `docs/adr/README.md`
+  repeated it. The decision was settled 2026-08-18 and implemented under `W-035` (`done`,
+  2026-08-19). Both now read `authoritative` and state the decision rather than the question.
+- **`ADR-079` cited `OQ-005` as unanswered** — true when written this morning, false by
+  afternoon. Now points at `BR-CLI-018`'s legacy exemption.
+- **`ADR-071`'s row deferred on "ship the narrower `--all` first"**, which has shipped
+  (`cli_build.py`, build-timer scope only, `ADR-070`). The deferral stands, but its condition is
+  now "is it proven out?" rather than "ship it" — and `W-013`'s open item, `doctor`'s
+  known-manifests listing being unexercised live, is the evidence it waits on.
+
+`OQ-004`, `OQ-005` and `OQ-006` were swept out on the `OQ-001`-`003` precedent: all three are
+authoritative elsewhere (`ADR-079`, `BR-BUILD-011`, `BR-CLI-018`, `BR-CFG-016`) and the queue row
+added nothing. **Open Questions is now empty.**
+
+Checked and found accurate, not changed: `ADR-044` and `ADR-071` correctly carry
+`status: exploratory` while deferred; `W-009` is correctly blocked on `ADR-044`, still deferred;
+`DOCS-02` is unaffected by anything this session.
+
+**The lesson, recorded because it caused a wrong answer to Brian:** a decision that moves leaves
+its status in at least four places — the ADR's frontmatter, the ADR index row, the
+`OPEN_DECISIONS` row, and any document citing it. `ADR-073` updated one of four in August.
+Nothing mechanical checks this today; `docs_check.py` validates links and size, not whether a
+queue agrees with the record it points at.
+
+---
+
+## 2026-09-29 (`W-043` filed: an expiring maintenance hold)
+
+New `W-043` in `docs/open/OPEN_WORK.md`. No requirement, decision, or code changed. `ADR-073` is
+**not** reopened — it decided the hold's durability, which is unchanged; an expiry layers on top.
+
+Filed at Brian's request after he asked whether reboot-survival should be configuration. Nothing
+about the shape is chosen, and the row says so: `--for`'s optionality, whether an expired hold is
+deleted or ignored, and how `doctor` distinguishes held-indefinitely from held-until-T are all
+open.
+
+**The item carries a conflict to resolve before any code.** `BR-DEPLOY-024` states that the
+hold's *"presence is the whole signal"* and `hold.py` that its contents *"are never parsed for
+meaning"* — an expiry read from the file contradicts both. Three candidate shapes are recorded
+(expiry in the file with an open amendment; expiry as host policy against the file's mtime;
+expiry in the filename, giving up `ADR-034`'s fixed path). Claude leans to the first; **Brian has
+not ruled**, and the lean is recorded as a recommendation only.
+
+One rule is recorded as *not* open, because it follows from existing reasoning rather than a new
+choice: a malformed or unreadable expiry must keep the hold, matching `is_held`'s existing stance
+that failing open on a parse error would resume deploys on a host somebody deliberately stopped.
+
+---
+
+## 2026-09-29 (`W-013` narrowed; the stale `ADR-073` queue row reconciled)
+
+`docs/open/OPEN_WORK.md` (`W-013`) and `docs/open/OPEN_DECISIONS.md` (`ADR-073`) updated. No
+requirement, decision, or code changed — both are corrections to what the queues were reporting.
+
+Brian confirmed `setup` and `setup-timer` have been run against a real VPS, which closes
+`setup-timer`'s happy path — one of `W-013`'s two remaining verifications. `doctor`'s
+known-manifests listing is still unexercised and is now the only thing between that row and
+`done`.
+
+`ADR-073`'s queue row had been stale since 2026-08-18. The ADR answered both sub-questions that
+day — the hold **is** durable at `/etc/cairn/hold`, and the `.env` collision is moot since
+candidate (a) was rejected — and `W-035` implemented it, but the row still advertised both as
+needing Brian and was read back to him as outstanding. Reconciled against the ADR and marked
+`implemented`.
+
+Brian separately asked whether reboot-survival could be configuration rather than a fixed choice.
+No change made and none recorded: Claude's recommendation is against it, on the grounds that the
+two failure modes are not symmetric — a hold lost at reboot lets the timer converge a stack
+mid-maintenance silently, while a forgotten hold is visible, `BR-CLI-020` having made `doctor`
+report one on every run precisely as the counterweight to choosing durable. An **expiring** hold
+(`stop --for <duration>`) was offered as the better instrument if forgotten holds are the
+concern, since a reboot bears no relation to how long maintenance takes. Awaiting Brian's ruling;
+nothing is filed.
+
+---
+
+## 2026-09-29 (build-machine retention specified: `BR-CFG-016`, `BR-CLI-018`'s fourth restriction)
+
+New `BR-CFG-016` in `docs/requirements/05-config.md`; `BR-CLI-018` amended in
+`docs/requirements/06a-cli-build.md` from three concentric restrictions to four. `W-042` and the
+implementation index updated. **No code changed** — `W-042` is now implementation-only.
+
+`BR-CFG-016` defines `[retention]` in `/etc/cairn/builder.toml`: `enabled` (default `false`),
+`keep_last` (per manifest), `require_pushed` (default `true`). `max_age_days` is deliberately
+absent, unlike `[registry.retention]` — an age ceiling cannot bound disk, since a burst inside
+the window is retained however large it grows, which is `W-041`'s defect. That absence is Brian's
+count-over-age argument written into a requirement.
+
+`BR-CLI-018`'s new restriction 4 removes only images beyond the newest `keep_last` per manifest,
+grouped by the opaque id and never by a readable environment name. Restriction 3 bounds
+duplicates *within* one build; restriction 4 bounds how many builds a manifest keeps — which is
+the one that actually bounds disk, and the one that did not exist. With `[retention]` absent or
+disabled, prune behaves exactly as before.
+
+Two exemptions apply to restriction 4 **only**, with restrictions 1-3 still in force: legacy
+images (no manifest id, unrelabellable because labels are immutable, left to the administrator
+but MUST be reported), and unpushed images while `require_pushed` is true.
+
+**Two defaults chosen by Claude, not ruled on by Brian, and flagged here rather than presented as
+settled:** `keep_last = 10`, taken from `[registry.retention]` on the instruction to mirror that
+table; and retention being file-only, with no `CAIRN_*` environment override and no CLI flag,
+which follows the same mirroring but was not separately discussed. Either is a one-line change if
+Brian wants it otherwise.
+
+---
+
+## 2026-09-29 (`OQ-005` and `OQ-006` answered; `W-042` unblocked)
+
+`OQ-005` and `OQ-006` resolved in `docs/open/OPEN_QUESTIONS.md`; `W-042` moved from `blocked` to
+`open`. No requirement text written yet; no code changed.
+
+**`OQ-005` — images with no manifest label (Brian): ignore them.** An unlabelled image is assumed
+legacy, is never selected by the per-manifest axis, and is left for the administrator to remove
+by hand. Reporting is not optional — `BR-CLI-018` already binds prune to state what it leaves
+alone, and an operator cannot make a call about images they are not shown. **Scope confirmed by Brian the same
+day:** the exemption is scoped to the *new per-manifest axis only*, leaving today's
+per-input-hash `--keep` applying to legacy images unchanged. The alternative reading would make `cairn-build prune` a no-op on every
+existing host, since no image anywhere carries the label yet.
+
+**`OQ-006` — the `require_pushed` default (Brian): `true`.** Ruled `false` and reversed the same
+day as the safer default. A sweep must not evict an image that exists nowhere but this machine.
+`ADR-072` is not overturned — it remains the behaviour when the knob is `false` — but it
+deliberately removed pushed-ness as a protection, so a `true` default restores by default what
+that decision dropped. A reader of `ADR-072` alone would not predict the shipped default, so the
+requirement text must say so.
+
+Every decision `W-042` needs is now taken: `[retention]` in `builder.toml` needs a `BR-CFG` id,
+and the per-manifest axis needs `BR-CLI-018` amended or a new `BR-CLI` id.
+
+---
+
+## 2026-09-29 (`ADR-079` amended: an opaque manifest id carries the grouping)
+
+`ADR-079` rewritten; `BR-BUILD-011` and `ADR-030`'s schema updated; `OQ-004`'s answer, `W-042`,
+the ADR index and the implementation index follow. **No code changed.**
+
+`ADR-079` had rejected an opaque digest hours earlier, on the grounds that it still binds the
+image to one environment and so is equally false after a promotion — it merely hides the
+falsehood. Brian reversed that: falsehood requires a claim, and an opaque value makes none. What
+made a plaintext `environment=staging` harmful was the *intent* a reader infers from it, and no
+reader infers intent from `d32jf32a`.
+
+So `BR-BUILD-011` now stamps a plaintext `com.datahenge.cairn.client` **and** an opaque
+`com.datahenge.cairn.manifest` — a deterministic digest of `(client, image_name, environment)`.
+`BR-DEPLOY-009a` and `BR-BUILD-001` still stand unamended and no environment name reaches the
+image. Retention groups per manifest after all, so the shared-pool consequence recorded in the
+entry below no longer applies.
+
+Brian's naming call, taken on a recommendation: the key is `manifest`, not `environment`. An
+opaque value under an `environment` key would still announce that the image is bound to one,
+moving the implied intent up a level rather than removing it. The digest covers the full triple.
+
+The id must never enter the input hash, on the same footing as `series` (`ADR-032`) — were it an
+input, renaming an environment would invalidate every existing image. Both the original
+rejection and its answer are kept visible in `ADR-079`; the digest is recorded there as
+obfuscation, not secrecy, and nothing relies on it being otherwise.
+
+---
+
+## 2026-09-29 (`changelog_rotate.py` refuses an out-of-order file)
+
+Tooling calibration — no requirement, decision, or `BR` ID (`01-documentation-conventions.md`'s
+process/product rule). `ai/tools/changelog_rotate.py` gains `ordering_objection` and an
+`OutOfOrder` refusal; `tests/test_changelog_rotate.py` gains five tests.
+
+Rotation selects entries **positionally**, off the end of the file, which is the oldest material
+only while the file is genuinely newest-first. It had never checked that against the dates it
+already parses, so one out-of-order insertion would have silently archived recent work — the
+same class of quiet wrong answer as the 2026-08-20 no-op. Brian pointed at the Foundation
+project's `tools/changelog_archive.py`, whose equivalent guard exists because that premise
+actually broke there. Entries sharing a date are not an objection: position is the legitimate
+tiebreak, and the live file routinely carries several per day.
+
+---
+
+## 2026-09-29 (`ADR-079`: the client is stamped on the image, the environment is not)
+
+New `docs/adr/079-the-client-is-stamped-on-the-image-the-environment-is-not.md`, indexed in
+`docs/adr/README.md`. `BR-BUILD-011` amended; `ADR-030`'s schema gains
+`com.datahenge.cairn.client`. `OQ-004` resolved; `W-042` and the implementation index updated.
+**No code changed** — the requirement is deliberately ahead of it, and the Build row now records
+that `build.provenance_labels` does not yet emit the label.
+
+Resolves the collision in the entry below. Brian ruled that neither side gives: `BR-DEPLOY-009a`
+and `BR-BUILD-001` stand unamended, retention groups by `(client, image_name)` rather than
+`ADR-052`'s full triple, and the shared pool that follows is accepted. Rationale, rejected
+alternatives, and the accepted residual risk live in `ADR-079`.
+
+Two corrections that changed the work: the client was **not** already on the image (only
+`image_name` is), so a new label is required rather than free; and the namespace in a tag is a
+`[cairn.registry]` coordinate, not the client.
+
+---
+
+## 2026-09-29 (build-machine retention: decisions taken, `W-041`/`W-042` filed)
+
+New `OQ-004`-`OQ-006` in `docs/open/OPEN_QUESTIONS.md`; new `W-041`, `W-042` in
+`docs/open/OPEN_WORK.md`; `W-020` narrowed to its schedule half. No code changed.
+
+Brian asked why 11 pushed images were lingering on the Life Scientific test VPS. Not an error:
+`prune.select` keeps the newest `--keep` **per input hash**, and with 11 distinct hashes every
+image is the newest of its group. There is no retention on any other axis, `--keep` has `min=1`,
+and nothing in `src/` invokes an engine-level prune, so growth is monotonic.
+
+**Settled by Brian**, recorded on `W-042`: `[retention]` in the existing `/etc/cairn/builder.toml`
+rather than a new `build.toml`; the axis is the manifest, not `series`; per-manifest `keep_last`
+coexists with per-input-hash `--keep`, both applying; `require_pushed` is a knob, leaving
+`ADR-072` intact; `[registry.retention]`'s vocabulary and `enabled = false` default are mirrored.
+Brian's argument for count over age exposed the same defect in the shipped registry role — `W-041`.
+
+---
+
 ## 2026-09-29 (v16 PDF generation: findings recorded, `W-040` filed)
 
 New `docs/technical/04g-lessons-frappe-pdf-generation.md`, indexed from `04-lessons-learned.md`.
@@ -64,243 +286,6 @@ the job — the natural follow-on wrong guess.
 
 ---
 
-## 2026-09-28 (`gc` stops the registry instead of serving read-only)
-
-New `ADR-078`, amending `BR-REG-009` and adding `BR-REG-009a`.
-
-The first `cairn-registry gc` ever run against a live registry left that registry crash-looping.
-`registry_compose()` expressed read-only maintenance mode as the flattened environment variable
-`REGISTRY_STORAGE_MAINTENANCE_READONLY_ENABLED`; distribution requires that key to be a map, and
-`handlers.NewApp` panics on the flattened form before the HTTP server starts. Because `gc()` had
-no `try`/`finally`, it never ran its return-to-read-write step, so the compose file kept the
-variable and every later `cairn-registry start` reproduced the panic — recoverable only by
-hand-editing a cairn-generated file.
-
-`gc` now stops the registry, runs `garbage-collect` in a throwaway container against the same
-`data_dir`, restarts the registry in a `finally`, and verifies it is serving before reporting
-success. No `REGISTRY_*` maintenance variable is involved, so that fault class is gone; a stopped
-registry is also a stronger write guarantee than read-only mode. `gc` no longer writes the compose
-file at all, which removes `_write_compose`'s deliberate bypass of the overwrite protection every
-other generated file gets.
-
-**What this costs, recorded rather than glossed:** `BR-REG-009`'s promise that pulls continue
-throughout the window is withdrawn — during gc the registry answers nothing. A `reconcile` tick
-landing inside the window raises `ReconcileError`, deploys nothing, and succeeds on the next tick,
-so a target is left alone rather than half-deployed.
-
-The rejected alternative — keeping read-only mode and emitting
-`REGISTRY_STORAGE_MAINTENANCE_READONLY: '{"enabled":true}'` so the value parses as a map — is
-recorded in `ADR-078` with its reasoning: it preserves the pulls promise, but retains the twice-per-gc
-recreate, a dependency on distribution's env-value parsing that cairn had already guessed wrong
-about once, and `gc`'s ability to rewrite the compose file.
-
-Two diagnostic gaps the incident exposed are closed alongside: `gc` verifies the registry is
-serving before reporting success, and the operator-facing warning now says the registry is briefly
-unavailable rather than that pushes are briefly refused.
-
----
-
-## 2026-09-05 (github.com rate limiting documented; both paths)
-
-Follow-up to `ADR-077`. The fix shipped, but nothing told an operator why they would want a
-token for a build of entirely public repositories, which is the situation that produced the
-incident.
-
-**Path 2.** New `docs/technical/04e-lessons-github-rate-limits.md`, a durable finding indexed
-from `04-lessons-learned.md`. Records what was measured (rate limits are keyed on the caller,
-not the repository; the refusal arrives as a `401` credential challenge rather than a `429`;
-protocol v2 meters only the `git-upload-pack` POST, so a `curl` against `/info/refs` returns
-`200` while a clone fails) separately from what was reasoned (a credential helper
-authenticates on the retry; `CACHE_BUST` makes cairn clone more often than a hand-run build).
-It also records what could **not** be established: GitHub publishes no figures for
-git-over-HTTPS, and a rate limit is indistinguishable from an abuse block at the client, so
-no threshold in that document is stated as known.
-
-The `/info/refs` finding is the one worth re-reading. That probe was run early in diagnosis,
-returned `200`, and sent the investigation toward Docker networking for about an hour.
-
-**Path 1.** `userdocs/reference/builder-config.md`'s "Private `github.com` apps" is retitled
-"Authenticating to `github.com`" and gains a "Why a public build can still need a token"
-subsection, since the old title told a reader with public apps that the section was not for
-them. `userdocs/reference/manifest.md`'s pointer is reworded to match and its anchor updated.
-`userdocs/builder/index.md` gains a note admonition beside the build command, which is where
-a first-time builder meets this.
-
-Terminal output on those pages is real, taken from the failing build and from the shipped
-message strings, per the userdocs style rules. The site builds under `mkdocs --strict` and
-both inbound anchors resolve.
-
-`builder-config.md` carried 21 em dashes before this change and still does. They predate the
-style guide, and restyling the whole page was out of scope here; only the added text follows
-the current rules.
-
----
-
-## 2026-09-03 (`02-build.md` split; `02a-build-tagging.md` is new)
-
-`docs/requirements/02-build.md` reached its 2200-word ceiling admitting `BR-BUILD-019`
-(previous entry). The bump taken then is retired one day later in favour of a split, at
-Brian's direction.
-
-The bump's own note guessed that "Private `github.com` apps" was the section to move.
-Measurement disagreed: that section is 486 words, while "Cache & tagging" is 887 — 39% of
-the file and nearly double the guess. "Cache & tagging" moved instead, to the new
-`02a-build-tagging.md`, carrying `BR-BUILD-007`, `008`, `014`, `014a`, and `018`. This is the
-same lesson the 2026-08-18 `06-cli.md` split recorded — measure the sections rather than guess
-which one grew — and it is now recorded twice, which is the argument for measuring first.
-
-The split is by *topic*, not merely by size: `02a` owns how an image is **named and reused**
-(cache invalidation, the deterministic primary tag, input-hash deduplication, the ownership
-marker), and `02-build.md` keeps what a build **is** (manifest inputs, ref resolution,
-invocation, provenance, the reproducibility bar, and the `github.com` credential rules).
-
-No requirement was renumbered, reworded, or withdrawn — IDs are stable across a move. The
-spine is ~1419 words and `02a` ~1011, so the allowlist override is retired outright rather
-than re-pointed, matching how `06-cli.md`'s was handled. `00-overview.md`'s area table gains
-an `02a` row, `25-documentation-authority.md` gains an authority row, and
-`05-implementation-index.md`'s Build and Images/prune rows now cite the document that
-actually owns the requirement they implement.
-
----
-
-## 2026-09-02 (frappe clone authenticates; `ADR-077`, `BR-BUILD-019`)
-
-A `cairn-build build` on the Life Scientific test VPS failed in the builder stage at
-`bench init`, with git's `could not read Username for 'https://github.com'`. Diagnosis:
-GitHub refused an *unauthenticated* git operation from that host's IP — `GET /info/refs`
-returned `200`, the protocol-v2 `POST /git-upload-pack` returned `401` with
-`www-authenticate: Basic realm="GitHub"`. The repository is public; anonymous access is
-rate-limited per IP and is not a guaranteed floor.
-
-`ADR-077` records the decision and its rejected alternatives. `BR-BUILD-016`'s closing
-paragraph — which excluded frappe on the reasoning that "a token has no safe channel to
-reach it" — is replaced. Two errors in that reasoning: it conflated frappe's URL (which
-must stay a plain build-arg, since provenance depends on it) with frappe's credential
-(which needs no build-arg at all), and `apps.json` had been demonstrating the safe channel
-all along. The exclusion was also only half-observed in practice: `resolve.resolve_manifest()`
-already tokenizes frappe's `ls-remote` exactly as it does every app's, so only the
-in-container clone was ever anonymous.
-
-`BR-BUILD-016`'s "both places" clause becomes three. New `BR-BUILD-019` keeps the token
-optional — a build with none configured proceeds anonymously with a warning — and requires
-cairn to name `$CAIRN_GITHUB_TOKEN` when a build fails on an anonymous refusal, rather than
-passing through git's message, which names a terminal prompt that was never the problem.
-
-Brian's calls at decision time: token optional rather than mandatory (requiring one would
-fail every manifest with no private app, and every timer provisioned without the
-`EnvironmentFile=-` token file `ADR-065` permits); and a `credential.helper` reading the
-mount rather than a `url.insteadOf` rewrite, which would write the literal token into a
-gitconfig file and leave it in the builder layer. `doctor` is unchanged — detecting this
-pre-build would mean shelling out to a container, which is not what a host-side tool is for.
-
-`BR-BUILD-017`/`-018` were not available: `-017` is reserved by the git-mirror plan
-(`W-009`, `ADR-044`) and `-018` by `ADR-061`. The mirror is complementary, not a
-substitute — as scoped it covers `[[cairn.apps]]` entries, not frappe, and its
-start-of-build `git fetch` is still a `github.com` operation from the same IP.
-
----
-
-## 2026-08-20 (orientation pages promoted; README rewritten)
-
-`userdocs/index.md` is replaced by the funnel-ordered rewrite from `docs/scratch/`, and
-`why-cairn.md` is new. Both follow `26-userdocs-style.md`. The old front page opened with "a
-thin, opinionated wrapper" (§3.4's verbatim *before* example) and carried "Two pillars",
-"low-thought", "a strict data-plane boundary", and "it ships code, not data" — all four of
-§3.3's banned-by-example slogans — plus a project-status admonition inventorying unverified
-pages, which §6 says must not appear on `index.md`.
-
-Two changes to the drafts as promoted. The mermaid diagram is dropped: `mkdocs.yml` configures
-`pymdownx.superfences` with no mermaid custom fence, so it would have rendered as a literal code
-block. And `why-cairn.md`'s sample `cairn-build images` listing is replaced with prose, because
-it was composed rather than captured — faithful to `images.render()`'s shape but missing the
-per-image line that function always emits, which is exactly the drift §5 warns about. This
-workstation has no container engine, so no real capture was possible; the page's footer says so.
-
-Links are retargeted at today's page tree rather than the funnel filenames the drafts assumed,
-per `W-039`. `docs/scratch/workflow.md` stays in scratch: it depends on `concepts.md` and
-`install.md`, which do not exist yet.
-
-The root `README.md` is rewritten in the same pass, at Brian's direction: mermaid diagram
-removed, slogans out, and a "How it works" paragraph that says what actually happens instead of
-asserting that it is magic. `README.md` is outside `26-userdocs-style.md`'s scope by that
-document's own first paragraph, but the voice rules were applied anyway.
-
----
-
-## 2026-08-20 (`docs_check.py` gains DOC005: unresolved link fragments)
-
-`docs_check.py` verified that a link's target file existed but never that its `#anchor`
-resolved, which is how `ghcr-setup.md` pointed at `#what-it-costs` while the heading was "What
-it costs — read this before you push several images". Found by hand earlier the same day; now
-mechanical.
-
-Both slug conventions are accepted for every heading, because `docs/` is read on GitHub and
-`userdocs/` through mkdocs and the two disagree: python-markdown drops the em dash and collapses
-the surrounding spaces into one hyphen, GitHub deletes it in place and turns each remaining
-space into its own. Accepting both catches an anchor that exists under *neither*, which is what
-an invented fragment looks like, without inventing false positives. `attr_list` ids, hand-written
-HTML anchors, duplicate-heading suffixes, and code spans in headings are all handled; a `## ` line
-inside a fenced block is not an anchor.
-
-44 fragment links across `docs/` and `userdocs/` — all currently resolve. `tests/test_docs_check.py`
-is new (10 tests), including the historical break as a regression test.
-
----
-
-## 2026-08-20 (`W-034` closed, both halves)
-
-The crash originally reported was real and Brian fixed it on 2026-08-06 in `cb1ffd5`, which added
-`parse_changelog`'s `header_line == FOOTER_HEADING` guard — the same day the item was filed,
-which is why the 2026-08-18 re-check could not reproduce it. That was never recorded, so the row
-stayed open on a "close if it stays quiet" clause for two weeks.
-
-The second half is fixed here: `build_plan` returned `None` both when the file was under budget
-and when it was over budget with nothing movable, and `main` printed the same reassuring line for
-both. It now raises `NothingToMove`, naming the file, its size, its ceiling, and the two ways out.
-`.docs_check_allowlist`'s stopgap note about rotation being blocked is removed, since it isn't.
-
----
-
-## 2026-08-20 (`changelog_rotate.py` splits on dated headings, not on the `---` rule)
-
-Brian: fix the parser rather than rely on the separators staying put. `parse_changelog` now
-slices `docs/CHANGELOG.md` at its `## <YYYY-MM-DD>` headers. A `## ` line inside a fenced code
-block is content, not a boundary, and the separator that slicing leaves attached to the end of
-the preceding entry is dropped, since `render_changelog` writes one back. A file missing its
-separators parses correctly and is written back out repaired. A header the tool cannot date
-still raises rather than guessing, which is the one thing that should stay loud.
-
-`tests/test_changelog_rotate.py` is new, and is the tool's first test coverage — the parser was
-untested, which is why the failure was silent for weeks. Ten tests, including the exact
-regression (a separator-less file parsing as one entry) and a byte-for-byte round trip against
-the live changelog. Full suite: 981 passing.
-
-No `BR` ID: `ai/tools/` is documentation-hygiene tooling, outside every requirement area.
-`01-documentation-conventions.md`'s separator note is corrected in the same change, and `W-034`
-records what remains — `build_plan` still reports "within budget" on every `None`, including the
-`MIN_LIVE_ENTRIES` case.
-
----
-
-## 2026-08-20 (changelog rotation was a silent no-op; separators restored)
-
-Adding the two entries above put `docs/CHANGELOG.md` over its 6,500-word ceiling, and
-`changelog_rotate.py` answered "within budget — nothing to rotate" while `docs_check.py` reported
-`DOC002` on the same file.
-
-Cause: `parse_changelog` splits entries on the `---` rule and nothing else. Those separators had
-been dropping out of appended entries for some time, so all 23 entries parsed as one, and
-`MIN_LIVE_ENTRIES` left nothing safe to archive. Restoring the separators (no content changed,
-23 words added) made rotation work normally: 7 entries covering 2026-08-06 through 2026-08-18
-moved to `docs/archive/CHANGELOG-2026-08-06-to-2026-08-18.md`, leaving 4,761 words live, and the
-archive index, this file's footer, and `.docs_check_allowlist` updated mechanically.
-
-The separator requirement is now stated in `01-documentation-conventions.md`, and `W-034` records
-the root cause. This is not the crash `W-034` originally reported, which still has not
-reproduced.
-
----
-
 ## Archived entries
 
 Older entries are moved out once this file grows past its word-count budget
@@ -317,3 +302,5 @@ contiguous range, newest-first within it same as here.
 - [CHANGELOG-2026-08-06-to-2026-08-18.md](archive/CHANGELOG-2026-08-06-to-2026-08-18.md)
 - [CHANGELOG-2026-08-18-to-2026-08-19.md](archive/CHANGELOG-2026-08-18-to-2026-08-19.md)
 - [CHANGELOG-2026-08-19-to-2026-08-20.md](archive/CHANGELOG-2026-08-19-to-2026-08-20.md)
+- [CHANGELOG-2026-08-20.md](archive/CHANGELOG-2026-08-20.md)
+- [CHANGELOG-2026-09-02-to-2026-09-28.md](archive/CHANGELOG-2026-09-02-to-2026-09-28.md)

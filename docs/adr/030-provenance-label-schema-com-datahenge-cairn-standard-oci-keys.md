@@ -41,6 +41,8 @@ distributing entity of a client's image is the client's to declare, not cairn's.
 | `org.opencontainers.image.title` | manifest `image_name` |
 | `org.opencontainers.image.version` | the immutable primary tag |
 | `org.opencontainers.image.revision` | resolved Frappe commit |
+| `com.datahenge.cairn.client` | the client owning the manifest, omitted where none is derivable (`ADR-079`) |
+| `com.datahenge.cairn.manifest` | opaque digest of `(client, image_name, environment)`; the retention grouping key (`ADR-079`) |
 | `com.datahenge.cairn.version` | the cairn that built it |
 | `com.datahenge.cairn.input-hash` | `BR-BUILD-008` input hash |
 | `com.datahenge.cairn.tag.primary` / `.tag.moving` | both applied tags |
@@ -51,6 +53,18 @@ distributing entity of a client's image is the client's to declare, not cairn's.
 
 Apps and build args are single JSON labels because their cardinality varies; everything
 else is scalar so it can be read without parsing.
+
+**`client` and `manifest` were added 2026-09-29 (`ADR-079`)**, so build-machine retention can
+group images by the manifest that produced them. `ADR-052`'s uniqueness key is
+`(client, image_name, environment)`; the first two are stamped in plain text and the third only
+inside `manifest`'s digest. An image must stay environment-agnostic (`BR-BUILD-001`,
+`BR-DEPLOY-009a`) for promotion to move a tag rather than rebuild, and a label is immutable — one
+naming an environment would state an intent that is wrong the moment the image is promoted, while
+an opaque digest states none. Reading the environment back out of `manifest` is not a use it
+supports, and it is not a gap to be closed later.
+
+`manifest` is a grouping key, not an input: it MUST NOT enter the input hash, on the same footing
+as `series` (`ADR-032`).
 
 **Rejected: a per-deployment namespace** (`com.microsoft.cairn.*` for a client Microsoft,
 `shop.foobarbaz.cairn.*` for foobarbaz.shop). Attractive, because it keeps the builder's

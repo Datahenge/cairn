@@ -155,3 +155,76 @@ def test_the_within_budget_message_is_still_used_when_the_file_is_actually_small
     scaffold(tmp_path, build(ENTRY_A, ENTRY_B), ceiling=5000)
 
     assert cr.build_plan(tmp_path, cr.DEFAULT_MAX_WORDS) is None
+
+
+# --- the ordering guard ------------------------------------------------------
+# Selection is positional, which is only correct while the file is newest-first. Foundation's
+# `tools/changelog_archive.py` records that premise breaking in practice, so cairn checks it
+# too. A mis-archive is the same class of quiet wrong answer as the 2026-08-20 no-op.
+
+
+def test_entries_at_the_end_are_not_assumed_to_be_the_oldest():
+    newest = cr.Entry(header="## 2026-08-20 (newest)", body="x", entry_date="2026-08-20")
+    middle = cr.Entry(header="## 2026-08-19 (middle)", body="x", entry_date="2026-08-19")
+    misplaced = cr.Entry(header="## 2026-08-18 (oldest)", body="x", entry_date="2026-08-18")
+
+    objection = cr.ordering_objection(archived=[middle], remaining=[newest, misplaced])
+
+    assert objection is not None
+    assert "2026-08-19 (middle)" in objection
+    assert "2026-08-18" in objection
+
+
+def test_a_correctly_ordered_selection_raises_no_objection():
+    newest = cr.Entry(header="## 2026-08-20 (newest)", body="x", entry_date="2026-08-20")
+    oldest = cr.Entry(header="## 2026-08-18 (oldest)", body="x", entry_date="2026-08-18")
+
+    assert cr.ordering_objection(archived=[oldest], remaining=[newest]) is None
+
+
+def test_entries_sharing_a_date_are_not_an_objection():
+    """Position is the legitimate tiebreak between same-day entries — the real changelog
+    routinely carries several, and refusing on those would make the guard useless."""
+    live = cr.Entry(header="## 2026-09-29 (a)", body="x", entry_date="2026-09-29")
+    moved = cr.Entry(header="## 2026-09-29 (b)", body="x", entry_date="2026-09-29")
+
+    assert cr.ordering_objection(archived=[moved], remaining=[live]) is None
+
+
+def test_build_plan_refuses_an_out_of_order_file_rather_than_mis_archiving(tmp_path):
+    """End to end: the tail is 2026-08-19 while 2026-08-18 sits above it and would stay live.
+
+    The tail is deliberately the bulky entry, so the budget is satisfied by moving it alone —
+    move two and the selection really would be the oldest material, and there is nothing to
+    object to."""
+    scaffold(
+        tmp_path,
+        build(
+            "## 2026-08-20 (newest)\n\n" + "word " * 10,
+            "## 2026-08-18 (misplaced oldest)\n\n" + "word " * 10,
+            "## 2026-08-19 (tail)\n\n" + "word " * 200,
+        ),
+        ceiling=100,
+    )
+
+    with pytest.raises(cr.OutOfOrder, match="not in newest-first order"):
+        cr.build_plan(tmp_path, cr.DEFAULT_MAX_WORDS)
+
+
+def test_a_correctly_ordered_file_still_rotates(tmp_path):
+    """The guard must not block the ordinary case it was added to protect."""
+    body = "word " * 40
+    scaffold(
+        tmp_path,
+        build(
+            f"## 2026-08-20 (newest)\n\n{body}",
+            f"## 2026-08-19 (middle)\n\n{body}",
+            f"## 2026-08-18 (oldest)\n\n{body}",
+        ),
+        ceiling=100,
+    )
+
+    plan = cr.build_plan(tmp_path, cr.DEFAULT_MAX_WORDS)
+
+    assert plan is not None
+    assert [entry.entry_date for entry in plan.archived] == ["2026-08-19", "2026-08-18"]
