@@ -47,6 +47,13 @@ MANIFEST_NAME = "cairn.toml"
 MANIFEST_ENV_VAR = "CAIRN_MANIFEST"
 BUILDER_CONFIG_PATH = Path("/etc/cairn/builder.toml")
 
+#: cairn's own namespace within `/srv` (`BR-CLI-022`, `ADR-047`). Defined here rather than in
+#: `provision.py`, which owns the *provisioning* of it, because `build.py` must derive a
+#: manifest's client to stamp it (`BR-BUILD-011`) and cannot import `provision` without a
+#: cycle. `provision` re-exports both this and `client_from_path` so its own callers are
+#: unaffected.
+MANIFEST_ROOT = Path("/srv/cairn")
+
 #: Prefix for the per-key build-config override (`ADR-042`): ``CAIRN_ENGINE``,
 #: ``CAIRN_REGISTRY``, and so on, one per `BUILD_CONFIG_KEYS` entry.
 BUILD_CONFIG_ENV_PREFIX = "CAIRN_"
@@ -56,6 +63,19 @@ KNOWN_BUILD_KNOBS = ("python_version", "node_version", "install_chromium")
 
 #: Recognized build-config keys. Builder/cache settings land with the BUILD module.
 BUILD_CONFIG_KEYS = ("engine", "registry", "namespace", "transcript_dir")
+
+#: `[retention]` in `builder.toml` (`BR-CFG-016`, `ADR-079`). A table, not a scalar, which is
+#: why `_build_config_values` can no longer insist every value is a string.
+RETENTION_TABLE = "retention"
+RETENTION_KEYS = ("enabled", "keep_last", "require_pushed")
+
+#: Deleting nothing is the safe default, as on the registry side (`BR-REG-002`).
+DEFAULT_RETENTION_ENABLED = False
+#: Mirrors `[registry.retention]`'s own floor so one vocabulary carries across roles.
+DEFAULT_KEEP_LAST = 10
+#: An unpushed image is the only copy in existence, so the default protects it. `ADR-072` is
+#: not overturned — it is exactly the behaviour `require_pushed = false` restores.
+DEFAULT_REQUIRE_PUSHED = True
 
 #: Image names become OCI repository path components, which are lowercase-only.
 _IMAGE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
@@ -123,6 +143,23 @@ class Manifest:
 
 
 @dataclass(frozen=True)
+class Retention:
+    """`[retention]` from `builder.toml` (`BR-CFG-016`).
+
+    Absent from the file, every field takes its documented default and `enabled` is False, so
+    a host that has never heard of retention behaves exactly as it did before `ADR-079`.
+
+    `max_age_days` is deliberately absent, unlike `[registry.retention]`: an age ceiling
+    cannot bound disk, because a burst of builds inside the window is retained however large
+    it grows (`W-041` records the same defect on the registry side). A count can.
+    """
+
+    enabled: bool = DEFAULT_RETENTION_ENABLED
+    keep_last: int = DEFAULT_KEEP_LAST
+    require_pushed: bool = DEFAULT_REQUIRE_PUSHED
+
+
+@dataclass(frozen=True)
 class BuildConfig:
     """Machine-local build settings; absent values fall back to documented defaults."""
 
@@ -130,6 +167,7 @@ class BuildConfig:
     registry: str | None = None
     namespace: str | None = None
     transcript_dir: str | None = None
+    retention: Retention = field(default_factory=Retention)
     sources: tuple[str, ...] = ()
 
     def resolve_image_base(self, image_name: str) -> str:
@@ -209,6 +247,32 @@ def load_manifest(path: Path) -> Manifest:
     )
 
 
+def client_from_path(manifest_path: Path | None, root: Path | None = None) -> str | None:
+    """The client owning *manifest_path*, or None when there is not one (`BR-BUILD-011`).
+
+    The client is the first path segment under `MANIFEST_ROOT` — a manifest at its canonical
+    home `/srv/cairn/<client>/cairn_<environment>.toml` belongs to `<client>` (`BR-CLI-022`,
+    `ADR-047`). A manifest kept anywhere else has no client cairn can derive, and `ADR-079`
+    says to omit the label rather than guess at one, so this answers None rather than raising.
+
+    `provision.client_from_manifest` is the raising counterpart, used where a *missing* client
+    is a hard error worth a long remedy message (naming a build timer, `ADR-052`). Both read
+    the same fact; only their answer to its absence differs.
+
+    *root* exists so a caller can supply its own module-level `MANIFEST_ROOT` — `provision`
+    does, since that name is the seam its tests relocate the tree through. Callers with no
+    such seam pass nothing and get the canonical root.
+    """
+    if manifest_path is None:
+        return None
+    base = root or MANIFEST_ROOT
+    try:
+        relative = manifest_path.resolve().relative_to(base.resolve())
+    except (ValueError, OSError):
+        return None
+    return relative.parts[0] if len(relative.parts) >= 2 else None
+
+
 def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
     """Layer machine defaults, the manifest's registry, then ``CAIRN_*`` env vars.
 
@@ -256,6 +320,7 @@ def load_build_config(manifest_path: Path | None = None) -> BuildConfig:
         registry=merged.get("registry"),
         namespace=merged.get("namespace"),
         transcript_dir=merged.get("transcript_dir"),
+        retention=merged.get(RETENTION_TABLE) or Retention(),
         sources=tuple(sources),
     )
 
@@ -318,9 +383,50 @@ def _readable(path: Path) -> bool:
         return False
 
 
+def _retention(path: Path, section: Any) -> Retention:
+    """Validate `[retention]` (`BR-CFG-016`).
+
+    Every value is checked and an invalid one is an error naming the file and key — never a
+    silent fallback, which would leave an operator believing a ceiling is in force when it is
+    not. `keep_last` has a floor of 1 for the same reason `--keep` does: a sweep that can keep
+    zero images of a manifest is not retention, it is deletion.
+    """
+    if not isinstance(section, dict):
+        raise BuildConfigInvalidError(f"{path}: [{RETENTION_TABLE}] must be a table.")
+    unknown = set(section) - set(RETENTION_KEYS)
+    if unknown:
+        raise BuildConfigInvalidError(
+            f"{path}: unknown key(s) {', '.join(sorted(unknown))} in [{RETENTION_TABLE}]; "
+            f"expected any of {', '.join(RETENTION_KEYS)}."
+        )
+
+    for key in ("enabled", "require_pushed"):
+        if key in section and not isinstance(section[key], bool):
+            raise BuildConfigInvalidError(
+                f"{path}: [{RETENTION_TABLE}] {key} must be true or false."
+            )
+
+    keep_last = section.get("keep_last", DEFAULT_KEEP_LAST)
+    if isinstance(keep_last, bool) or not isinstance(keep_last, int) or keep_last < 1:
+        raise BuildConfigInvalidError(
+            f"{path}: [{RETENTION_TABLE}] keep_last must be an integer of at least 1."
+        )
+
+    return Retention(
+        enabled=section.get("enabled", DEFAULT_RETENTION_ENABLED),
+        keep_last=keep_last,
+        require_pushed=section.get("require_pushed", DEFAULT_REQUIRE_PUSHED),
+    )
+
+
 def _build_config_values(path: Path) -> dict[str, Any]:
-    """Read one build-config file, rejecting unknown or non-string values."""
+    """Read one build-config file, rejecting unknown keys and non-string scalar values.
+
+    `[retention]` is the one table among otherwise flat string keys (`BR-CFG-016`), so it is
+    lifted out before the string check the rest still gets.
+    """
     data = _load_toml(path, BuildConfigInvalidError)
+    retention = data.pop(RETENTION_TABLE, None)
     unknown = set(data) - set(BUILD_CONFIG_KEYS)
     if unknown:
         raise BuildConfigInvalidError(
@@ -330,6 +436,8 @@ def _build_config_values(path: Path) -> dict[str, Any]:
     for key, value in data.items():
         if not isinstance(value, str) or not value.strip():
             raise BuildConfigInvalidError(f"{path}: '{key}' must be a non-empty string.")
+    if retention is not None:
+        data[RETENTION_TABLE] = _retention(path, retention)
     return data
 
 

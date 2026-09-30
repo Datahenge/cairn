@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, appsjson, engine, github_auth, registry, resolve, tagging, vendor
+from . import config as config_module
 from .config import BuildConfig, Manifest
 from .errors import BuildError
 from .resolve import Resolution
@@ -285,7 +286,8 @@ def provenance_labels(
     git commit covering `src/cairn/recipe/` at build time — since there is
     no longer a separate upstream pin to record (`ADR-059`).
     """
-    return {
+    client = config_module.client_from_path(manifest.path)
+    labels = {
         f"{OCI_NAMESPACE}.created": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         f"{OCI_NAMESPACE}.title": manifest.image_name,
         f"{OCI_NAMESPACE}.version": primary_tag,
@@ -310,6 +312,16 @@ def provenance_labels(
         f"{LABEL_NAMESPACE}.frappe-docker.ref": __version__,
         f"{LABEL_NAMESPACE}.frappe-docker.commit": vendor.recipe_commit(),
     }
+
+    # Both are omitted rather than guessed when the manifest is not at its canonical
+    # `/srv/cairn/<client>/` home, since there is then no client to derive (`ADR-079`). An
+    # image carrying neither is *legacy* to retention: exempt from the per-manifest
+    # restriction, still subject to the rest, and always reported (`BR-CLI-018`).
+    identity = tagging.manifest_id(client, manifest.image_name, manifest.environment)
+    if client is not None and identity is not None:
+        labels[f"{LABEL_NAMESPACE}.client"] = client
+        labels[f"{LABEL_NAMESPACE}.manifest"] = identity
+    return labels
 
 
 def run(build_plan: BuildPlan, sink: Transcript | None = None) -> None:

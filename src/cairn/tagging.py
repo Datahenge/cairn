@@ -117,6 +117,35 @@ def tags(
     return primary_tag(resolution, build_args, series), MOVING_TAG
 
 
+def manifest_id(client: str | None, image_name: str, environment: str | None) -> str | None:
+    """The opaque grouping key stamped on every image (`BR-BUILD-011`, `ADR-079`).
+
+    `ADR-052` identifies a manifest by `(client, image_name, environment)`, and build-machine
+    retention needs that identity on the image to group by it. The environment cannot go on in
+    plain text — an image stays environment-agnostic (`BR-BUILD-001`, `BR-DEPLOY-009a`) so a
+    promotion moves a tag rather than rebuilding, and a label is immutable, so one naming an
+    environment would state an intent that is wrong the moment the image is promoted. A digest
+    states no intent: it records *which manifest produced this*, a fact that does not expire.
+
+    **Not concealment, and nothing relies on it being any.** Environment names come from a small
+    dictionary and the name is in any case already public on the registry copy, as its tag. The
+    property being bought is that no reader — human or tool — can read an intent off the image.
+
+    Returns None when there is no derivable client, matching the client label's own rule
+    (`config.client_from_path`): omit rather than guess.
+
+    Shares `_digest`'s termination for the same reason `input_hash` does — no combination of
+    values may be re-partitionable into a different triple with the same digest, so a manifest
+    declaring no environment cannot collide with one that declares any.
+
+    Like `series`, this **never enters the input hash**: it is a label, not an input. Were it an
+    input, renaming an environment would invalidate every existing image (`ADR-032`).
+    """
+    if client is None:
+        return None
+    return _digest([client, image_name, environment or ""])
+
+
 def _commit_lines(resolution: Resolution) -> list[str]:
     """Render resolved commits as stable ``name=commit`` lines, in manifest order.
 

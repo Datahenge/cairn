@@ -313,8 +313,9 @@ def images_command(
 @app.command(
     "prune",
     help=(
-        "Remove superseded images this machine built. Only untagged images are removed; "
-        "the newest of each build is kept."
+        "Reclaim disk from images this machine built. Keeps the newest of each build, and "
+        "— where retention is configured — the newest few builds of each manifest. Images "
+        "built before cairn recorded their manifest are always left alone."
     ),
 )
 def prune_command(
@@ -339,7 +340,7 @@ def prune_command(
         )
         engine_name = engine.detect(build_config.engine).name
         found, others = images.inspect_local(engine_name)
-        plan = prune.select(images.group(found), keep)
+        plan = prune.plan_for(images.group(found), keep, build_config.retention)
 
         typer.echo(prune.render(plan, others))
         if plan.is_empty or dry_run:

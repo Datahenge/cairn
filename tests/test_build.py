@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from cairn import __version__, build, github_auth, registry, transcript, vendor
+from cairn import __version__, build, config, github_auth, registry, transcript, vendor
 from cairn.config import App, BuildConfig, Frappe, Manifest
 from cairn.errors import BuildError, VendorInputsMissingError
 from cairn.resolve import RefKind, Resolution, ResolvedRef
@@ -739,3 +739,76 @@ def _planned(monkeypatch, containerfile, tmp_path, *, series):
     monkeypatch.setattr(vendor, "recipe_commit", lambda: "d4a3100")
     monkeypatch.setattr(build.resolve, "resolve_manifest", lambda m: _resolution())
     return build.plan(manifest, BuildConfig(), engine_name="docker")
+
+
+# --- the client and manifest labels (BR-BUILD-011, ADR-079) -----------------
+
+
+def _manifest_at(path, *, environment="production"):
+    return Manifest(
+        image_name="erpnext-v16",
+        frappe=Frappe(url="https://github.com/frappe/frappe", ref="version-16"),
+        apps=(),
+        environment=environment,
+        path=path,
+    )
+
+
+def _labels_for(monkeypatch, tmp_path, manifest_path, **kwargs):
+    monkeypatch.setattr(config, "MANIFEST_ROOT", tmp_path / "srv" / "cairn")
+    monkeypatch.setattr(build.vendor, "recipe_commit", lambda: "deadbeef")
+    return build.provenance_labels(
+        _manifest_at(manifest_path, **kwargs), _resolution(), {}, "v16-abc123def456", "latest"
+    )
+
+
+def test_a_manifest_at_its_canonical_home_is_labelled(monkeypatch, tmp_path):
+    home = tmp_path / "srv" / "cairn" / "acme"
+    home.mkdir(parents=True)
+    manifest = home / "cairn_production.toml"
+    manifest.write_text("", encoding="utf-8")
+
+    labels = _labels_for(monkeypatch, tmp_path, manifest)
+
+    assert labels[f"{build.LABEL_NAMESPACE}.client"] == "acme"
+    assert labels[f"{build.LABEL_NAMESPACE}.manifest"]
+
+
+def test_the_environment_name_never_reaches_the_image(monkeypatch, tmp_path):
+    """`BR-DEPLOY-009a`/`BR-BUILD-001`: an image stays environment-agnostic so a promotion
+    moves a tag rather than rebuilding. A label is immutable; an intent is not."""
+    home = tmp_path / "srv" / "cairn" / "acme"
+    home.mkdir(parents=True)
+    manifest = home / "cairn_production.toml"
+    manifest.write_text("", encoding="utf-8")
+
+    labels = _labels_for(monkeypatch, tmp_path, manifest, environment="production")
+
+    assert "production" not in " ".join(labels.values())
+
+
+def test_two_environments_of_one_client_get_different_manifest_ids(monkeypatch, tmp_path):
+    home = tmp_path / "srv" / "cairn" / "acme"
+    home.mkdir(parents=True)
+    for name in ("cairn_production.toml", "cairn_staging.toml"):
+        (home / name).write_text("", encoding="utf-8")
+
+    production = _labels_for(
+        monkeypatch, tmp_path, home / "cairn_production.toml", environment="production"
+    )
+    staging = _labels_for(monkeypatch, tmp_path, home / "cairn_staging.toml", environment="staging")
+
+    key = f"{build.LABEL_NAMESPACE}.manifest"
+    assert production[key] != staging[key]
+
+
+def test_a_manifest_outside_the_canonical_home_carries_neither_label(monkeypatch, tmp_path):
+    """Omit rather than guess. Such an image is legacy to retention (`BR-CLI-018`)."""
+    stray = tmp_path / "elsewhere" / "cairn.toml"
+    stray.parent.mkdir(parents=True)
+    stray.write_text("", encoding="utf-8")
+
+    labels = _labels_for(monkeypatch, tmp_path, stray)
+
+    assert f"{build.LABEL_NAMESPACE}.client" not in labels
+    assert f"{build.LABEL_NAMESPACE}.manifest" not in labels

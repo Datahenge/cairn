@@ -113,7 +113,9 @@ DESCRIPTOR_PATH = Path("/etc/cairn/adopt.toml")
 #: cairn's own namespace within `/srv` (`BR-CLI-022`, `ADR-047`). A host's `/srv` may
 #: already hold unrelated application data cairn has no business assuming anything about
 #: — everything under `MANIFEST_ROOT` is cairn's; nothing beside it is cairn's concern.
-MANIFEST_ROOT = Path("/srv/cairn")
+#: Defined in `config.py` since `ADR-079`, so `build.py` can derive a client without
+#: importing this module; re-exported here, where provisioning still owns creating it.
+MANIFEST_ROOT = config.MANIFEST_ROOT
 
 
 def manifest_template(environment: str) -> str:
@@ -317,21 +319,15 @@ def client_from_manifest(manifest_path: Path) -> str:
     groups manifests by client directory, rather than a second `--client` flag that could
     disagree with it.
     """
-    try:
-        relative = manifest_path.resolve().relative_to(MANIFEST_ROOT.resolve())
-    except (ValueError, OSError) as exc:
+    client = config.client_from_path(manifest_path, MANIFEST_ROOT)
+    if client is None:
         raise Aborted(
             f"{manifest_path} is not under {MANIFEST_ROOT}/<client>/ — setup-timer needs a "
             "manifest at its canonical, client-scoped home to name the build timer safely "
             "and to give the generated script a shared, non-user-specific location. See "
             "`cairn-build setup --client <name> --environment <name>`."
-        ) from exc
-    if len(relative.parts) < 2:
-        raise Aborted(
-            f"{manifest_path} sits directly under {MANIFEST_ROOT}, not inside a client "
-            "directory. See `cairn-build setup --client <name> --environment <name>`."
         )
-    return relative.parts[0]
+    return client
 
 
 def unit_name_for(client: str, image_name: str, environment: str) -> str:

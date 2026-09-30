@@ -42,8 +42,9 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
+from .config import Retention
 from .errors import ImageQueryError
-from .images import ImageGroup, LocalImage, format_size
+from .images import ImageGroup, LocalImage, format_size, group
 
 #: Ceiling on one removal; deleting a layer tree is disk-bound but not unbounded.
 REMOVE_TIMEOUT_SECONDS = 300
@@ -55,6 +56,12 @@ class PrunePlan:
 
     removals: tuple[LocalImage, ...]
     kept: tuple[LocalImage, ...]
+    #: Images restriction 4 skipped because they carry no manifest id (`BR-CLI-018`,
+    #: `ADR-079`). Reported, never removed on that axis, left for an administrator.
+    legacy: tuple[LocalImage, ...] = ()
+    #: Images restriction 4 skipped because they exist nowhere but this machine, while
+    #: `require_pushed` holds (`BR-CFG-016`).
+    unpushed: tuple[LocalImage, ...] = ()
 
     @property
     def reclaimable(self) -> int:
@@ -78,8 +85,8 @@ def select(groups: list[ImageGroup], keep: int) -> PrunePlan:
     removals: list[LocalImage] = []
     kept: list[LocalImage] = []
 
-    for group in groups:
-        for position, image in enumerate(group.images):
+    for image_group in groups:
+        for position, image in enumerate(image_group.images):
             if position < keep:
                 kept.append(image)
             else:
@@ -88,12 +95,97 @@ def select(groups: list[ImageGroup], keep: int) -> PrunePlan:
     return PrunePlan(removals=tuple(removals), kept=tuple(kept))
 
 
+def select_by_manifest(
+    groups: list[ImageGroup], keep_last: int, *, require_pushed: bool
+) -> PrunePlan:
+    """`BR-CLI-018`'s fourth restriction: keep the newest *keep_last* groups per manifest.
+
+    Restriction 3 (:func:`select`) bounds duplicates *within* one set of build inputs and
+    cannot bound disk — collapsing each input hash to its newest still retains one image per
+    hash forever, so N distinct hashes retain N images. This bounds how many builds a manifest
+    keeps, which is the axis that actually bounds disk (`ADR-079`).
+
+    Grouping is by the opaque manifest id, never by a readable environment name: two manifests
+    of one client that differ only by environment are distinguishable here without the image
+    ever stating which environment it is for (`BR-BUILD-001`, `BR-DEPLOY-009a`).
+
+    Two populations are exempt from **this restriction only** — restrictions 1 to 3 still
+    applied to them upstream:
+
+    * **Legacy** — no manifest id. cairn cannot tell which manifest built the image and cannot
+      find out, since labels are immutable and a relabel means a rebuild. Never removed here,
+      always reported, left to the administrator.
+    * **Unpushed**, while *require_pushed* holds — an image still carrying `cairn-build-owned`
+      exists nowhere else, so removing it destroys the only copy. `ADR-072` is not overturned:
+      `require_pushed = false` restores exactly its behaviour.
+    """
+    if keep_last < 1:
+        raise ValueError("keep_last must be at least 1")
+
+    buckets: dict[str, list[ImageGroup]] = {}
+    legacy: list[LocalImage] = []
+    for image_group in groups:
+        identity = image_group.newest.manifest_id
+        if not identity:
+            legacy.extend(image_group.images)
+            continue
+        buckets.setdefault(identity, []).append(image_group)
+
+    removals: list[LocalImage] = []
+    kept: list[LocalImage] = []
+    unpushed: list[LocalImage] = []
+    for members in buckets.values():
+        for position, image_group in enumerate(members):
+            for image in image_group.images:
+                if position < keep_last:
+                    kept.append(image)
+                elif require_pushed and image.is_owned:
+                    unpushed.append(image)
+                else:
+                    removals.append(image)
+
+    return PrunePlan(
+        removals=tuple(removals),
+        kept=tuple(kept),
+        legacy=tuple(legacy),
+        unpushed=tuple(unpushed),
+    )
+
+
+def plan_for(groups: list[ImageGroup], keep: int, retention: Retention) -> PrunePlan:
+    """Apply restriction 3, then restriction 4 to whatever survived it (`BR-CLI-018`).
+
+    The two are concentric, not alternatives: an image must survive **both**. Restriction 3
+    collapses each input hash to its newest `keep`; restriction 4 then bounds how many of
+    those a manifest retains. Running 4 over 3's survivors rather than over the original
+    groups is what makes "both apply" true — an image 3 already condemned cannot be rescued by
+    4's exemptions.
+
+    With `[retention]` absent or disabled, restriction 4 does not run and the result is exactly
+    what prune produced before `ADR-079`.
+    """
+    first = select(groups, keep)
+    if not retention.enabled:
+        return first
+
+    second = select_by_manifest(
+        group(list(first.kept)), retention.keep_last, require_pushed=retention.require_pushed
+    )
+    return PrunePlan(
+        removals=first.removals + second.removals,
+        kept=second.kept,
+        legacy=second.legacy,
+        unpushed=second.unpushed,
+    )
+
+
 def render(plan: PrunePlan, others: int) -> str:
     """Return the report shown before anything is removed (`BR-CLI-011`)."""
     if plan.is_empty:
         return "\n".join(
             [
                 f"Nothing to remove: {len(plan.kept)} image(s) kept within the grace window.",
+                *_exempt_note(plan),
                 *_safety_note(others),
             ]
         )
@@ -107,8 +199,34 @@ def render(plan: PrunePlan, others: int) -> str:
     lines.append(f"Reclaims {format_size(plan.reclaimable)}.")
     lines.append("")
     lines.append(f"Keeping {len(plan.kept)} image(s) within the grace window.")
+    lines += _exempt_note(plan)
     lines += _safety_note(others)
     return "\n".join(lines)
+
+
+def _exempt_note(plan: PrunePlan) -> list[str]:
+    """Name what the per-manifest restriction skipped, and why (`BR-CLI-018`).
+
+    Not optional and not decoration. A legacy image is deliberately left for an administrator
+    to judge, and nobody can judge an image they were never shown — so the requirement to
+    state what prune leaves alone is what makes "left to the administrator" a real handoff
+    rather than a silent omission.
+    """
+    lines: list[str] = []
+    if plan.legacy:
+        lines.append(
+            f"{len(plan.legacy)} image(s) predate the manifest label and are never removed by "
+            f"manifest retention — cairn cannot tell which manifest built them, and a built "
+            f"image cannot be relabelled. Remove them by hand if you want the space "
+            f"({format_size(sum(image.size for image in plan.legacy))})."
+        )
+    if plan.unpushed:
+        lines.append(
+            f"{len(plan.unpushed)} image(s) exist nowhere but this machine and were kept; "
+            f"removing one would destroy the only copy. Set retention's require_pushed to "
+            f"false to include them."
+        )
+    return lines
 
 
 def _safety_note(others: int) -> list[str]:

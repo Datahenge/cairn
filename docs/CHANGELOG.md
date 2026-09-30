@@ -9,6 +9,44 @@ code changes live in git history.
 
 ---
 
+## 2026-09-29 (`W-042` implemented: build-machine retention)
+
+Code for `BR-BUILD-011`, `BR-CFG-016` and `BR-CLI-018`, per `ADR-079`. 27 new tests (1008 →
+1035). `W-042` moves to `in_progress` — landed and unit-tested, unverified against a real host,
+which is this project's usual meaning for that status.
+
+- `tagging.manifest_id` — the opaque `(client, image_name, environment)` digest, sharing
+  `_digest`'s component termination so a manifest declaring no environment cannot collide with
+  one that declares any.
+- `config.client_from_path` — the non-raising client derivation. `MANIFEST_ROOT` moved from
+  `provision.py` to `config.py` because `build.py` needs it and cannot import `provision`
+  without a cycle; `provision` re-exports it, and `client_from_manifest` is now the raising
+  wrapper over one shared derivation. The root is injectable so `provision`'s existing test
+  seam still relocates the tree.
+- `config.Retention` — `[retention]` parsed and validated. `_build_config_values` had insisted
+  every value was a string, which a table is not, so the table is lifted out before that check.
+  An invalid value is an error naming file and key, never a silent default: an operator who
+  mistyped a ceiling would otherwise believe one is in force while nothing is reclaimed.
+  `max_age_days` is rejected **by name**, since it is `[registry.retention]`'s key and the
+  likeliest thing to be copied across.
+- `prune.select_by_manifest` and `prune.plan_for` — restriction 4, and the composition that
+  makes "both apply" true by running it over restriction 3's survivors rather than the original
+  groups. Both exempt populations are reported, `BR-CLI-018` binding prune to state what it
+  leaves alone.
+
+Checked against the case that opened this work — 11 images across 11 input hashes, one manifest:
+prune removes nothing today, and with `keep_last = 3` reclaims 6.68 GB.
+
+Not addressed here, and worth stating: the labels reach only images built *after* this change,
+and they cannot be backfilled. Every image on an existing builder is legacy until rebuilt, so the
+first live runs will correctly reclaim nothing. `enabled` also defaults to `false`, so an
+operator must opt in.
+
+`cli_build.py` is left unformatted where `ruff format` would rewrite an unrelated block; it was
+already so at `HEAD`, and fixing it here would mix unrelated churn into this change.
+
+---
+
 ## 2026-09-29 (staleness sweep of the open queues)
 
 `docs/open/OPEN_QUESTIONS.md` swept; `ADR-073` reconciled in three places; `ADR-079` and

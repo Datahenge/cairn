@@ -42,6 +42,13 @@ from .tagging import ADOPT_OWNED_TAG, MOVING_TAG, OWNED_TAG
 
 #: The label that marks an image as cairn's, and names the inputs it was built from.
 INPUT_HASH_LABEL = f"{LABEL_NAMESPACE}.input-hash"
+
+#: The manifest that produced an image (`BR-BUILD-011`, `ADR-079`). `CLIENT_LABEL` is readable
+#: provenance; `MANIFEST_LABEL` is the opaque retention grouping key. Both are absent together
+#: on an image whose manifest had no derivable client, and on every image built before they
+#: existed — labels cannot be backfilled, so that population is permanent.
+CLIENT_LABEL = f"{LABEL_NAMESPACE}.client"
+MANIFEST_LABEL = f"{LABEL_NAMESPACE}.manifest"
 APPS_LABEL = f"{LABEL_NAMESPACE}.apps"
 FRAPPE_REF_LABEL = f"{LABEL_NAMESPACE}.frappe.ref"
 FRAPPE_COMMIT_LABEL = f"{LABEL_NAMESPACE}.frappe.commit"
@@ -74,6 +81,20 @@ class Provenance:
     @property
     def input_hash(self) -> str:
         return self.labels.get(INPUT_HASH_LABEL, "")
+
+    @property
+    def client(self) -> str:
+        return self.labels.get(CLIENT_LABEL, "")
+
+    @property
+    def manifest_id(self) -> str:
+        """The opaque manifest grouping key, or "" when this image predates it (`ADR-079`).
+
+        An empty value is the *legacy* signal retention keys off (`BR-CLI-018`): cairn cannot
+        tell which manifest built the image and cannot find out, so it never removes it on the
+        per-manifest axis and reports it instead.
+        """
+        return self.labels.get(MANIFEST_LABEL, "")
 
     @property
     def frappe_ref(self) -> str:

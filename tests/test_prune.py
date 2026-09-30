@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from cairn import images, prune
+from cairn.config import Retention
 from cairn.images import ImageGroup, LocalImage
 
 OWNED = "ghcr.io/x/y:cairn-build-owned"
@@ -291,3 +292,122 @@ def test_a_failure_partway_through_a_multi_tag_removal_stops_that_image(monkeypa
     assert failures == ["aaa000000000: busy"]
     # stopped at the failing tag rather than continuing on to the marker
     assert calls == [f"ghcr.io/x/y:v16-{'a' * 12}", "ghcr.io/x/y:latest"]
+
+
+# --- restriction 4: keep the newest N builds per manifest (BR-CLI-018, ADR-079) ---
+# Restriction 3 cannot bound disk: N distinct input hashes retain N images forever, because
+# every one of them is the newest of its own group. This axis is what bounds it.
+
+
+def _manifest_image(short, manifest, *, input_hash, tags=("ghcr.io/x/y:v16",), minutes_old=0):
+    return LocalImage(
+        image_id="sha256:" + short + "0" * (64 - len(short)),
+        tags=tuple(tags),
+        created=datetime.now(UTC) - timedelta(minutes=minutes_old),
+        size=800_000_000,
+        labels={images.INPUT_HASH_LABEL: input_hash, images.MANIFEST_LABEL: manifest},
+    )
+
+
+def _one_per_hash(manifest, count, *, prefix="a", tags=("ghcr.io/x/y:v16",)):
+    """`count` distinct input hashes of one manifest — the shape restriction 3 leaves behind."""
+    return [
+        ImageGroup(
+            input_hash=f"{prefix}{n}",
+            images=(
+                _manifest_image(
+                    f"{prefix}{n}", manifest, input_hash=f"{prefix}{n}", tags=tags, minutes_old=n
+                ),
+            ),
+        )
+        for n in range(count)
+    ]
+
+
+def test_distinct_input_hashes_are_bounded_per_manifest():
+    """The defect this axis exists for: five hashes, five images, nothing reclaimable."""
+    groups = _one_per_hash("m1", 5)
+
+    assert prune.select(groups, keep=1).is_empty  # restriction 3 alone finds nothing
+
+    plan = prune.select_by_manifest(groups, keep_last=2, require_pushed=False)
+
+    assert len(plan.kept) == 2
+    assert len(plan.removals) == 3
+
+
+def test_two_manifests_do_not_share_a_pool():
+    """Grouping is per manifest, so a busy manifest cannot evict a quiet one's images."""
+    groups = _one_per_hash("busy", 4) + _one_per_hash("quiet", 1, prefix="q")
+
+    plan = prune.select_by_manifest(groups, keep_last=2, require_pushed=False)
+
+    kept = {image.manifest_id for image in plan.kept}
+    removed = {image.manifest_id for image in plan.removals}
+    assert kept == {"busy", "quiet"}
+    assert removed == {"busy"}
+
+
+def test_an_image_with_no_manifest_id_is_legacy_and_never_removed():
+    """It cannot be relabelled — labels are immutable — so it is the administrator's call."""
+    # Two unlabelled images under one input hash: every member of a legacy group is exempt,
+    # not merely the group's newest.
+    legacy = _group(_image("aaa"), _image("bbb", minutes_old=10))
+    groups = [legacy, *_one_per_hash("m1", 3)]
+
+    plan = prune.select_by_manifest(groups, keep_last=1, require_pushed=False)
+
+    assert len(plan.legacy) == 2
+    assert all(image.manifest_id for image in plan.removals)
+
+
+def test_legacy_images_are_reported_not_silently_skipped():
+    """`BR-CLI-018` binds prune to state what it leaves alone — a handoff nobody can act on
+    unseen is not a handoff."""
+    plan = prune.select_by_manifest(
+        [_group(_image("aaa")), *_one_per_hash("m1", 3)], keep_last=1, require_pushed=False
+    )
+
+    assert "predate the manifest label" in prune.render(plan, others=0)
+
+
+def test_require_pushed_protects_an_image_that_exists_nowhere_else():
+    groups = _one_per_hash("m1", 3, tags=(OWNED,))
+
+    protected = prune.select_by_manifest(groups, keep_last=1, require_pushed=True)
+    exposed = prune.select_by_manifest(groups, keep_last=1, require_pushed=False)
+
+    assert protected.is_empty
+    assert len(protected.unpushed) == 2
+    assert "only copy" in prune.render(protected, others=0)
+    # ADR-072 is not overturned: false restores exactly its behaviour.
+    assert len(exposed.removals) == 2
+
+
+def test_keep_last_below_one_is_refused():
+    with pytest.raises(ValueError, match="at least 1"):
+        prune.select_by_manifest([], keep_last=0, require_pushed=True)
+
+
+# --- the two axes compose: an image must survive both -----------------------
+
+
+def test_disabled_retention_leaves_prune_exactly_as_it_was():
+    groups = _one_per_hash("m1", 5)
+
+    assert prune.plan_for(groups, keep=1, retention=Retention()).is_empty
+
+
+def test_restriction_3_condemns_first_and_4_cannot_rescue():
+    """An unpushed duplicate within one hash is still removed by restriction 3, even though
+    restriction 4 would have exempted it — the restrictions are concentric, not alternatives."""
+    newest = _manifest_image("aaa", "m1", input_hash="h1", minutes_old=0)
+    superseded = _manifest_image("bbb", "m1", input_hash="h1", tags=(), minutes_old=10)
+    groups = [ImageGroup(input_hash="h1", images=(newest, superseded))]
+
+    plan = prune.plan_for(
+        groups, keep=1, retention=Retention(enabled=True, keep_last=5, require_pushed=True)
+    )
+
+    assert [image.short_id for image in plan.removals] == [superseded.short_id]
+    assert plan.unpushed == ()

@@ -496,3 +496,69 @@ def test_the_sources_record_every_layer_that_contributed(monkeypatch, tmp_path):
     loaded = config.load_build_config(manifest)
 
     assert loaded.sources == (str(user), str(manifest), "environment (namespace)")
+
+
+# --- [retention] in builder.toml (BR-CFG-016, ADR-079) ----------------------
+
+
+def _builder(tmp_path, monkeypatch, body):
+    path = tmp_path / "builder.toml"
+    path.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(config, "BUILDER_CONFIG_PATH", path)
+    return path
+
+
+def test_retention_defaults_when_the_table_is_absent(tmp_path, monkeypatch):
+    """A host that has never heard of retention behaves exactly as it did before."""
+    _builder(tmp_path, monkeypatch, 'engine = "docker"\n')
+
+    retention = config.load_build_config(None).retention
+
+    assert (retention.enabled, retention.keep_last, retention.require_pushed) == (False, 10, True)
+
+
+def test_retention_values_are_read(tmp_path, monkeypatch):
+    _builder(
+        tmp_path,
+        monkeypatch,
+        "[retention]\nenabled = true\nkeep_last = 3\nrequire_pushed = false\n",
+    )
+
+    retention = config.load_build_config(None).retention
+
+    assert (retention.enabled, retention.keep_last, retention.require_pushed) == (True, 3, False)
+
+
+def test_a_table_alongside_string_keys_is_not_rejected_as_a_non_string(tmp_path, monkeypatch):
+    """The validator used to insist every value was a string, which a table is not."""
+    _builder(tmp_path, monkeypatch, 'engine = "podman"\n\n[retention]\nkeep_last = 4\n')
+
+    built = config.load_build_config(None)
+
+    assert built.engine == "podman"
+    assert built.retention.keep_last == 4
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ("[retention]\nkeep_last = 0\n", "at least 1"),
+        ("[retention]\nkeep_last = true\n", "at least 1"),
+        ('[retention]\nkeep_last = "many"\n', "at least 1"),
+        ("[retention]\nenabled = 1\n", "true or false"),
+        ('[retention]\nrequire_pushed = "yes"\n', "true or false"),
+        ("[retention]\nmax_age_days = 90\n", "unknown key"),
+        ('retention = "on"\n', "must be a table"),
+    ],
+    ids=["zero", "bool-keep", "string-keep", "int-enabled", "string-pushed", "age", "scalar"],
+)
+def test_an_invalid_retention_value_is_an_error_not_a_silent_default(
+    tmp_path, monkeypatch, body, message
+):
+    """Never a quiet fallback: an operator who mistyped a ceiling would otherwise believe one
+    is in force while nothing is being reclaimed. `max_age_days` is rejected by name because
+    it is `[registry.retention]`'s key, and the likeliest thing to be copied across."""
+    _builder(tmp_path, monkeypatch, body)
+
+    with pytest.raises(config.BuildConfigInvalidError, match=message):
+        config.load_build_config(None)

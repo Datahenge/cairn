@@ -207,3 +207,45 @@ def test_the_hash_recipe_is_pinned_across_cairn_versions():
     """
     assert tagging.input_hash(_resolution(), BUILD_ARGS) == "ea91cb3d37d6"
     assert tagging.cache_bust(_resolution()) == "8fdc01995a49"
+
+
+# --- the manifest id (BR-BUILD-011, ADR-079) --------------------------------
+
+
+def test_the_manifest_id_is_deterministic():
+    assert tagging.manifest_id("acme", "erpnext-v16", "production") == tagging.manifest_id(
+        "acme", "erpnext-v16", "production"
+    )
+
+
+def test_each_component_changes_the_manifest_id():
+    base = tagging.manifest_id("acme", "erpnext-v16", "production")
+
+    assert tagging.manifest_id("other", "erpnext-v16", "production") != base
+    assert tagging.manifest_id("acme", "erpnext-v15", "production") != base
+    assert tagging.manifest_id("acme", "erpnext-v16", "staging") != base
+
+
+def test_no_environment_does_not_collide_with_an_environment():
+    """A manifest declaring none must not hash to the same value as one that declares any —
+    the component terminator is what prevents re-partitioning into a different triple."""
+    absent = tagging.manifest_id("acme", "erpnext-v16", None)
+
+    assert absent == tagging.manifest_id("acme", "erpnext-v16", "")
+    assert absent != tagging.manifest_id("acme", "erpnext-v16", "production")
+    # The classic re-partitioning collision: ("a", "bc", "") vs ("ab", "c", "").
+    assert tagging.manifest_id("a", "bc", "") != tagging.manifest_id("ab", "c", "")
+
+
+def test_no_client_means_no_manifest_id():
+    """Omit rather than guess — the same rule the client label follows (`ADR-079`)."""
+    assert tagging.manifest_id(None, "erpnext-v16", "production") is None
+
+
+def test_the_environment_is_not_recoverable_by_reading_the_id():
+    """Not a secrecy claim — the name is already public as the registry tag. The property is
+    that no reader can read an *intent* off the image."""
+    identity = tagging.manifest_id("acme", "erpnext-v16", "production")
+
+    assert "production" not in identity
+    assert len(identity) == tagging.DIGEST_LENGTH
