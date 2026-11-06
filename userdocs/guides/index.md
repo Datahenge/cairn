@@ -6,6 +6,8 @@ This section will cover day-to-day configuration and operation.
   containerd have two independent storage settings; relocating only one is a common way to fill
   a small root disk anyway. Read this before your first `docker pull` on any host with more
   than one volume.
+- **[Restoring a Database Backup](restoring-a-backup.md)**: restoring a Frappe backup onto a
+  target by hand, from the same site or from another one.
 
 For the manifest, build config, and where each setting lives, see
 [Reference](../reference/index.md). For choosing and operating a registry, see

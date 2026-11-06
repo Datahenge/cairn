@@ -80,6 +80,7 @@ nav:
   - Guides:
       - Overview: guides/index.md
       - Docker Storage on a Multi-Volume Host: guides/docker-storage-layout.md
+      - Restoring a Database Backup: guides/restoring-a-backup.md
   - Reference:
       - Overview: reference/index.md
       - "cairn-build (commands)": reference/cairn-build.md

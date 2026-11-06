@@ -9,6 +9,33 @@ code changes live in git history.
 
 ---
 
+## 2026-11-06 (userdocs: operator how-to for restoring a database backup)
+
+New `userdocs/guides/restoring-a-backup.md`, linked from the Guides index and the mkdocs nav.
+cairn's scope is unchanged. `BR-DATA-003` and `ADR-013` still keep restore out of cairn. The
+page documents the operator running Frappe's own `bench restore` by hand, as `ADR-013` says
+operators remain free to do. No new `BR`/`ADR` id: the page is documentation and changes no
+behavior.
+
+Brian settled three choices for the page (2026-11-06):
+
+- **Scope:** cover both a backup already on the sites volume and one brought in from another
+  site. The second case shows a raw `sudo docker cp` into the bench container, found by its
+  compose labels, because no cairn verb transfers files. The page also covers the data
+  `encryption_key` step a cross-site restore needs (`bench --site … set-config encryption_key`).
+- **Reconcile during a restore:** the page has the operator stop `cairn-reconcile.timer`
+  before restoring and start it again after. `cairn-adopt stop` can't serve, since it takes
+  down the containers the restore runs in.
+- **Placement:** Guides, not Target.
+
+`bench restore`'s flags and prompts, the backup file naming, and the `encryption_key` /
+`backup_encryption_key` split come from reading Frappe 16.20.0's source. The claim that
+`cairn-adopt restart` runs `bench migrate` comes from `lifecycle.restart` → `reconcile.run_locked`:
+the stack is down, so the pass converges. The page's footer says none of it has been exercised
+against a live target.
+
+---
+
 ## 2026-09-29 (`bump_version.sh`: the version bump re-locks)
 
 New `bump_version.sh` at the repository root, beside `push_to_pypi.sh`. Tooling, so a
