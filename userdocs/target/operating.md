@@ -19,6 +19,14 @@ cairn-adopt logs --tail 200 backend
 ```
 
 ```bash
+cairn-adopt container-info
+```
+
+`container-info` lists this environment's containers, one line each: service, container name,
+short ID, image, and status. Stopped containers are listed too. Other compose projects on the
+same host don't appear.
+
+```bash
 cairn-adopt shell                # a shell in the bench container
 cairn-adopt shell db             # ...or in another service
 cairn-adopt console              # bench console, for this environment's site
@@ -38,6 +46,17 @@ cairn-adopt mariadb              # a MariaDB console, for this environment's sit
     cat sites/common_site_config.json
     cat sites/<your-site>/site_config.json
     ```
+
+## Copying files in and out
+
+```bash
+cairn-adopt cp backup.sql.gz backend:/home/frappe/frappe-bench/sites/erp.acmecorp.com/private/backups/
+cairn-adopt cp backend:/home/frappe/frappe-bench/sites/erp.acmecorp.com/private/backups/ ./backups
+```
+
+`cp` copies a file or directory between the target and a container, in either direction. Write
+the container side as `SERVICE:PATH`. Exactly one side must name a container. A relative path on
+the target side is read from the directory you run the command in.
 
 ## Taking the stack down
 

@@ -14,8 +14,8 @@ the stack back afterward.
     Everything written since that backup was taken is gone. Step 2 takes a fresh backup first,
     so you can undo the restore. Don't skip it.
 
-The examples use the site `erp.acmecorp.com` and the compose project `acmecorp`. Substitute
-your own. Both are in `/etc/cairn/adopt.toml`, as `site` and `[compose] project`.
+The examples use the site `erp.acmecorp.com`. Substitute your own: it's the `site` value in
+`/etc/cairn/adopt.toml`.
 
 ## 1. Stop the reconcile timer
 
@@ -67,20 +67,17 @@ The tar files end in `.tgz` instead if the backup was compressed. An encrypted b
 **If the backup is already in that directory**, skip to step 4. That includes the backup
 `cairn-adopt setup` takes before it changes anything.
 
-**If the backup is somewhere else**, copy it onto the target, then into the container. Run
-this on the host, outside the container shell. The first command finds the bench container by
-its compose labels:
+**If the backup is somewhere else**, copy it onto the target, then into the container.
+`cairn-adopt cp` runs on the target itself, not in the container shell. Open a second SSH
+session to the target, or `exit` the container shell and reopen it with `cairn-adopt shell` for
+step 4.
 
 ```bash
-BACKEND=$(sudo docker ps -q \
-  --filter label=com.docker.compose.project=acmecorp \
-  --filter label=com.docker.compose.service=backend)
-
-sudo docker cp 20261106_141502-erp_acmecorp_com-database.sql.gz \
-  "$BACKEND":/home/frappe/frappe-bench/sites/erp.acmecorp.com/private/backups/
+cairn-adopt cp 20261106_141502-erp_acmecorp_com-database.sql.gz \
+  backend:/home/frappe/frappe-bench/sites/erp.acmecorp.com/private/backups/
 ```
 
-Repeat the `docker cp` for each of the other three files. Copy the
+`backend` is the bench container. Repeat the `cp` for each of the other three files. Copy the
 `site_config_backup.json` too, because step 5 needs it.
 
 ## 4. Run the restore

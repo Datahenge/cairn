@@ -530,6 +530,56 @@ def logs_command(
         raise typer.Exit(130) from None
 
 
+@app.command(
+    "container-info",
+    help="List this environment's containers: service, name, ID, image, and status.",
+)
+def container_info_command(
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Print the stack's containers, plainly (BR-CLI-031)."""
+    try:
+        typer.echo(session.container_info(descriptor.load(descriptor_path)))
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
+
+
+@app.command(
+    "cp",
+    help=(
+        "Copy a file or directory between this host and a container of this environment. "
+        "Write the container side as SERVICE:PATH, for example backend:/home/frappe."
+    ),
+)
+def cp_command(
+    source: Annotated[str, typer.Argument(help="What to copy: a host path, or SERVICE:PATH.")],
+    destination: Annotated[
+        str, typer.Argument(help="Where to put it: a host path, or SERVICE:PATH.")
+    ],
+    descriptor_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--descriptor", help="Read this descriptor instead of the host's.", hidden=True
+        ),
+    ] = None,
+) -> None:
+    """Hand off to `docker compose cp` for this stack (BR-CLI-032, ADR-080)."""
+    try:
+        environment = descriptor.load(descriptor_path)
+        session.become(session.cp_command(environment, source, destination))
+    except CairnError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
+    except KeyboardInterrupt:
+        raise typer.Exit(130) from None
+
+
 def _become(build, descriptor_path: Path | None) -> None:
     """Load the descriptor, build the invocation, and replace this process with it.
 

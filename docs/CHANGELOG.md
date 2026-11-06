@@ -9,6 +9,39 @@ code changes live in git history.
 
 ---
 
+## 2026-11-06 (`cairn-adopt cp` and `container-info`; data boundary amended, `ADR-080`)
+
+Brian followed `userdocs/guides/restoring-a-backup.md` on a live VPS and the step 3 container
+lookup came back empty. The page assumed the reader knew their compose project name; on his
+target it is `erpnext`, matching neither client nor site. With the right name the label filter
+worked, so the command was sound and the page was not.
+
+Brian then asked for two verbs:
+
+- **`BR-CLI-032` `cp`** (new). Brian decided: allowed, both directions, with `BR-DATA-003` and
+  `BR-DATA-006` amended so an operator-directed transfer is the operator acting rather than
+  cairn moving data. Rationale and the rejected alternative are in `ADR-080`. Three details of
+  the requirement are Claude's proposals awaiting Brian's review, listed in `ADR-080`.
+- **`BR-CLI-031` `container-info`** (new). Brian decided: the descriptor's project only, with
+  columns service, name, ID, image, status. Claude's proposals awaiting review: sorting by
+  service, including stopped containers (`ps --all`), reading the project name back from
+  compose, and a sentence instead of a bare header for an empty project.
+
+The restore guide's step 3 now uses `cairn-adopt cp` and says outright that it runs on the
+target, not in the container shell step 2 leaves open. The project-name lookup is gone from the
+guide, since `cp` needs none. `userdocs/target/operating.md` and `userdocs/reference/cairn-adopt.md`
+document both verbs. Neither verb has been run against a live target: they were written on a
+workstation with no Docker engine. Unknowns to check on a real host: compose's `ps` JSON field
+names on the target's compose version (`ID`, `Service`, `Status`, `Project` assumed), and whether
+`cp` reaches a container of a held, stopped stack.
+
+`docs/technical/05-implementation-index.md`'s word ceiling raised 2300 -> 2600 at Brian's
+direction (the file sat at 2299 before the new row). Raised rather than split because it is one
+table with no clean seam; the allowlist note names the long Completion Judgment cells as the
+thing to trim next time.
+
+---
+
 ## 2026-11-06 (userdocs: operator how-to for restoring a database backup)
 
 New `userdocs/guides/restoring-a-backup.md`, linked from the Guides index and the mkdocs nav.

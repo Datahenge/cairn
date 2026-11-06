@@ -35,6 +35,8 @@ cairn-adopt shell                     # the bench container
 cairn-adopt shell db                  # another service
 cairn-adopt console                   # bench console, this environment's site
 cairn-adopt mariadb                   # MariaDB console, this environment's site
+cairn-adopt container-info
+cairn-adopt cp backup.tar backend:/tmp/
 ```
 
 - **`logs [service]`** — container logs; every service by default. `--follow` / `-f` keeps
@@ -45,6 +47,13 @@ cairn-adopt mariadb                   # MariaDB console, this environment's site
 - **`console`** — `bench console` for this environment's site. No arguments.
 - **`mariadb`** — a MariaDB console for this environment's site. No arguments. Refuses, naming
   the engine, on a stack that declares the Postgres override.
+- **`container-info`** lists this environment's containers: service, name, short ID, image,
+  and status. Stopped containers are included. Only this environment's compose project is
+  shown. No arguments.
+- **`cp SOURCE DEST`** copies a file or directory between this host and a container, in either
+  direction. Write the container side as `SERVICE:PATH`, for example
+  `backend:/home/frappe/frappe-bench/sites`. Exactly one of the two must name a container. A
+  relative host path is read from your current directory.
 
 ## stop / start / restart
 

@@ -120,3 +120,33 @@ than run compose as a child, so the terminal and its signals belong to the clien
 MUST NOT take the single-flight lock (`BR-DEPLOY-016`) — a session may last hours and would
 otherwise block every deploy — and MUST work while a hold is set (`BR-DEPLOY-024`), since a
 hold is when an operator most wants to look. *(BR-CLI-029, BR-DEPLOY-024, ADR-073, ADR-075)*
+
+**`BR-CLI-031`** *(`container-info` — the stack's containers, plainly)* — `cairn-adopt
+container-info` MUST list the containers of the descriptor's compose project, and only that
+project: another project on the same host (a registry, an unrelated application) is not this
+environment and MUST NOT appear. It derives project and compose files from the descriptor, so it
+takes no argument (`ADR-075`). It MUST show, one line per container, sorted by service: the
+**service**, the container **name**, the short (12-character) container **ID**, the **image**,
+and the engine's **status** text (which carries health where the container defines a check). It
+MUST NOT show the command or ports columns `docker container ls` does; their width is what makes
+that listing hard to read. Stopped containers MUST be listed too, since `stop` keeps them
+(`ADR-073`) and a held stack is exactly when an operator looks. An empty project MUST say so
+rather than print a bare header. It is read-only: it MUST NOT take the single-flight lock
+(`BR-DEPLOY-016`) and MUST work while a hold is set (`BR-DEPLOY-024`). *(BR-CLI-030, ADR-073,
+ADR-075)*
+
+**`BR-CLI-032`** *(`cp` — operator-directed file transfer, `ADR-080`)* — `cairn-adopt cp SOURCE
+DEST` MUST copy a file or directory between the host and a container of the descriptor's compose
+project, in either direction, by running `docker compose cp` scoped to that project. Exactly one
+of `SOURCE` and `DEST` MUST name a container, as `SERVICE:PATH`; cairn MUST refuse, before
+running anything, when neither or both do. A host-side path MUST be made absolute against the
+operator's working directory before compose sees it, so its meaning cannot shift with compose's
+project directory.
+
+cairn MUST NOT choose, default, inspect, or rewrite what is copied or where: both paths are the
+operator's, verbatim apart from the host side's absolutizing. That is what keeps `cp` on the
+operator's side of `BR-DATA-003` and `BR-DATA-006` (`ADR-080`). It MUST NOT accept arbitrary
+extra compose arguments (`ADR-075`). Like `BR-CLI-030`'s verbs it MUST NOT take the
+single-flight lock and MUST work while a hold is set. *(BR-CLI-030, BR-DATA-003, BR-DATA-006,
+ADR-075, ADR-080)*
+

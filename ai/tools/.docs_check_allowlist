@@ -53,9 +53,13 @@ docs/requirements/03-deploy.md = 2900
 # (shared conventions) would be the one to move; measurement pointed at A and B instead,
 # role-specific content having grown to 57% of the file. Neither new file needs an entry.
 
-docs/technical/05-implementation-index.md = 2300
+docs/technical/05-implementation-index.md = 2600
 # ^ bumped 2026-08-06 for the "Owned Docker recipe" row's recipe-trim + ADR-068 note — an
 # inventory of the whole project's implementation state grows with the project, not sprawl.
+# Bumped 2026-11-06 (2300 -> 2600) at Brian's direction for the BR-CLI-031/032 row; the file
+# sat at 2299 before it. Raised rather than split because it is one table with no clean seam.
+# Next time it fills: trim the longest Completion Judgment cells (Registry, Reconcile,
+# Manifest home) to a current verdict before bumping again.
 docs/technical/ABOUT_GHCR.md = 3500
 docs/technical/high-level-motivations-and-workflows.md = 2000
 docs/archive/CHANGELOG-2026-08-04.md = 3500

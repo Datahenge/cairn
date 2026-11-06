@@ -6,13 +6,13 @@ purpose: BR-DATA requirements — the data-plane boundary cairn must never cross
 
 # BR-DATA — Data-Plane Boundary Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-03_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-11-06_
 
 `DATA` is a **boundary area**, not a feature area: cairn ships code, not data. These
 requirements are almost entirely prohibitions, with one sanctioned Frappe-command
 exception (`migrate`) and one activation gap that is always the operator's, never
 cairn's (`install-app`). Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-012`,
-`ADR-013`, `ADR-014`, `ADR-022`, `ADR-023`, `ADR-037`.
+`ADR-013`, `ADR-014`, `ADR-022`, `ADR-023`, `ADR-037`, `ADR-080`.
 
 ---
 
@@ -23,7 +23,9 @@ driver, or credentials handling). *(ADR-022)*
 arbitrary data-manipulation command. *(ADR-022)*
 
 **`BR-DATA-003`** — cairn MUST NOT export, import, restore, relocate, or otherwise move SQL
-data between environments. *(ADR-013, ADR-022)*
+data between environments. An operator-directed transfer verb, where the operator names both
+the file and its destination and cairn chooses neither (`BR-CLI-032`), is the operator moving
+data, not cairn. *(ADR-013, ADR-022, ADR-080)*
 
 **`BR-DATA-004`** *(Prime Directive)* — cairn MUST NOT directly alter any target database;
 this MUST be **impossible by construction** (no code path or SQL capability exists), for
@@ -37,8 +39,11 @@ install new apps (`BR-DATA-008`). *(ADR-014)*
 **`BR-DATA-006`** *(cairn does not itself touch volumes)* — cairn MUST NOT itself read,
 write, seed, provision, or modify persistent Docker volumes, `site_config.json`,
 `common_site_config.json`, or `encryption_key`. (The stack's own configurator/entrypoint
-reconcile the volume on `compose up` — that is Frappe's machinery, not cairn.) *(ADR-022;
-supersedes the seeding allowance formerly in `BR-CFG-006`)*
+reconcile the volume on `compose up` — that is Frappe's machinery, not cairn.) The same holds
+for an operator-directed verb: a `shell` the operator types into, or a `cp` whose source and
+destination the operator names (`BR-CLI-030`, `BR-CLI-032`), is the operator acting, not cairn.
+cairn MUST still never choose, default, or read the content such a verb moves. *(ADR-022,
+ADR-080; supersedes the seeding allowance formerly in `BR-CFG-006`)*
 
 **`BR-DATA-007`** *(rollback is image-only)* — cairn's rollback reverts the image (and
 re-points containers) only; it MUST NOT restore or roll back the database. *(ADR-012, ADR-022)*

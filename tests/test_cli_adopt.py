@@ -617,3 +617,41 @@ def test_interactive_verbs_reach_become(monkeypatch, _descriptor_loads, verb):
     command, environment = handed[0]
     assert "-T" not in command
     assert environment["CUSTOM_TAG"] == "production"
+
+
+def test_cp_hands_both_paths_to_the_builder(monkeypatch, _descriptor_loads):
+    """BR-CLI-032: the operator's paths reach the builder unchanged."""
+    seen = {}
+
+    def _build(env, source, destination):
+        seen.update(source=source, destination=destination)
+        return (["docker", "compose", "cp"], {})
+
+    monkeypatch.setattr(cli_adopt.session, "cp_command", _build)
+    monkeypatch.setattr(cli_adopt.session, "become", lambda invocation: None)
+
+    result = runner.invoke(cli_adopt.app, ["cp", "x.tar", "backend:/tmp/"])
+
+    assert result.exit_code == 0
+    assert seen == {"source": "x.tar", "destination": "backend:/tmp/"}
+
+
+def test_cp_refusal_exits_two_without_running_anything(monkeypatch, _descriptor_loads):
+    handed = []
+    monkeypatch.setattr(cli_adopt.session, "become", lambda invocation: handed.append(invocation))
+
+    result = runner.invoke(cli_adopt.app, ["cp", "/srv/a", "/srv/b"])
+
+    assert result.exit_code == 2
+    assert "neither path" in result.output
+    assert handed == []
+
+
+def test_container_info_prints_the_listing(monkeypatch, _descriptor_loads):
+    """BR-CLI-031."""
+    monkeypatch.setattr(cli_adopt.session, "container_info", lambda env: "Project erpnext")
+
+    result = runner.invoke(cli_adopt.app, ["container-info"])
+
+    assert result.exit_code == 0
+    assert "Project erpnext" in result.output

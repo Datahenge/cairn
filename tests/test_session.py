@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from cairn import descriptor, session
@@ -150,9 +153,124 @@ def test_no_verb_reads_the_sites_volume() -> None:
         session.mariadb_command(target),
         session.shell_command(target),
         session.logs_command(target),
+        session.cp_command(target, "/srv/backup.tar", "backend:/tmp/"),
+        session.container_info_command(target),
     ]
     for command, _ in built:
         joined = " ".join(command)
         assert "site_config.json" not in joined
         assert "common_site_config.json" not in joined
         assert "cat" not in command
+
+
+# --- cp moves only what the operator names (BR-CLI-032, ADR-080) -------------
+
+
+def test_cp_into_a_container_absolutizes_the_host_side(tmp_path) -> None:
+    """BR-CLI-032: the invocation carries --project-directory, so a relative path must not
+    be left for compose to resolve against that instead of the operator's directory."""
+    command, environment = session.cp_command(
+        _descriptor(), "dump.sql.gz", "backend:/home/frappe/backups/", cwd=tmp_path
+    )
+    assert command[-3:] == ["cp", str(tmp_path / "dump.sql.gz"), "backend:/home/frappe/backups/"]
+    assert environment["CUSTOM_TAG"] == "production"
+
+
+def test_cp_out_of_a_container_absolutizes_the_destination(tmp_path) -> None:
+    command, _ = session.cp_command(
+        _descriptor(), "backend:/home/frappe/backups/x.tar", ".", cwd=tmp_path
+    )
+    assert command[-3:] == ["cp", "backend:/home/frappe/backups/x.tar", str(tmp_path)]
+
+
+def test_cp_leaves_an_absolute_host_path_alone(tmp_path) -> None:
+    command, _ = session.cp_command(_descriptor(), "/srv/x.tar", "backend:/tmp/", cwd=tmp_path)
+    assert command[-2] == "/srv/x.tar"
+
+
+def test_cp_is_scoped_to_the_descriptors_project() -> None:
+    target = _descriptor(compose=descriptor.Compose(project="erpnext"))
+    command, _ = session.cp_command(target, "/srv/x.tar", "backend:/tmp/")
+    assert command[command.index("--project-name") + 1] == "erpnext"
+
+
+@pytest.mark.parametrize(
+    ("source", "destination", "message"),
+    [
+        ("backend:/a", "db:/b", "both paths"),
+        ("/srv/a", "/srv/b", "neither path"),
+        ("./a:b", "/srv/b", "neither path"),
+    ],
+)
+def test_cp_refuses_unless_exactly_one_side_is_a_container(source, destination, message) -> None:
+    """BR-CLI-032: refused before running anything, so compose's own error never surfaces."""
+    with pytest.raises(CairnError, match=message):
+        session.cp_command(_descriptor(), source, destination)
+
+
+# --- container-info lists the stack plainly (BR-CLI-031) ---------------------
+
+_PS_LINES = "\n".join(
+    [
+        '{"ID":"e228456ff8ef0123456789","Name":"erpnext-backend-1","Project":"erpnext",'
+        '"Service":"backend","Image":"127.0.0.1:5000/acmecorp/erpnext-v16:production",'
+        '"Status":"Up 2 days","Command":"/usr/local/bin/entrypoint.sh","Publishers":[]}',
+        '{"ID":"3b1de90c6973abcdef","Name":"erpnext-db-1","Project":"erpnext",'
+        '"Service":"db","Image":"mariadb:11.8","Status":"Up 2 days (healthy)"}',
+        '{"ID":"835b8fdb87b6aaaa","Name":"erpnext-caddy-1","Project":"erpnext",'
+        '"Service":"caddy","Image":"caddy:2-alpine","Status":"Exited (0) 1 hour ago"}',
+    ]
+)
+
+
+def test_container_info_includes_stopped_containers() -> None:
+    """BR-CLI-031: `stop` keeps its containers, and a held stack is when an operator looks."""
+    command, _ = session.container_info_command(_descriptor())
+    assert command[-4:] == ["ps", "--all", "--format", "json"]
+
+
+def test_containers_parse_sorted_by_service_with_short_ids() -> None:
+    project, containers = session.parse_containers(_PS_LINES)
+    assert project == "erpnext"
+    assert [c.service for c in containers] == ["backend", "caddy", "db"]
+    assert containers[0].id == "e228456ff8ef"
+
+
+def test_containers_parse_from_a_single_json_array() -> None:
+    """Older compose emits one array rather than one object per line."""
+    array = "[" + ",".join(_PS_LINES.splitlines()) + "]"
+    _, containers = session.parse_containers(array)
+    assert len(containers) == 3
+
+
+def test_the_listing_drops_the_command_and_ports_columns() -> None:
+    """BR-CLI-031: their width is what makes `docker container ls` hard to read."""
+    project, containers = session.parse_containers(_PS_LINES)
+    target = _descriptor(compose=descriptor.Compose(directory=Path("/etc/cairn")))
+    text = session.render_containers(target, project, containers)
+    lines = text.splitlines()
+    assert lines[0] == "Project erpnext  (/etc/cairn/compose.yaml)"
+    assert lines[2].split() == ["SERVICE", "NAME", "ID", "IMAGE", "STATUS"]
+    assert "entrypoint" not in text
+    assert "Up 2 days (healthy)" in text
+
+
+def test_the_project_name_comes_from_compose_when_the_descriptor_omits_it() -> None:
+    """BR-CLI-031: `[compose] project` is optional, and only compose knows the derived name."""
+    project, containers = session.parse_containers(_PS_LINES)
+    text = session.render_containers(_descriptor(), project, containers)
+    assert text.startswith("Project erpnext")
+
+
+def test_an_empty_project_says_so() -> None:
+    text = session.render_containers(_descriptor(), None, [])
+    assert "no containers" in text
+
+
+def test_a_failing_engine_is_reported_with_its_own_message(monkeypatch) -> None:
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="permission denied")
+
+    monkeypatch.setattr(session.subprocess, "run", fake_run)
+    with pytest.raises(CairnError, match="permission denied"):
+        session.container_info(_descriptor())
