@@ -89,6 +89,10 @@ APPS_DIRECTORY = "/home/frappe/frappe-bench/apps"
 #: own graceful timeout is 30 seconds (`ADR-081`).
 STOP_GRACE_SECONDS = 30
 
+#: Shorter graces for services whose only long work is an open websocket. The browser reconnects
+#: a dropped socket by itself, and waiting out 30 seconds for each held every swap a minute longer.
+STOP_GRACE_BY_SERVICE = {"frontend": 5, "websocket": 5}
+
 #: The one service of the remaining image services that must never run twice: two schedulers
 #: would enqueue every scheduled job twice.
 SCHEDULER_SERVICE = "scheduler"
@@ -495,9 +499,10 @@ def hot_swap(
                 # bash is PID 1 and drops Docker's stop signal, so `docker stop` waits out the
                 # grace and kills nginx mid-request. Found live 2026-11-17 (`BR-DEPLOY-025`).
                 _try(["docker", "exec", cid, "nginx", "-s", "quit"], PROBE_TIMEOUT_SECONDS)
+            grace = STOP_GRACE_BY_SERVICE.get(service, STOP_GRACE_SECONDS)
             _run(
-                ["docker", "stop", "-t", str(STOP_GRACE_SECONDS), cid],
-                STOP_GRACE_SECONDS + PROBE_TIMEOUT_SECONDS,
+                ["docker", "stop", "-t", str(grace), cid],
+                grace + PROBE_TIMEOUT_SECONDS,
                 f"stopping the old {service}",
             )
             _run(["docker", "rm", cid], PROBE_TIMEOUT_SECONDS, f"removing the old {service}")

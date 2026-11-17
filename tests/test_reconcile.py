@@ -652,10 +652,10 @@ def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
         _index(steps, "--scale backend=2 backend"),
         _index(steps, "--scale websocket=2 websocket"),
         _index(steps, "--scale frontend=2 frontend"),
-        _index(steps, "docker stop -t 30 old-frontend"),
+        _index(steps, "docker stop -t 5 old-frontend"),
         _index(steps, "docker stop -t 30 old-backend"),
         _index(steps, "docker exec new-frontend nginx -s reload"),
-        _index(steps, "docker stop -t 30 old-websocket"),
+        _index(steps, "docker stop -t 5 old-websocket"),
         _index(steps, "--scale queue-short=2 queue-short"),
         _index(steps, "docker kill --signal SIGTERM old-queue-short"),
         _index(steps, "up -d --no-deps scheduler"),
@@ -777,7 +777,7 @@ def test_hot_swap_quits_the_old_nginx_gracefully_before_stopping_it(stack):
 
     steps = [" ".join(command) for command in stack.run]
     assert _index(steps, "docker exec old-frontend nginx -s quit") < _index(
-        steps, "docker stop -t 30 old-frontend"
+        steps, "docker stop -t 5 old-frontend"
     )
 
 
@@ -790,7 +790,7 @@ def test_hot_swap_drops_the_asset_map_once_the_old_backend_is_gone(stack):
     assert (
         _index(steps, "docker rm old-backend")
         < drop
-        < _index(steps, "docker stop -t 30 old-websocket")
+        < _index(steps, "docker stop -t 5 old-websocket")
     )
 
 
@@ -835,7 +835,7 @@ def test_hot_swap_carries_old_assets_before_the_old_frontend_retires(stack):
     carry = _index(steps, "docker exec old-frontend sh -c")
     assert "docker exec -i new-frontend" in steps[carry]
     assert "--skip-old-files" in steps[carry]
-    assert carry < _index(steps, "docker stop -t 30 old-frontend")
+    assert carry < _index(steps, "docker stop -t 5 old-frontend")
 
 
 def test_old_workers_drain_instead_of_being_stopped(stack):
@@ -869,5 +869,5 @@ def test_new_frontends_are_pinned_to_the_new_backend_before_the_old_one_stops(st
     assert "s/server [^:;]*:/server erpnext-new-backend:/" in steps[pin]
     assert "s/server [^:;]*:/server erpnext-new-websocket:/" in steps[pin]
     assert steps[pin].endswith("nginx -s reload")
-    assert _index(steps, "docker stop -t 30 old-frontend") < pin
+    assert _index(steps, "docker stop -t 5 old-frontend") < pin
     assert pin < _index(steps, "docker stop -t 30 old-backend")
