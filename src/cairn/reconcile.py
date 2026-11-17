@@ -98,14 +98,21 @@ SCHEDULER_SERVICE = "scheduler"
 BENCH_DIRECTORY = "/home/frappe/frappe-bench"
 ASSET_GLOBS = "apps/*/*/public/dist assets/js assets/css"
 
+#: The nginx site file frappe_docker's frontend renders at start, and its two upstreams, keyed by
+#: the service each one reaches.
+NGINX_SITE = "/etc/nginx/conf.d/frappe.conf"
+NGINX_UPSTREAMS = {"backend": "backend-server", "websocket": "socketio-server"}
+
 #: Carried asset files older than this are dropped, unless the new image ships them itself.
 ASSET_RETENTION_MINUTES = 24 * 60
 
 #: What `bench migrate` reads: schema JSON and fixtures, patch lists, hooks, and the YAML and
-#: CSV some apps sync on migrate. Two images with the same hash of these files need no migrate.
+#: CSV some apps sync on migrate, inside each app's package (the folder holding hooks.py). Files
+#: outside it, such as CI workflows, never reach migrate. Two images with the same hash of these
+#: files need no migrate.
 SCHEMA_FINGERPRINT_SCRIPT = (
-    f"cd {APPS_DIRECTORY} && find . \\( -name node_modules -o -name public -o -name .git \\) "
-    "-prune -o -type f \\( -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.csv' "
+    f"cd {APPS_DIRECTORY} && find $(dirname */*/hooks.py) \\( -name node_modules -o -name public "
+    "\\) -prune -o -type f \\( -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.csv' "
     "-o -name patches.txt -o -name hooks.py \\) -print | LC_ALL=C sort | xargs -d '\\n' sha256sum "
     "| sha256sum | cut -d' ' -f1"
 )
@@ -479,6 +486,8 @@ def hot_swap(
                 carry_assets(old_frontend, new_frontend, report=report)
 
     for service in RETIRE_ORDER:
+        if service == "backend" and "frontend" in plan.web:
+            pin_frontends(descriptor, old, report=report)
         for cid in old.get(service, []):
             report(f"Retiring the old {service} ({cid[:12]})")
             if service == "frontend":
@@ -557,6 +566,48 @@ def hot_swap(
         report=report,
         required=False,
     )
+
+
+def pin_frontends(
+    descriptor: Descriptor,
+    old: dict[str, list[str]],
+    *,
+    report: Callable[[str], None] = lambda message: None,
+) -> None:
+    """Point the new frontends' nginx at the new backend and websocket by container name.
+
+    nginx resolves ``backend`` once, when it starts or reloads, and during a swap that name
+    answers with the old container too. Once the old container stops, its address no longer
+    answers at all, so a request nginx routes there hangs until the connect timeout. One such
+    request was seen on Life Scientific's staging target, 2026-11-17. A container name resolves
+    to that container only, and survives its restarts. The next deploy's frontend renders its
+    file from the template again. Best effort: without the pin, the reload after the old
+    backend stops still recovers.
+    """
+    edits = []
+    for service, upstream in NGINX_UPSTREAMS.items():
+        fresh = [
+            cid for cid in container_ids(descriptor, service) if cid not in old.get(service, [])
+        ]
+        name = _first_line(_capture(["docker", "inspect", "--format", "{{.Name}}", *fresh[:1]]))
+        if len(fresh) != 1 or name is None:
+            continue
+        edits.append(
+            f"sed -i '/upstream {upstream} {{/,/}}/ s/server [^:;]*:/server {name.lstrip('/')}:/' "
+            f"{NGINX_SITE}"
+        )
+    if not edits:
+        return
+    for cid in [
+        c for c in container_ids(descriptor, "frontend") if c not in old.get("frontend", [])
+    ]:
+        report(f"Pointing the new frontend ({cid[:12]}) at the new backend and websocket")
+        result = _try(
+            ["docker", "exec", cid, "sh", "-c", " && ".join([*edits, "nginx -s reload"])],
+            PROBE_TIMEOUT_SECONDS,
+        )
+        if result is None or result.returncode != 0:
+            report("  could not; requests may wait on the old backend until it is gone")
 
 
 def schema_fingerprint(image: str) -> str | None:

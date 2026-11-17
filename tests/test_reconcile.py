@@ -608,6 +608,8 @@ class Stack:
         if "--entrypoint sh" in text:
             image = command[command.index("sh") + 1]
             return self.schema.get(image, "f" * 64)
+        if "{{.Name}}" in text:
+            return f"/erpnext-{command[-1]}\n"
         if "docker inspect" in text:
             return "true\n"
         return None
@@ -855,3 +857,17 @@ def test_a_draining_worker_is_never_signalled_twice(stack):
 
     steps = [" ".join(command) for command in stack.run]
     assert not any("SIGTERM old-queue-short" in step for step in steps)
+
+
+def test_new_frontends_are_pinned_to_the_new_backend_before_the_old_one_stops(stack):
+    """During a swap `backend` resolves to both containers. Once the old one stops, nginx
+    requests routed to its address hang, so the new frontend must stop using it first."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    pin = _index(steps, "docker exec new-frontend sh -c sed")
+    assert "s/server [^:;]*:/server erpnext-new-backend:/" in steps[pin]
+    assert "s/server [^:;]*:/server erpnext-new-websocket:/" in steps[pin]
+    assert steps[pin].endswith("nginx -s reload")
+    assert _index(steps, "docker stop -t 30 old-frontend") < pin
+    assert pin < _index(steps, "docker stop -t 30 old-backend")
