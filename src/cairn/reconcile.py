@@ -282,6 +282,7 @@ def converge(
         MIGRATE_TIMEOUT_SECONDS,
         "running bench migrate",
     )
+    drop_asset_map(descriptor, report=report)
 
     report("Verifying health")
     await_health(descriptor, report=report)
@@ -463,6 +464,8 @@ def hot_swap(
                     PROBE_TIMEOUT_SECONDS,
                     "reloading the frontend",
                 )
+        if service == "backend":
+            drop_asset_map(descriptor, report=report)
 
     if plan.others:
         report(f"Recreating {', '.join(plan.others)}")
@@ -525,6 +528,42 @@ def _await_container(
 
     raise ReconcileError(
         f"The new {service} did not become ready within {descriptor.health.timeout_seconds}s."
+    )
+
+
+def drop_asset_map(
+    descriptor: Descriptor, *, report: Callable[[str], None] = lambda message: None
+) -> None:
+    """Drop Frappe's cached map of bundle file names after new code is enabled (`BR-DEPLOY-003`).
+
+    With developer mode off, Frappe 16 keeps ``assets.json`` in a shared Redis key with no
+    expiry. The image carries new bundle names, the Redis volume survives the deploy, and
+    nothing on the target rebuilds assets, so pages keep naming the previous image's files and
+    the Desk renders unstyled. During a hot swap the old backend can also write its own map back
+    while it still serves, so the key is dropped only once the old backend is gone. Found on
+    Life Scientific's staging target, 2026-11-17.
+
+    Cache bookkeeping, not data: the next request rebuilds the key from the running image.
+    """
+    report("Dropping the cached asset map")
+    compose_run(
+        descriptor,
+        [
+            "exec",
+            "-T",
+            BENCH_SERVICE,
+            "bench",
+            "--site",
+            descriptor.site,
+            "execute",
+            "frappe.client_cache.delete_value",
+            "--args",
+            '["assets_json"]',
+            "--kwargs",
+            '{"shared": True}',
+        ],
+        PROBE_TIMEOUT_SECONDS,
+        "dropping the cached asset map",
     )
 
 

@@ -649,7 +649,7 @@ def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
         _index(steps, "up -d --no-deps queue-short scheduler"),
     ]
     assert order == sorted(order)
-    assert not any("exec -T backend bench" in step for step in steps)
+    assert not any("exec -T backend bench" in step and "migrate" in step for step in steps)
 
 
 def test_hot_swap_checks_the_new_backend_itself(stack):
@@ -766,3 +766,24 @@ def test_hot_swap_quits_the_old_nginx_gracefully_before_stopping_it(stack):
     assert _index(steps, "docker exec old-frontend nginx -s quit") < _index(
         steps, "docker stop -t 30 old-frontend"
     )
+
+
+def test_hot_swap_drops_the_asset_map_once_the_old_backend_is_gone(stack):
+    """BR-DEPLOY-003: before that, the old backend could write its own bundle names back."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    drop = _index(steps, "frappe.client_cache.delete_value")
+    assert (
+        _index(steps, "docker rm old-backend")
+        < drop
+        < _index(steps, "docker stop -t 30 old-websocket")
+    )
+
+
+def test_recreate_drops_the_asset_map_after_migrating(converging, commands):
+    """BR-DEPLOY-003: a recreate keeps the Redis volume too, so it needs the same drop."""
+    reconcile.run(_descriptor())
+
+    steps = [" ".join(command) for command in commands.run]
+    assert _index(steps, "migrate") < _index(steps, "frappe.client_cache.delete_value")
