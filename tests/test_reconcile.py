@@ -553,3 +553,190 @@ def test_every_compose_probe_carries_the_image_variables(commands):
         "these `docker compose` calls were given no CUSTOM_IMAGE, so the compose file cannot "
         f"resolve its image reference and the probe fails rather than reports: {blind}"
     )
+
+
+# --- hot swap (BR-DEPLOY-025, ADR-081) --------------------------------------
+
+SERVICES = {
+    "configurator": {"image": "ghcr.io/datahenge/erpnext-btu-v16:production"},
+    "backend": {"image": "ghcr.io/datahenge/erpnext-btu-v16:production"},
+    "websocket": {"image": "ghcr.io/datahenge/erpnext-btu-v16:production"},
+    "frontend": {"image": "ghcr.io/datahenge/erpnext-btu-v16:production"},
+    "queue-short": {"image": "ghcr.io/datahenge/erpnext-btu-v16:production"},
+    "scheduler": {"image": "ghcr.io/datahenge/erpnext-btu-v16:production"},
+    "db": {"image": "mariadb:11.8"},
+}
+
+
+class Stack:
+    """A fake compose project: one container per web service until a pass scales it up."""
+
+    def __init__(self, *, services=None, new_apps="frappe\nerpnext\n", ready=True):
+        self.run: list[list[str]] = []
+        self.services = SERVICES if services is None else services
+        self.containers = {name: [f"old-{name}"] for name in ("backend", "websocket", "frontend")}
+        self.new_apps = new_apps
+        self.ready = ready
+
+    def try_(self, command, timeout, *, env_overrides=None):
+        self.run.append(command)
+        if "--scale" in command:
+            service = command[-1]
+            self.containers[service].append(f"new-{service}")
+        if command[:2] == ["docker", "stop"]:
+            cid = command[-1]
+            for ids in self.containers.values():
+                if cid in ids:
+                    ids.remove(cid)
+        if "curl" in command and command[:2] == ["docker", "exec"] and not self.ready:
+            return subprocess.CompletedProcess(command, 1)
+        return subprocess.CompletedProcess(command, 0)
+
+    def capture(self, command, *, env_overrides=None):
+        self.run.append(command)
+        text = " ".join(command)
+        if "config --format json" in text:
+            return json.dumps({"services": self.services})
+        if "ps -q" in text:
+            return "\n".join(self.containers.get(command[-1], []))
+        if "--entrypoint ls" in text:
+            return "erpnext\nfrappe\n" if "old-image" in text else self.new_apps
+        if "docker inspect" in text:
+            return "true\n"
+        return None
+
+
+@pytest.fixture
+def stack(monkeypatch, converging):
+    fake = Stack()
+    monkeypatch.setattr(reconcile, "_try", fake.try_)
+    monkeypatch.setattr(reconcile, "_capture", fake.capture)
+    monkeypatch.setattr(reconcile.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(reconcile, "running_image_id", lambda desc: "old-image")
+    return fake
+
+
+def _hot_swap_descriptor(**overrides):
+    return _descriptor(
+        deploy=descriptor.Deploy(strategy="hot-swap"),
+        health=descriptor.Health(url="http://localhost:8000/api/method/ping"),
+        **overrides,
+    )
+
+
+def _index(steps, fragment):
+    return next(i for i, step in enumerate(steps) if fragment in step)
+
+
+def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
+    """BR-DEPLOY-025: migration runs before any new container takes traffic, the frontend
+    starts after the new backend exists, and the old frontend retires before the old backend."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    order = [
+        _index(steps, "docker pull"),
+        _index(steps, "run --rm --no-deps -T configurator"),
+        _index(steps, "run --rm --no-deps -T backend bench --site erp.example.com migrate"),
+        _index(steps, "--scale backend=2 backend"),
+        _index(steps, "--scale websocket=2 websocket"),
+        _index(steps, "--scale frontend=2 frontend"),
+        _index(steps, "docker stop -t 30 old-frontend"),
+        _index(steps, "docker stop -t 30 old-backend"),
+        _index(steps, "docker stop -t 30 old-websocket"),
+        _index(steps, "docker exec new-frontend nginx -s reload"),
+        _index(steps, "up -d --no-deps queue-short scheduler"),
+    ]
+    assert order == sorted(order)
+    assert not any("exec -T backend bench" in step for step in steps)
+
+
+def test_hot_swap_checks_the_new_backend_itself(stack):
+    """During a swap `backend` resolves to both containers; only the new one's answer counts."""
+    reconcile.run(_hot_swap_descriptor())
+
+    assert [
+        "docker",
+        "exec",
+        "new-backend",
+        "curl",
+        "-fsS",
+        "-o",
+        "/dev/null",
+        "http://localhost:8000/api/method/ping",
+    ] in stack.run
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        {"image": "x", "ports": [{"published": "8080", "target": 8080}]},
+        {"image": "x", "container_name": "frontend"},
+    ],
+    ids=["published-port", "container-name"],
+)
+def test_an_unscalable_web_service_is_refused_before_anything_changes(stack, service):
+    services = {**SERVICES, "frontend": service}
+    stack.services = services
+
+    with pytest.raises(ReconcileError, match="cannot start beside the first"):
+        reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("migrate" in step or "--scale" in step for step in steps)
+
+
+def test_a_changed_app_list_recreates_in_place_instead(stack):
+    """BR-DEPLOY-003a: apps.txt is shared, so old and new code with different apps cannot run
+    side by side."""
+    stack.new_apps = "frappe\nerpnext\nhrms\n"
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert any("up -d --remove-orphans" in step for step in steps)
+    assert not any("--scale" in step for step in steps)
+
+
+@pytest.mark.parametrize(
+    ("running_digest", "stack_up"),
+    [(None, False), (OTHER, False)],
+    ids=["first-deploy", "stack-down"],
+)
+def test_nothing_running_means_recreate(monkeypatch, stack, running_digest, stack_up):
+    monkeypatch.setattr(reconcile, "running_digest", lambda desc: running_digest)
+    monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: stack_up)
+    monkeypatch.setattr(reconcile, "await_health", lambda desc, report: None)
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert any("up -d --remove-orphans" in step for step in steps)
+    assert not any("config --format json" in step for step in steps)
+
+
+def test_an_unready_candidate_is_removed_and_the_old_stack_keeps_serving(stack, monkeypatch):
+    """BR-DEPLOY-018: halt and report. The old containers never stopped."""
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+
+    with pytest.raises(ReconcileError, match="still serving the old code"):
+        reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert "docker rm -f new-backend" in steps
+    assert not any(step.startswith("docker stop") for step in steps)
+
+
+def test_the_recreate_strategy_is_unchanged(stack):
+    reconcile.run(_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert any("up -d --remove-orphans" in step for step in steps)
+    assert not any("config --format json" in step for step in steps)
+
+
+def test_a_dry_run_describes_the_hot_swap(monkeypatch, converging):
+    outcome = reconcile.run(_hot_swap_descriptor(), dry_run=True)
+
+    assert "beside the old ones" in outcome.detail

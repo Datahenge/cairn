@@ -211,3 +211,30 @@ def test_an_unsupported_mechanism_lists_the_supported_ones(tmp_path):
 
 def test_no_mechanism_means_none(tmp_path):
     assert descriptor.load(_write(tmp_path, MINIMAL)).secret_mechanism == "none"
+
+
+# --- deploy strategy (BR-DEPLOY-025, ADR-081) -------------------------------
+
+
+def test_the_strategy_defaults_to_recreate(tmp_path):
+    """A descriptor written before `[deploy]` existed must converge exactly as it did."""
+    loaded = descriptor.load(_write(tmp_path, MINIMAL))
+
+    assert loaded.deploy.strategy == "recreate"
+    assert loaded.deploy.hot_swap is False
+
+
+def test_hot_swap_is_opt_in(tmp_path):
+    loaded = descriptor.load(_write(tmp_path, MINIMAL + '[deploy]\nstrategy = "hot-swap"\n'))
+
+    assert loaded.deploy.hot_swap is True
+
+
+def test_an_unknown_strategy_names_the_choices(tmp_path):
+    with pytest.raises(DescriptorError, match="recreate, hot-swap"):
+        descriptor.load(_write(tmp_path, MINIMAL + '[deploy]\nstrategy = "rolling"\n'))
+
+
+def test_an_unknown_deploy_key_is_refused(tmp_path):
+    with pytest.raises(DescriptorError, match="strategies"):
+        descriptor.load(_write(tmp_path, MINIMAL + '[deploy]\nstrategies = "hot-swap"\n'))

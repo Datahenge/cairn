@@ -9,6 +9,24 @@ code changes live in git history.
 
 ---
 
+## 2026-11-17 (opt-in hot swap proposed, `ADR-081`, `BR-DEPLOY-025`)
+
+Life Scientific runs user acceptance testing on its staging target and asked for a converge
+that does not take the site down. Contributed as a pull request; nothing here is approved yet.
+
+- **`BR-DEPLOY-025`** (new, proposed). `[deploy] strategy = "hot-swap"` in the descriptor
+  migrates from a one-off container of the new image, starts the new web containers beside the
+  old ones, then retires the old ones. Sequence, limits and rejected alternatives are in
+  `ADR-081` (`exploratory`), tracked in `docs/open/OPEN_DECISIONS.md` with three open points.
+- **`BR-DEPLOY-003`, `BR-DEPLOY-016`** amended to name `recreate` as the default strategy.
+  Behavior is unchanged for every existing descriptor.
+- **Recipe entrypoint** now leaves `sites/assets` alone when the link already points at the
+  container's baked assets (`BR-VEND-001`). Images rebuild once, since the recipe changed.
+- `userdocs/reference/target-descriptor.md` documents `[deploy]`. Implementation index row and
+  `W-044` (live verification) added. Unit-tested only; never run on a real target.
+
+---
+
 ## 2026-11-06 (`cairn-adopt cp` and `container-info`; data boundary amended, `ADR-080`)
 
 Brian followed `userdocs/guides/restoring-a-backup.md` on a live VPS and the step 3 container

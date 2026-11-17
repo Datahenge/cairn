@@ -66,6 +66,25 @@ MIGRATE_TIMEOUT_SECONDS = 3600
 #: Ceiling on the short informational commands.
 PROBE_TIMEOUT_SECONDS = 60
 
+#: The services that answer traffic, in the order a hot swap starts their replacements
+#: (`BR-DEPLOY-025`). `frontend` is last because its nginx resolves `backend` once, when it
+#: starts: it must start after the new backend exists.
+WEB_SERVICES = ("backend", "websocket", "frontend")
+
+#: The order a hot swap retires the old web containers. The old frontend goes first so no new
+#: request reaches the old backend through it.
+RETIRE_ORDER = ("frontend", "backend", "websocket")
+
+#: frappe_docker's one-shot service that writes `common_site_config.json` and `apps.txt`.
+CONFIGURATOR_SERVICE = "configurator"
+
+#: Where frappe_docker's image keeps the bench's apps, for comparing two images' app lists.
+APPS_DIRECTORY = "/home/frappe/frappe-bench/apps"
+
+#: Seconds an old container gets to finish in-flight work before Docker kills it. Gunicorn's
+#: own graceful timeout is 30 seconds (`ADR-081`).
+STOP_GRACE_SECONDS = 30
+
 
 @dataclass(frozen=True)
 class State:
@@ -101,6 +120,17 @@ class Outcome:
     #: True when a hold stopped the pass before it began (`BR-DEPLOY-024`). Distinct from both
     #: converged and failed — that third state is the whole reason the hold exists.
     held: bool = False
+
+
+@dataclass(frozen=True)
+class SwapPlan:
+    """What a hot swap replaces, read from the rendered compose file (`BR-DEPLOY-025`)."""
+
+    #: Web services present in this stack, in start order.
+    web: tuple[str, ...]
+    #: Every other service that runs the watched image, except the configurator. These are
+    #: recreated in place once the web tier has moved.
+    others: tuple[str, ...]
 
 
 @contextmanager
@@ -174,7 +204,7 @@ def run_locked(
             converged=False,
             changed=False,
             state=state,
-            detail=_would_do(state),
+            detail=_would_do(state, hot_swap=_will_hot_swap(descriptor, state)),
         )
 
     converge(descriptor, state, report=report)
@@ -230,6 +260,14 @@ def converge(
     report(f"Pulling {reference}")
     _run(["docker", "pull", reference], PULL_TIMEOUT_SECONDS, "pulling the image")
 
+    if _will_hot_swap(descriptor, state):
+        plan = plan_hot_swap(descriptor, report=report)
+        if plan is not None:
+            hot_swap(descriptor, plan, report=report)
+            report("Verifying health")
+            await_health(descriptor, report=report)
+            return
+
     report("Starting the stack")
     compose_run(
         descriptor, ["up", "-d", "--remove-orphans"], COMPOSE_TIMEOUT_SECONDS, "starting the stack"
@@ -247,6 +285,239 @@ def converge(
 
     report("Verifying health")
     await_health(descriptor, report=report)
+
+
+def _will_hot_swap(descriptor: Descriptor, state: State) -> bool:
+    """Whether this pass may hot swap (`BR-DEPLOY-025`).
+
+    Only a running stack has anything to keep serving. A first deploy, or a stack that is
+    down, takes the recreate path whatever the descriptor says.
+    """
+    return descriptor.deploy.hot_swap and state.stack_up and not state.is_first_deploy
+
+
+def plan_hot_swap(
+    descriptor: Descriptor, *, report: Callable[[str], None] = lambda message: None
+) -> SwapPlan | None:
+    """Check the stack can be hot swapped, before anything changes (`BR-DEPLOY-025`).
+
+    Raises when the compose file makes a second web container impossible: a published host
+    port or a fixed ``container_name`` would collide the moment a service scales to two. That
+    is a descriptor/compose mismatch the operator must fix, so it halts rather than silently
+    taking the recreate path the operator opted out of.
+
+    Returns ``None`` when the new image carries a different app list from the running one.
+    ``apps.txt`` lives in the shared sites volume, and old and new code would read one file
+    that matches only one of them. Installing or removing an app is the operator's act
+    (`BR-DEPLOY-003a`), so that pass takes the recreate path and says why.
+    """
+    rendered = _compose_capture(descriptor, ["config", "--format", "json"])
+    try:
+        services = json.loads(rendered or "")["services"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ReconcileError(
+            "Cannot read the rendered compose file, so a hot swap cannot check that its web "
+            "services can run twice. Nothing was changed."
+        ) from exc
+
+    if BENCH_SERVICE not in services:
+        raise ReconcileError(
+            f"The compose file has no '{BENCH_SERVICE}' service, so there is nothing to hot "
+            f"swap. Nothing was changed."
+        )
+
+    web = tuple(name for name in WEB_SERVICES if name in services)
+    for name in web:
+        service = services[name] or {}
+        if service.get("ports") or service.get("container_name"):
+            raise ReconcileError(
+                f"The '{name}' service publishes a host port or sets container_name, so a "
+                f"second '{name}' container cannot start beside the first. Remove it from the "
+                f"compose file, or set the deploy strategy back to recreate. Nothing was changed."
+            )
+
+    others = tuple(
+        name
+        for name, service in services.items()
+        if name not in web
+        and name != CONFIGURATOR_SERVICE
+        and (service or {}).get("image") == descriptor.reference
+    )
+
+    running = running_image_id(descriptor)
+    old_apps = _app_list(running) if running else None
+    new_apps = _app_list(descriptor.reference)
+    if old_apps is None or new_apps is None or old_apps != new_apps:
+        report(
+            "  the new image's apps differ from the running image's (or could not be read), "
+            "so this pass recreates the stack in place instead"
+        )
+        return None
+
+    return SwapPlan(web=web, others=others)
+
+
+def hot_swap(
+    descriptor: Descriptor,
+    plan: SwapPlan,
+    *,
+    report: Callable[[str], None] = lambda message: None,
+) -> None:
+    """Migrate from the new image, then replace the web tier side by side (`BR-DEPLOY-025`).
+
+    The order, and why (`ADR-081`):
+
+    1. the configurator and ``bench migrate`` run in one-off containers of the **new** image
+       while the old stack keeps serving. Migration still follows every image enable
+       (`BR-DEPLOY-016`); it now happens before the new code takes traffic, against the code
+       that needs it, and the old code meets a schema that only gained objects
+       (`ADR-014`);
+    2. each web service gets one new container beside its old ones, and the pass waits for
+       it to answer before starting the next;
+    3. the old containers are stopped gracefully, the new frontend's nginx reloads so it
+       stops addressing the old backend, and the remaining image services (workers,
+       scheduler) are recreated in place.
+
+    A candidate that never becomes healthy is removed, with every candidate started before
+    it, and the pass halts (`BR-DEPLOY-018`). The old containers never stopped, so the site
+    keeps serving the old code. That is not a rollback: the image was never enabled, and the
+    migration is not undone.
+    """
+    site = descriptor.site
+
+    report("Running the configurator from the new image")
+    compose_run(
+        descriptor,
+        ["run", "--rm", "--no-deps", "-T", CONFIGURATOR_SERVICE],
+        COMPOSE_TIMEOUT_SECONDS,
+        "running the configurator",
+    )
+
+    report(f"Migrating {site} from the new image while the running stack keeps serving")
+    compose_run(
+        descriptor,
+        ["run", "--rm", "--no-deps", "-T", BENCH_SERVICE, "bench", "--site", site, "migrate"],
+        MIGRATE_TIMEOUT_SECONDS,
+        "running bench migrate",
+    )
+
+    old: dict[str, list[str]] = {}
+    started: list[str] = []
+    for service in plan.web:
+        old[service] = container_ids(descriptor, service)
+        report(f"Starting a new {service} beside the running one")
+        try:
+            compose_run(
+                descriptor,
+                [
+                    "up",
+                    "-d",
+                    "--no-deps",
+                    "--no-recreate",
+                    "--scale",
+                    f"{service}={len(old[service]) + 1}",
+                    service,
+                ],
+                COMPOSE_TIMEOUT_SECONDS,
+                f"starting a new {service}",
+            )
+            fresh = [cid for cid in container_ids(descriptor, service) if cid not in old[service]]
+            started += fresh
+            if len(fresh) != 1:
+                raise ReconcileError(
+                    f"Expected one new {service} container and found {len(fresh)}."
+                )
+            url = descriptor.health.url if service == BENCH_SERVICE else None
+            _await_container(descriptor, fresh[0], url, service, report=report)
+        except ReconcileError as exc:
+            for candidate in started:
+                _try(["docker", "rm", "-f", candidate], PROBE_TIMEOUT_SECONDS)
+            raise ReconcileError(
+                f"{exc} The new containers were removed and the old ones never stopped, so "
+                f"the site is still serving the old code. The migration has already been "
+                f"applied and is not undone."
+            ) from exc
+
+    for service in RETIRE_ORDER:
+        for cid in old.get(service, []):
+            report(f"Retiring the old {service} ({cid[:12]})")
+            _run(
+                ["docker", "stop", "-t", str(STOP_GRACE_SECONDS), cid],
+                STOP_GRACE_SECONDS + PROBE_TIMEOUT_SECONDS,
+                f"stopping the old {service}",
+            )
+            _run(["docker", "rm", cid], PROBE_TIMEOUT_SECONDS, f"removing the old {service}")
+
+    if "frontend" in plan.web:
+        for cid in container_ids(descriptor, "frontend"):
+            _run(
+                ["docker", "exec", cid, "nginx", "-s", "reload"],
+                PROBE_TIMEOUT_SECONDS,
+                "reloading the frontend",
+            )
+
+    if plan.others:
+        report(f"Recreating {', '.join(plan.others)}")
+        compose_run(
+            descriptor,
+            ["up", "-d", "--no-deps", *plan.others],
+            COMPOSE_TIMEOUT_SECONDS,
+            "recreating the remaining services",
+        )
+
+
+def container_ids(descriptor: Descriptor, service: str) -> list[str]:
+    """The ids of *service*'s containers in this project, in compose's order."""
+    output = _compose_capture(descriptor, ["ps", "-q", service]) or ""
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def _app_list(image: str) -> list[str] | None:
+    """The apps baked into *image*, sorted, or None if they could not be read."""
+    output = _capture(["docker", "run", "--rm", "--entrypoint", "ls", image, APPS_DIRECTORY])
+    if output is None:
+        return None
+    return sorted(line.strip() for line in output.splitlines() if line.strip())
+
+
+def _await_container(
+    descriptor: Descriptor,
+    container_id: str,
+    url: str | None,
+    service: str,
+    *,
+    report: Callable[[str], None] = lambda message: None,
+) -> None:
+    """Wait for one new container to run, pass its own healthcheck, and answer *url*.
+
+    Asked of the container itself, not of the service: during a swap the service name
+    resolves to the old container as well, and an answer from the old one proves nothing.
+    """
+    deadline = time.monotonic() + descriptor.health.timeout_seconds
+    while time.monotonic() < deadline:
+        status = _capture(
+            [
+                "docker",
+                "inspect",
+                container_id,
+                "--format",
+                "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{end}}",
+            ]
+        )
+        words = (status or "").split()
+        ready = bool(words) and words[0] == "true" and words[1:] in ([], ["healthy"])
+        if ready and url is not None:
+            probe = ["docker", "exec", container_id, "curl", "-fsS", "-o", "/dev/null", url]
+            result = _try(probe, PROBE_TIMEOUT_SECONDS)
+            ready = result is not None and result.returncode == 0
+        if ready:
+            report(f"  the new {service} is ready")
+            return
+        time.sleep(descriptor.health.interval_seconds)
+
+    raise ReconcileError(
+        f"The new {service} did not become ready within {descriptor.health.timeout_seconds}s."
+    )
 
 
 def await_health(
@@ -502,8 +773,15 @@ def _compose_environment(descriptor: Descriptor) -> dict[str, str]:
     }
 
 
-def _would_do(state: State) -> str:
+def _would_do(state: State, *, hot_swap: bool = False) -> str:
     """Describe the pass a ``--dry-run`` declined to perform (`BR-CLI-011`)."""
+    if hot_swap:
+        return (
+            f"Would replace {state.running_digest} with {state.desired_digest}: pull, migrate "
+            f"from the new image while the running stack serves, start the new web containers "
+            f"beside the old ones, retire the old ones, and verify health. A changed app list "
+            f"would recreate the stack in place instead."
+        )
     if state.is_first_deploy:
         return (
             f"Would pull {state.desired_digest}, start the stack, migrate, and verify health "

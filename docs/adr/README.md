@@ -95,6 +95,7 @@ unarchived.
 | [ADR-078](078-gc-stops-the-registry-rather-than-serving-read-only.md) | `authoritative` | `gc` stops the registry and collects in a throwaway container instead of serving read-only; the read-only maintenance variable could not be set without panicking distribution, and the "pulls continue throughout" promise is withdrawn |
 | [ADR-079](079-the-client-is-stamped-on-the-image-the-environment-is-not.md) | `authoritative` | `BR-BUILD-011` gains a plaintext client label and an opaque `(client, image_name, environment)` manifest id that retention groups by; no environment name reaches the image, because a label is immutable and an intent is not |
 | [ADR-080](080-operator-directed-cp-is-not-cairn-moving-data.md) | `authoritative` | `cairn-adopt cp` is allowed in both directions; `BR-DATA-003`/`BR-DATA-006` amended so an operator-directed transfer, where the operator names both ends and cairn chooses neither, is the operator acting rather than cairn moving data |
+| [ADR-081](081-hot-swap-migrates-first-then-replaces-the-web-tier-side-by-side.md) | `exploratory` | Opt-in `[deploy] strategy = "hot-swap"`: migrate from the new image in a one-off container, start the new web containers beside the old ones, then retire the old ones (`BR-DEPLOY-025`); awaiting Brian |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../decisions/](../decisions/)
 instead, as lightweight decisions.
