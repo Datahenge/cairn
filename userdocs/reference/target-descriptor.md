@@ -79,6 +79,31 @@ hand you something `reconcile` would go on to reject.
 | `interval_seconds` | no | Seconds between health probes. Defaults to 5; must not exceed `timeout_seconds`. |
 | `url` | no | A URL `reconcile` fetches to confirm the site actually answers. Absent means container-health checks only — deliberately left unset by `examine`, since guessing a health endpoint wrong is worse than not checking one. |
 
+### `[deploy]`
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `strategy` | no | How `reconcile` replaces a running stack: `"recreate"` (default) or `"hot-swap"`. |
+
+With `recreate`, `reconcile` runs `docker compose up -d`, then `bench migrate` in the new
+`backend`. The site is down while the new containers start.
+
+With `hot-swap`, `reconcile` keeps the old stack serving while it runs the configurator and
+`bench migrate` in one-off containers of the new image. It then starts a new `backend`,
+`websocket` and `frontend` beside the old ones, waits for each to answer, and stops the old
+ones. Workers and the scheduler are recreated in place last.
+
+Before you choose `hot-swap`, check these four points:
+
+- The `backend`, `websocket` and `frontend` services must not publish a host port or set
+  `container_name`. `reconcile` refuses the pass, and changes nothing, if one does.
+- Your proxy in front of `frontend` must look the name up per connection. Caddy and Traefik do.
+- A release that adds or removes an app is converged with `recreate`, and `reconcile` says so.
+- For a few seconds, old and new code both serve. When a release changes JS or CSS bundles, a
+  page loaded in that window can fail to load its bundles until it is refreshed.
+
+A first deploy, or a stack that is not running, always uses `recreate`.
+
 ### `[secrets]`
 
 | Key | Required | Meaning |
@@ -87,3 +112,6 @@ hand you something `reconcile` would go on to reject.
 
 Any key outside this set fails to parse, naming the bad key, rather than being silently
 ignored.
+
+*`[deploy] strategy = "hot-swap"` is unit-tested only. It has not been run against a live
+target.*

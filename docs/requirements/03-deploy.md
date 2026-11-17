@@ -6,12 +6,12 @@ purpose: BR-DEPLOY requirements — deploying images to environments and keeping
 
 # BR-DEPLOY — Deploy Lifecycle Requirements
 
-_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-08-08_
+_Status: **approved** 2026-07-24 (living — may be revised via CHANGELOG) · Last updated: 2026-11-17_
 
 Requirements for deploying images to environments and keeping targets converged.
 Conventions: see `/CLAUDE.md`. Decisions cited: `ADR-005`, `ADR-006`, `ADR-010`, `ADR-012`,
 `ADR-014`, `ADR-016`, `ADR-017`, `ADR-022`, `ADR-023`, `ADR-024`, `ADR-025`, `ADR-026`,
-`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`, `ADR-068`, `ADR-072`.
+`ADR-042`, `ADR-043`, `ADR-046`, `ADR-052`, `ADR-061`, `ADR-068`, `ADR-072`, `ADR-081`.
 
 ---
 
@@ -28,6 +28,7 @@ in the registry (`:dev`/`:test`/`:staging`/`:production`). The target polls that
 
 **`BR-DEPLOY-003`** — On a detected change, `cairn-adopt reconcile` MUST: pull the image → set
 `CUSTOM_IMAGE`/`CUSTOM_TAG` → `docker compose up -d` → run `bench migrate` → verify health.
+This is the default `recreate` strategy; `BR-DEPLOY-025` defines the opt-in alternative.
 cairn performs no volume or SQL writes of its own (`BR-DATA-005`/`006`/`008`).
 *(ADR-014, ADR-023)*
 
@@ -196,8 +197,18 @@ against Production MUST be **doubly** explicit. Non-prod does not require this g
 ## Sequencing, health & failure
 
 **`BR-DEPLOY-016`** — `cairn-adopt reconcile` MUST be **single-flight** (locked). The stack is
-recreated **in place** (`compose up`). `bench migrate` runs after **every** image enable,
-including rollback. *(ADR-014)*
+recreated **in place** (`compose up`) unless the descriptor opts into hot swap
+(`BR-DEPLOY-025`). `bench migrate` runs after **every** image enable, including rollback.
+*(ADR-014)*
+
+**`BR-DEPLOY-025`** *(opt-in hot swap; proposed 2026-11-17, awaiting Brian, `ADR-081`)* — With
+`[deploy] strategy = "hot-swap"` and a stack already up, `reconcile` MUST: pull; refuse, changing
+nothing, if a web service publishes a host port or sets `container_name`; take the recreate path
+if the new image's app list differs; run the configurator and `bench migrate` in one-off
+containers of the new image; start one new `backend`, `websocket`, `frontend` beside the old
+ones, each answering before the next; stop the old ones; recreate the other image services;
+verify health. A candidate that never answers is removed and the pass halts (`BR-DEPLOY-018`).
+*(ADR-014, ADR-025, ADR-081)*
 
 **`BR-DEPLOY-017`** — cairn MUST verify the stack reaches a **healthy** state (frappe_docker
 health + the site responds) within a configurable **timeout** before recording success.

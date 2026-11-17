@@ -52,7 +52,15 @@ TOP_LEVEL_KEYS = {
     "compose",
     "secrets",
     "health",
+    "deploy",
 }
+
+#: How `reconcile` replaces a running stack (`BR-DEPLOY-016`, `BR-DEPLOY-025`, `ADR-081`).
+#: ``recreate`` is the original in-place `compose up`; ``hot-swap`` starts the new web
+#: containers beside the old ones and retires the old ones once the new ones answer.
+STRATEGY_RECREATE = "recreate"
+STRATEGY_HOT_SWAP = "hot-swap"
+DEPLOY_STRATEGIES = (STRATEGY_RECREATE, STRATEGY_HOT_SWAP)
 
 
 @dataclass(frozen=True)
@@ -86,6 +94,23 @@ class Health:
 
 
 @dataclass(frozen=True)
+class Deploy:
+    """How a changed image replaces the running stack (`BR-DEPLOY-025`, `ADR-081`).
+
+    The default stays ``recreate``, so a descriptor written before this table existed
+    converges exactly as it always did. ``hot-swap`` is opt-in because it asks more of the
+    compose file: the web services must be scalable, which a published host port or a fixed
+    ``container_name`` prevents.
+    """
+
+    strategy: str = STRATEGY_RECREATE
+
+    @property
+    def hot_swap(self) -> bool:
+        return self.strategy == STRATEGY_HOT_SWAP
+
+
+@dataclass(frozen=True)
 class Descriptor:
     """A validated environment descriptor (`BR-DEPLOY-010`)."""
 
@@ -100,6 +125,7 @@ class Descriptor:
     registry_host: str
     compose: Compose = field(default_factory=Compose)
     health: Health = field(default_factory=Health)
+    deploy: Deploy = field(default_factory=Deploy)
     secret_mechanism: str = "none"
     path: Path | None = None
 
@@ -148,6 +174,7 @@ def load(path: Path | None = None) -> Descriptor:
         registry_host=_required(target, data, "registry_host"),
         compose=_compose(target, data.get("compose", {})),
         health=_health(target, data.get("health", {})),
+        deploy=_deploy(target, data.get("deploy", {})),
         secret_mechanism=_secret_mechanism(target, data.get("secrets", {})),
         path=target,
     )
@@ -209,6 +236,20 @@ def _health(path: Path, section: object) -> Health:
         interval_seconds=interval,
         url=_optional_string(path, "[health]", section, "url"),
     )
+
+
+def _deploy(path: Path, section: object) -> Deploy:
+    if not isinstance(section, dict):
+        raise DescriptorError(f"{path}: [deploy] must be a table.")
+    _reject_unknown(path, "[deploy]", set(section), {"strategy"})
+
+    strategy = section.get("strategy", STRATEGY_RECREATE)
+    if strategy not in DEPLOY_STRATEGIES:
+        raise DescriptorError(
+            f"{path}: [deploy] strategy '{strategy}' is not one cairn knows; "
+            f"expected one of {', '.join(DEPLOY_STRATEGIES)}."
+        )
+    return Deploy(strategy=str(strategy))
 
 
 def _secret_mechanism(path: Path, section: object) -> str:
