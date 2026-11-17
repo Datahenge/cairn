@@ -574,9 +574,13 @@ class Stack:
     def __init__(self, *, services=None, new_apps="frappe\nerpnext\n", ready=True):
         self.run: list[list[str]] = []
         self.services = SERVICES if services is None else services
-        self.containers = {name: [f"old-{name}"] for name in ("backend", "websocket", "frontend")}
+        self.containers = {
+            name: [f"old-{name}"] for name in ("backend", "websocket", "frontend", "queue-short")
+        }
         self.new_apps = new_apps
         self.ready = ready
+        #: The schema hash each image answers with; None means it could not be read.
+        self.schema = {"old-image": None}
 
     def try_(self, command, timeout, *, env_overrides=None):
         self.run.append(command)
@@ -601,18 +605,22 @@ class Stack:
             return "\n".join(self.containers.get(command[-1], []))
         if "--entrypoint ls" in text:
             return "erpnext\nfrappe\n" if "old-image" in text else self.new_apps
+        if "--entrypoint sh" in text:
+            image = command[command.index("sh") + 1]
+            return self.schema.get(image, "f" * 64)
         if "docker inspect" in text:
             return "true\n"
         return None
 
 
 @pytest.fixture
-def stack(monkeypatch, converging):
+def stack(monkeypatch, converging, tmp_path):
     fake = Stack()
     monkeypatch.setattr(reconcile, "_try", fake.try_)
     monkeypatch.setattr(reconcile, "_capture", fake.capture)
     monkeypatch.setattr(reconcile.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(reconcile, "running_image_id", lambda desc: "old-image")
+    monkeypatch.setattr(reconcile, "DRAINED_PATH", tmp_path / "drained-workers")
     return fake
 
 
@@ -646,7 +654,10 @@ def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
         _index(steps, "docker stop -t 30 old-backend"),
         _index(steps, "docker exec new-frontend nginx -s reload"),
         _index(steps, "docker stop -t 30 old-websocket"),
-        _index(steps, "up -d --no-deps queue-short scheduler"),
+        _index(steps, "--scale queue-short=2 queue-short"),
+        _index(steps, "docker kill --signal SIGTERM old-queue-short"),
+        _index(steps, "up -d --no-deps scheduler"),
+        _index(steps, "frappe.publish_realtime"),
     ]
     assert order == sorted(order)
     assert not any("exec -T backend bench" in step and "migrate" in step for step in steps)
@@ -787,3 +798,60 @@ def test_recreate_drops_the_asset_map_after_migrating(converging, commands):
 
     steps = [" ".join(command) for command in commands.run]
     assert _index(steps, "migrate") < _index(steps, "frappe.client_cache.delete_value")
+
+
+def test_hot_swap_skips_migrate_when_the_schema_files_match(stack):
+    """A code-only change needs no migrate. The cache migrate would clear is cleared instead."""
+    stack.schema["old-image"] = "f" * 64
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("migrate" in step for step in steps)
+    assert _index(steps, "bench --site erp.example.com clear-cache") > _index(
+        steps, "docker stop -t 30 old-backend"
+    )
+
+
+def test_hot_swap_migrates_when_the_schema_files_differ(stack):
+    stack.schema["old-image"] = "e" * 64
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert any(
+        "run --rm --no-deps -T backend bench --site erp.example.com migrate" in s for s in steps
+    )
+    assert not any("clear-cache" in step for step in steps)
+
+
+def test_hot_swap_carries_old_assets_before_the_old_frontend_retires(stack):
+    """Tabs opened before the swap ask for bundles only the old image has."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    carry = _index(steps, "docker exec old-frontend sh -c")
+    assert "docker exec -i new-frontend" in steps[carry]
+    assert "--skip-old-files" in steps[carry]
+    assert carry < _index(steps, "docker stop -t 30 old-frontend")
+
+
+def test_old_workers_drain_instead_of_being_stopped(stack):
+    """docker stop would kill a long job when the grace ran out; SIGTERM lets it finish."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("old-queue-short" in step and step.startswith("docker stop") for step in steps)
+    assert _index(steps, "--scale queue-short=2 queue-short") < _index(
+        steps, "docker kill --signal SIGTERM old-queue-short"
+    )
+
+
+def test_a_draining_worker_is_never_signalled_twice(stack):
+    """A second SIGTERM is RQ's cold shutdown, which kills the job being finished."""
+    reconcile.DRAINED_PATH.write_text("old-queue-short")
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("SIGTERM old-queue-short" in step for step in steps)

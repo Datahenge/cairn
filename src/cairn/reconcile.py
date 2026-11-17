@@ -51,6 +51,10 @@ from .tagging import ADOPT_OWNED_TAG
 #: Where the single-flight lock lives. ``/run`` is tmpfs, so the lock cannot outlive a boot.
 LOCK_PATH = Path("/run/cairn/reconcile.lock")
 
+#: Worker containers already sent SIGTERM. A second SIGTERM is RQ's cold shutdown, which kills
+#: the job the worker is finishing, so a container listed here is never signalled again.
+DRAINED_PATH = Path("/run/cairn/drained-workers")
+
 #: The compose service `bench` commands run in, per frappe_docker's own layout.
 BENCH_SERVICE = "backend"
 
@@ -84,6 +88,27 @@ APPS_DIRECTORY = "/home/frappe/frappe-bench/apps"
 #: Seconds an old container gets to finish in-flight work before Docker kills it. Gunicorn's
 #: own graceful timeout is 30 seconds (`ADR-081`).
 STOP_GRACE_SECONDS = 30
+
+#: The one service of the remaining image services that must never run twice: two schedulers
+#: would enqueue every scheduled job twice.
+SCHEDULER_SERVICE = "scheduler"
+
+#: Where frappe_docker's image keeps the bench, and the built files the frontend serves:
+#: each app's hashed bundles, and the bench-level asset folders.
+BENCH_DIRECTORY = "/home/frappe/frappe-bench"
+ASSET_GLOBS = "apps/*/*/public/dist assets/js assets/css"
+
+#: Carried asset files older than this are dropped, unless the new image ships them itself.
+ASSET_RETENTION_MINUTES = 24 * 60
+
+#: What `bench migrate` reads: schema JSON and fixtures, patch lists, hooks, and the YAML and
+#: CSV some apps sync on migrate. Two images with the same hash of these files need no migrate.
+SCHEMA_FINGERPRINT_SCRIPT = (
+    f"cd {APPS_DIRECTORY} && find . \\( -name node_modules -o -name public -o -name .git \\) "
+    "-prune -o -type f \\( -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.csv' "
+    "-o -name patches.txt -o -name hooks.py \\) -print | LC_ALL=C sort | xargs -d '\\n' sha256sum "
+    "| sha256sum | cut -d' ' -f1"
+)
 
 
 @dataclass(frozen=True)
@@ -385,6 +410,7 @@ def hot_swap(
     migration is not undone.
     """
     site = descriptor.site
+    remove_drained_workers(descriptor, plan)
 
     report("Running the configurator from the new image")
     compose_run(
@@ -394,13 +420,19 @@ def hot_swap(
         "running the configurator",
     )
 
-    report(f"Migrating {site} from the new image while the running stack keeps serving")
-    compose_run(
-        descriptor,
-        ["run", "--rm", "--no-deps", "-T", BENCH_SERVICE, "bench", "--site", site, "migrate"],
-        MIGRATE_TIMEOUT_SECONDS,
-        "running bench migrate",
-    )
+    running = running_image_id(descriptor)
+    old_schema = schema_fingerprint(running) if running else None
+    migrate = old_schema is None or old_schema != schema_fingerprint(descriptor.reference)
+    if migrate:
+        report(f"Migrating {site} from the new image while the running stack keeps serving")
+        compose_run(
+            descriptor,
+            ["run", "--rm", "--no-deps", "-T", BENCH_SERVICE, "bench", "--site", site, "migrate"],
+            MIGRATE_TIMEOUT_SECONDS,
+            "running bench migrate",
+        )
+    else:
+        report(f"The schema files match the running image's, so {site} needs no migrate")
 
     old: dict[str, list[str]] = {}
     started: list[str] = []
@@ -439,6 +471,13 @@ def hot_swap(
                 f"applied and is not undone."
             ) from exc
 
+    if "frontend" in plan.web:
+        for new_frontend in [
+            c for c in container_ids(descriptor, "frontend") if c not in old["frontend"]
+        ]:
+            for old_frontend in old["frontend"]:
+                carry_assets(old_frontend, new_frontend, report=report)
+
     for service in RETIRE_ORDER:
         for cid in old.get(service, []):
             report(f"Retiring the old {service} ({cid[:12]})")
@@ -467,14 +506,141 @@ def hot_swap(
         if service == "backend":
             drop_asset_map(descriptor, report=report)
 
-    if plan.others:
-        report(f"Recreating {', '.join(plan.others)}")
+    workers = [name for name in plan.others if name != SCHEDULER_SERVICE]
+    drained = _read_drained()
+    for service in workers:
+        draining = container_ids(descriptor, service)
+        report(f"Starting a new {service} beside the running one")
         compose_run(
             descriptor,
-            ["up", "-d", "--no-deps", *plan.others],
+            [
+                "up",
+                "-d",
+                "--no-deps",
+                "--no-recreate",
+                "--scale",
+                f"{service}={len(draining) + 1}",
+                service,
+            ],
             COMPOSE_TIMEOUT_SECONDS,
-            "recreating the remaining services",
+            f"starting a new {service}",
         )
+        # SIGTERM is RQ's warm shutdown: the worker takes no new job, finishes the one it has,
+        # and exits. `docker stop` would kill a long job when its grace ran out. The exited
+        # container is removed at the start of the next hot swap.
+        for cid in draining:
+            if cid in drained:
+                continue
+            report(f"Draining the old {service} ({cid[:12]})")
+            _try(["docker", "kill", "--signal", "SIGTERM", cid], PROBE_TIMEOUT_SECONDS)
+            drained.add(cid)
+    _write_drained(drained)
+
+    if SCHEDULER_SERVICE in plan.others:
+        report(f"Recreating {SCHEDULER_SERVICE}")
+        compose_run(
+            descriptor,
+            ["up", "-d", "--no-deps", SCHEDULER_SERVICE],
+            COMPOSE_TIMEOUT_SECONDS,
+            f"recreating {SCHEDULER_SERVICE}",
+        )
+
+    if not migrate:
+        # Migrate clears Frappe's caches. Without it, values cached by the old code stay.
+        bench(descriptor, ["clear-cache"], "clearing the cache", report=report)
+    # Frappe sends this at the end of migrate, before the new code serves. Sent again now so
+    # open tabs check their version against the code that actually answers them.
+    bench(
+        descriptor,
+        ["execute", "frappe.publish_realtime", "--kwargs", '{"event": "version-update"}'],
+        "telling open tabs a new version is live",
+        report=report,
+        required=False,
+    )
+
+
+def schema_fingerprint(image: str) -> str | None:
+    """Hash the files `bench migrate` reads in *image*, or None if they could not be read."""
+    output = _capture(
+        ["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", SCHEMA_FINGERPRINT_SCRIPT]
+    )
+    value = (output or "").strip()
+    return value if len(value) == 64 else None
+
+
+def carry_assets(
+    old: str, new: str, *, report: Callable[[str], None] = lambda message: None
+) -> None:
+    """Copy the old frontend's built files into the new one, without replacing any.
+
+    Bundle names carry a content hash. A tab opened before the swap still asks for its own
+    bundles, which only the old image has, so without this copy they answer 404 once the old
+    frontend retires. Files carried from earlier deploys come along too, and those older than
+    ``ASSET_RETENTION_MINUTES`` are dropped unless the new image ships them. Best effort: a
+    failure costs old tabs a refresh, not the deploy.
+    """
+    report(f"Carrying the old frontend's asset files into the new one ({new[:12]})")
+    own = "/tmp/cairn-own-assets"
+    keep = (
+        f"cd {BENCH_DIRECTORY} && find {ASSET_GLOBS} -type f > {own} 2>/dev/null; "
+        f"tar -xf - --skip-old-files && "
+        f"find {ASSET_GLOBS} -type f -mmin +{ASSET_RETENTION_MINUTES} 2>/dev/null "
+        f"| grep -vxF -f {own} | xargs -r -d '\\n' rm -f"
+    )
+    send = f"cd {BENCH_DIRECTORY} && tar -cf - {ASSET_GLOBS} 2>/dev/null"
+    result = _try(
+        ["sh", "-c", f"docker exec {old} sh -c '{send}' | docker exec -i {new} sh -c \"{keep}\""],
+        COMPOSE_TIMEOUT_SECONDS,
+    )
+    if result is None or result.returncode != 0:
+        report(
+            "  could not carry the asset files; tabs opened before this deploy may need a refresh"
+        )
+
+
+def _read_drained() -> set[str]:
+    try:
+        return set(DRAINED_PATH.read_text().split())
+    except OSError:
+        return set()
+
+
+def _write_drained(ids: set[str]) -> None:
+    try:
+        DRAINED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DRAINED_PATH.write_text("\n".join(sorted(ids)))
+    except OSError:
+        pass
+
+
+def remove_drained_workers(descriptor: Descriptor, plan: SwapPlan) -> None:
+    """Remove worker containers that a previous swap drained and that have since exited."""
+    for service in plan.others:
+        output = (
+            _compose_capture(descriptor, ["ps", "-a", "-q", "--status", "exited", service]) or ""
+        )
+        for cid in (line.strip() for line in output.splitlines()):
+            if cid:
+                _try(["docker", "rm", cid], PROBE_TIMEOUT_SECONDS)
+
+
+def bench(
+    descriptor: Descriptor,
+    arguments: list[str],
+    what: str,
+    *,
+    report: Callable[[str], None] = lambda message: None,
+    required: bool = True,
+) -> None:
+    """Run a bench command for the site in the running backend."""
+    command = ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, *arguments]
+    if required:
+        report(what[0].upper() + what[1:])
+        compose_run(descriptor, command, PROBE_TIMEOUT_SECONDS, what)
+        return
+    result = _compose_try(descriptor, command, PROBE_TIMEOUT_SECONDS)
+    if result is None or result.returncode != 0:
+        report(f"  could not finish {what}")
 
 
 def container_ids(descriptor: Descriptor, service: str) -> list[str]:
