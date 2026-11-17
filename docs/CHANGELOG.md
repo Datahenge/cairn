@@ -11,6 +11,8 @@ code changes live in git history.
 
 ## 2026-11-17 (opt-in hot swap proposed, `ADR-081`, `BR-DEPLOY-025`)
 
+**Health probe names the site (`BR-DEPLOY-017`).** Frappe picks the site from `X-Frappe-Site-Name` or Host and has no default-site fallback, so a probe of `localhost` answered 404 on Life Scientific's healthy production target. Both probes now send `X-Frappe-Site-Name: <site>`.
+
 Life Scientific runs user acceptance testing on its staging target and asked for a converge
 that does not take the site down. Contributed as a pull request; nothing here is approved yet.
 

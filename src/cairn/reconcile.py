@@ -507,7 +507,7 @@ def _await_container(
         words = (status or "").split()
         ready = bool(words) and words[0] == "true" and words[1:] in ([], ["healthy"])
         if ready and url is not None:
-            probe = ["docker", "exec", container_id, "curl", "-fsS", "-o", "/dev/null", url]
+            probe = ["docker", "exec", container_id, *_health_probe(descriptor, url)]
             result = _try(probe, PROBE_TIMEOUT_SECONDS)
             ready = result is not None and result.returncode == 0
         if ready:
@@ -663,6 +663,17 @@ def stack_is_up(descriptor: Descriptor) -> bool:
     return False
 
 
+def _health_probe(descriptor: Descriptor, url: str) -> list[str]:
+    """The curl command that asks *url* for this descriptor's site (`BR-DEPLOY-017`).
+
+    Frappe picks the site from the ``X-Frappe-Site-Name`` header, else from the Host header,
+    and has no default-site fallback. A probe from inside the stack reaches gunicorn as
+    ``localhost``, which names no site, so without the header every probe answers 404 and a
+    healthy stack can never pass. Found on Life Scientific's production target, 2026-11-17.
+    """
+    return ["curl", "-fsS", "-o", "/dev/null", "-H", f"X-Frappe-Site-Name: {descriptor.site}", url]
+
+
 def _site_answers(descriptor: Descriptor) -> tuple[bool, str]:
     """Fetch the health URL from inside the stack, returning (ok, why not).
 
@@ -670,7 +681,7 @@ def _site_answers(descriptor: Descriptor) -> tuple[bool, str]:
     would test the proxy and DNS as well, turning an unrelated outage into a failed deploy.
     """
     url = descriptor.health.url or ""
-    probe = ["curl", "-fsS", "-o", "/dev/null", url]
+    probe = _health_probe(descriptor, url)
     result = _compose_try(descriptor, ["exec", "-T", BENCH_SERVICE, *probe], PROBE_TIMEOUT_SECONDS)
     if result is None:
         return False, f"{url} could not be reached from inside the stack"

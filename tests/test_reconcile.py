@@ -663,6 +663,8 @@ def test_hot_swap_checks_the_new_backend_itself(stack):
         "-fsS",
         "-o",
         "/dev/null",
+        "-H",
+        f"X-Frappe-Site-Name: {_hot_swap_descriptor().site}",
         "http://localhost:8000/api/method/ping",
     ] in stack.run
 
@@ -740,3 +742,16 @@ def test_a_dry_run_describes_the_hot_swap(monkeypatch, converging):
     outcome = reconcile.run(_hot_swap_descriptor(), dry_run=True)
 
     assert "beside the old ones" in outcome.detail
+
+
+def test_the_health_probe_names_the_site(monkeypatch, commands):
+    """BR-DEPLOY-017: Frappe has no default site, so a probe that does not name the site
+    answers 404 on a healthy stack."""
+    monkeypatch.setattr(
+        reconcile, "_compose_command", lambda desc, args: ["docker", "compose", *args]
+    )
+    desc = _descriptor(health=descriptor.Health(url="http://localhost:8000/api/method/ping"))
+
+    reconcile._site_answers(desc)
+
+    assert any("X-Frappe-Site-Name: erp.example.com" in command for command in commands.run)
