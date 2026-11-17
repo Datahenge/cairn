@@ -756,3 +756,13 @@ def test_the_health_probe_names_the_site(monkeypatch, commands):
     reconcile._site_answers(desc)
 
     assert any("X-Frappe-Site-Name: erp.example.com" in command for command in commands.run)
+
+
+def test_hot_swap_quits_the_old_nginx_gracefully_before_stopping_it(stack):
+    """BR-DEPLOY-025: `docker stop` alone kills nginx mid-request when bash is PID 1."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert _index(steps, "docker exec old-frontend nginx -s quit") < _index(
+        steps, "docker stop -t 30 old-frontend"
+    )

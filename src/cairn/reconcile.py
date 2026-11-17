@@ -441,6 +441,11 @@ def hot_swap(
     for service in RETIRE_ORDER:
         for cid in old.get(service, []):
             report(f"Retiring the old {service} ({cid[:12]})")
+            if service == "frontend":
+                # Graceful quit first. In images whose entrypoint starts nginx without `exec`,
+                # bash is PID 1 and drops Docker's stop signal, so `docker stop` waits out the
+                # grace and kills nginx mid-request. Found live 2026-11-17 (`BR-DEPLOY-025`).
+                _try(["docker", "exec", cid, "nginx", "-s", "quit"], PROBE_TIMEOUT_SECONDS)
             _run(
                 ["docker", "stop", "-t", str(STOP_GRACE_SECONDS), cid],
                 STOP_GRACE_SECONDS + PROBE_TIMEOUT_SECONDS,
