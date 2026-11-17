@@ -374,9 +374,9 @@ def hot_swap(
        (`ADR-014`);
     2. each web service gets one new container beside its old ones, and the pass waits for
        it to answer before starting the next;
-    3. the old containers are stopped gracefully, the new frontend's nginx reloads so it
-       stops addressing the old backend, and the remaining image services (workers,
-       scheduler) are recreated in place.
+    3. the old containers are stopped gracefully; the new frontend's nginx reloads as soon
+       as the old backend is gone, so it stops addressing it; the remaining image services
+       (workers, scheduler) are recreated in place.
 
     A candidate that never becomes healthy is removed, with every candidate started before
     it, and the pass halts (`BR-DEPLOY-018`). The old containers never stopped, so the site
@@ -447,14 +447,17 @@ def hot_swap(
                 f"stopping the old {service}",
             )
             _run(["docker", "rm", cid], PROBE_TIMEOUT_SECONDS, f"removing the old {service}")
-
-    if "frontend" in plan.web:
-        for cid in container_ids(descriptor, "frontend"):
-            _run(
-                ["docker", "exec", cid, "nginx", "-s", "reload"],
-                PROBE_TIMEOUT_SECONDS,
-                "reloading the frontend",
-            )
+        # Straight after the old backend goes, not at the end: its address no longer exists,
+        # so the new nginx's connections to it hang until the connect timeout rather than
+        # failing over. Reloading after the websocket step left a 30 second window of hung
+        # requests on Life Scientific's production target, 2026-11-17 (`BR-DEPLOY-025`).
+        if service == "backend" and "frontend" in plan.web:
+            for cid in container_ids(descriptor, "frontend"):
+                _run(
+                    ["docker", "exec", cid, "nginx", "-s", "reload"],
+                    PROBE_TIMEOUT_SECONDS,
+                    "reloading the frontend",
+                )
 
     if plan.others:
         report(f"Recreating {', '.join(plan.others)}")

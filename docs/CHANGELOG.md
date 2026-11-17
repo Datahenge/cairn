@@ -13,6 +13,8 @@ code changes live in git history.
 
 **Health probe names the site (`BR-DEPLOY-017`).** Frappe picks the site from `X-Frappe-Site-Name` or Host and has no default-site fallback, so a probe of `localhost` answered 404 on Life Scientific's healthy production target. Both probes now send `X-Frappe-Site-Name: <site>`.
 
+**First live hot swap (prod target).** Site stayed up; nginx now reloads right after the old backend retires, closing a 30 second hang (`ADR-081`).
+
 Life Scientific runs user acceptance testing on its staging target and asked for a converge
 that does not take the site down. Contributed as a pull request; nothing here is approved yet.
 

@@ -630,7 +630,8 @@ def _index(steps, fragment):
 
 def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
     """BR-DEPLOY-025: migration runs before any new container takes traffic, the frontend
-    starts after the new backend exists, and the old frontend retires before the old backend."""
+    starts after the new backend exists, the old frontend retires before the old backend, and
+    nginx reloads as soon as the old backend is gone."""
     reconcile.run(_hot_swap_descriptor())
 
     steps = [" ".join(command) for command in stack.run]
@@ -643,8 +644,8 @@ def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
         _index(steps, "--scale frontend=2 frontend"),
         _index(steps, "docker stop -t 30 old-frontend"),
         _index(steps, "docker stop -t 30 old-backend"),
-        _index(steps, "docker stop -t 30 old-websocket"),
         _index(steps, "docker exec new-frontend nginx -s reload"),
+        _index(steps, "docker stop -t 30 old-websocket"),
         _index(steps, "up -d --no-deps queue-short scheduler"),
     ]
     assert order == sorted(order)

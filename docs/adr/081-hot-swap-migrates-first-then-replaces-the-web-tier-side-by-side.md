@@ -46,8 +46,11 @@ behavior unchanged) and `hot-swap`. Under `hot-swap`, a pass with a running stac
    service name resolves to both containers during the swap. `frontend` is last because its
    nginx resolves `backend` once, at start.
 5. **Retire the old containers**: `frontend` first, so no new request reaches the old
-   `backend`, then `backend` with a 30 second stop grace for gunicorn, then `websocket`. Reload
-   the new frontend's nginx so it stops addressing the old backend.
+   `backend`, then `backend` with a 30 second stop grace for gunicorn. Reload the new frontend's
+   nginx at once, so it stops addressing the old backend, then retire `websocket`. On Life
+   Scientific's production target a reload after the `websocket` step left about 30 seconds of
+   hung requests: the removed backend's address answers nothing, so nginx waits for its connect
+   timeout instead of failing over.
 6. **Recreate the other services that run the image** (workers, scheduler) in place. Only one
    scheduler runs at a time.
 7. **Verify health**, as today.
