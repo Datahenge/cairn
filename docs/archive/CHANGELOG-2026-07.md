@@ -124,7 +124,7 @@ list-apps`'s formatting — an unindented line meant a site, an indented one an 
 this host's Frappe 16.26.1, a single site produces **no header line at all**, just a flat,
 unindented two-line app list (`frappe`, `erpnext`). Both lines read as "sites," zero apps were
 found, and cairn refused to adopt a host that in fact serves exactly one site
-(`erp.lsnav.app`, confirmed via `ls sites/`).
+(`erp.acmecorp.com`, confirmed via `ls sites/`).
 
 - **Site discovery no longer depends on `list-apps` at all.** `_survey_sites_and_apps` now reads
   `sites/*/site_config.json` directly — the same test bench itself uses to recognize a site — and

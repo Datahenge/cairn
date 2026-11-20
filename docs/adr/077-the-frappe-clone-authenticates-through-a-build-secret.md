@@ -6,7 +6,7 @@ purpose: ADR-077 — the builder stage's frappe clone authenticates through a bu
 
 # ADR-077 — The frappe clone authenticates through a build secret
 
-**Decided:** 2026-09-02 (Brian, after a build on the Life Scientific test VPS failed on an
+**Decided:** 2026-09-02 (Brian, after a build on a client's test VPS failed on an
 anonymous `github.com` refusal).
 
 **Amends:** `BR-BUILD-016`. **Adds:** `BR-BUILD-019`. **Relates to:** `ADR-059`, `ADR-065`, `ADR-067`, `BR-BUILD-004`,
@@ -14,7 +14,7 @@ anonymous `github.com` refusal).
 
 ## The incident
 
-A `cairn-build build` on the Life Scientific test VPS (cairn `0.4.12`, manifest `erpnext-v16`)
+A `cairn-build build` on a client's test VPS (cairn `0.4.12`, manifest `erpnext-v16`)
 failed in the builder stage, at `bench init`, with git's `could not read Username for
 'https://github.com'` followed by `expected flush after ref listing`. No cairn change, no
 manifest change, and no change to the frappe ref preceded it.

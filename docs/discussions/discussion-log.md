@@ -297,7 +297,7 @@ cleanup command).
 ## 2026-07-24 — TEST 2→5 apps scenario: install-app (opt-in) + volume-write accuracy
 
 Brian posed a concrete case: build a 5-app image locally (frappe, erpnext, btu,
-life_scientific, life_scientific_migration) and deploy it to a TEST VPS currently running
+client_app, client_app_migration) and deploy it to a TEST VPS currently running
 a 2-app image. Two findings from the vendored startup scripts:
 - **Volume writes are frappe_docker's, not cairn's.** The `configurator` service runs
   `ls -1 apps > sites/apps.txt` + `bench set-config -g …`, and `main-entrypoint.sh`

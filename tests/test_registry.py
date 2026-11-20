@@ -108,9 +108,9 @@ def test_split_host_finds_a_dotted_host():
 
 
 def test_split_host_finds_a_host_with_a_port():
-    assert registry.split_host("127.0.0.1:5000/lifescientific/erpnext-v16") == (
+    assert registry.split_host("127.0.0.1:5000/acmecorp/erpnext-v16") == (
         "127.0.0.1:5000",
-        "lifescientific/erpnext-v16",
+        "acmecorp/erpnext-v16",
     )
 
 

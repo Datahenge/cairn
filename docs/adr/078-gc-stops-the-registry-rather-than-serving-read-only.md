@@ -6,8 +6,8 @@ purpose: ADR-078 — gc stops the registry for the collect instead of serving re
 
 # ADR-078 — `gc` stops the registry rather than serving read-only
 
-**Decided:** 2026-09-28 (Brian, after the first real `cairn-registry gc` against the Life
-Scientific registry host crash-looped the registry).
+**Decided:** 2026-09-28 (Brian, after the first real `cairn-registry gc` against a client's
+registry host crash-looped the registry).
 
 **Amends:** `BR-REG-009`. **Relates to:** `ADR-048`, `BR-REG-004`, `BR-REG-006`, `BR-REG-010`,
 `BR-DEPLOY-006`.

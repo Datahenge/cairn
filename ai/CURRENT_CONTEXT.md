@@ -23,7 +23,7 @@ Standing shape a session should know before reading anything else:
 | Operating a target | the operator never runs `docker compose` directly — cairn provides the verbs (`ADR-073`, `ADR-075`) |
 | Data plane | off-limits; the sole DB touch is `bench migrate` (`ADR-022`) |
 
-**Live reference target:** Life Scientific's test VPS, running `0.4.12`. Its compose file is a
+**Live reference target:** a client's test VPS, running `0.4.12`. Its compose file is a
 `pwd.yml` descendant the client built before cairn existed, now manually relocated to
 `/etc/cairn/` — the first host in `ADR-074`'s shape, and the working reference for what
 `W-033`'s automated take-ownership path should produce.

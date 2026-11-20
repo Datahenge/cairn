@@ -96,6 +96,8 @@ unarchived.
 | [ADR-079](079-the-client-is-stamped-on-the-image-the-environment-is-not.md) | `authoritative` | `BR-BUILD-011` gains a plaintext client label and an opaque `(client, image_name, environment)` manifest id that retention groups by; no environment name reaches the image, because a label is immutable and an intent is not |
 | [ADR-080](080-operator-directed-cp-is-not-cairn-moving-data.md) | `authoritative` | `cairn-adopt cp` is allowed in both directions; `BR-DATA-003`/`BR-DATA-006` amended so an operator-directed transfer, where the operator names both ends and cairn chooses neither, is the operator acting rather than cairn moving data |
 | [ADR-081](081-hot-swap-migrates-first-then-replaces-the-web-tier-side-by-side.md) | `exploratory` | Opt-in `[deploy] strategy = "hot-swap"`: migrate from the new image in a one-off container, start the new web containers beside the old ones, then retire the old ones (`BR-DEPLOY-025`); awaiting Brian |
+| [ADR-082](082-the-frontend-states-a-cache-policy-for-assets.md) | `exploratory` | Proposed: the frontend sends `immutable` for hashed bundles and `no-cache` for every other `/assets` file, so plain-path app scripts are never stale after a deploy; awaiting Brian |
+| [ADR-083](083-how-traffic-reaches-the-frontend.md) | `exploratory` | Proposed: one setting (`none`, `bundled`, `external`) names how traffic reaches the frontend, choosing the proxy override, the `doctor` checks, and whether hot swap is allowed; `external` joins the operator's network and prints a proxy snippet without editing their proxy; awaiting Brian |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../decisions/](../decisions/)
 instead, as lightweight decisions.

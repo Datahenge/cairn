@@ -22,8 +22,8 @@ target.
   laptop reaching in), preserving the pull model (`ADR-005`/`ADR-006`). The exact delivery
   mechanism and any prod-specific confirmation are `DEPLOY` concerns.
 
-**Motivating case:** deploying a 5-app image (frappe, erpnext, btu, life_scientific,
-life_scientific_migration) to a TEST site that currently has only frappe + erpnext
+**Motivating case:** deploying a 5-app image (frappe, erpnext, btu, client_app,
+client_app_migration) to a TEST site that currently has only frappe + erpnext
 installed — the three new apps' *code* ships in the image and `apps.txt` updates, but they
 remain inert until `install-app` runs.
 

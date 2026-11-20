@@ -50,8 +50,8 @@ def test_interactive_verbs_carry_the_image_variables(build) -> None:
 
 def test_the_site_comes_from_the_descriptor_not_the_operator() -> None:
     """BR-CLI-030: these verbs take no arguments — that is the point of having them."""
-    command, _ = session.console_command(_descriptor(site="erp.lsnav.app"))
-    assert "erp.lsnav.app" in command
+    command, _ = session.console_command(_descriptor(site="erp.acmecorp.com"))
+    assert "erp.acmecorp.com" in command
 
 
 # --- mariadb declines a Postgres environment (BR-CLI-030) ---------------------

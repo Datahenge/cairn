@@ -6,6 +6,23 @@ This project follows **Scribe Coding** — Document-Driven AI Development:
 Documentation is a living contract that **precedes and governs** code. These are the
 ground rules for how the human and the AI collaborate here. They bind the AI.
 
+## Unfinished work: tell Brian at the start of every session
+
+**Before anything else in a new session, remind Brian that this work, begun 2026-11-20, is
+incomplete and has no code changes yet.** Remove this section only when Brian says it is done.
+
+- **`ADR-082`** (`needs_user`): the frontend's cache policy for `/assets`, from a stale
+  JavaScript incident. Findings: `docs/technical/04h-lessons-frappe-asset-caching.md`.
+- **`ADR-083`** (`needs_user`): how traffic reaches the frontend (`none`, `bundled`,
+  `external`), five open points.
+- **`ADR-081`** (hot swap): Brian answered open point 1 (no blue/green for now); points 2 and 3
+  remain.
+- **`W-045`**: review of a downstream fork's hot-swap follow-ons. The review found seven
+  changes, not the five the row lists, plus defects (asset retention measured from build time;
+  the schema fingerprint misses Python run by `after_migrate` hooks; nginx pinning by `sed`
+  should move into the template). Brian has not yet agreed the review; correct the row once he
+  does. `W-046` and `W-047` follow from `ADR-082`.
+
 ## Two Paths
 
 Decide which path the task is on before doing anything else.

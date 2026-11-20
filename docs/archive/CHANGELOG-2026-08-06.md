@@ -81,8 +81,8 @@ sessions to catch.
 
 ## 2026-08-06 (`setup-timer` output: quieter empty-stop summary, one non-contradictory error message)
 
-Brian's first live `cairn-build setup-timer` run on the Life Scientific test VPS (`W-013`)
-refused correctly — a private `erp-lifescientific` repo with no `github-token.env` populated
+Brian's first live `cairn-build setup-timer` run on a client's test VPS (`W-013`)
+refused correctly — a private `<client-app>` repo with no `github-token.env` populated
 yet — but the output had two rough edges he flagged as worth polishing while true, not a design
 mistake needing a redesign: a `--- summary ---`/`nothing to do` block printed under `Stopped:
 ...` even though the run had done nothing at all, and the error text gave two remedies that

@@ -9,13 +9,36 @@ code changes live in git history.
 
 ---
 
+## 2026-11-20 (stale app JavaScript after a deploy; `ADR-082` proposed)
+
+A client's users kept running an app's old form script for hours after a correct deploy. The
+cause is shared by every cairn target serving an app that lists plain `/assets/...` paths in
+`app_include_js`: those URLs never change, and the recipe's frontend sends no `Cache-Control`,
+so a CDN or browser picks its own lifetime (4 hours behind Cloudflare). Nothing here is accepted.
+
+- **Lessons:** `docs/technical/04h-lessons-frappe-asset-caching.md` (new), indexed in
+  `04-lessons-learned.md`.
+- **`ADR-082`** (new, `exploratory`, `needs_user`): the frontend sends `immutable` for hashed
+  bundles and `no-cache` for other `/assets` files. Queued in `docs/open/OPEN_DECISIONS.md`.
+- **`W-045`** (blocked on `ADR-081`): five hot-swap follow-ons seen in a downstream fork of
+  `reconcile.py`. **`W-046`** (deferred): incremental build that runs `bench build`.
+  **`W-047`** (blocked on `ADR-082`): verify CDN behaviour, then document it.
+- **`ADR-081`, first open point answered (Brian):** a few seconds of mixed versions during a hot
+  swap is acceptable; no paired blue/green for now. The ADR stays `exploratory`; two points remain.
+- **`ADR-083`** (new, `exploratory`, `needs_user`): how traffic reaches the frontend, `none`,
+  `bundled` or `external`, from Brian's three host cases. Queued in `docs/open/OPEN_DECISIONS.md`.
+- **Client names removed** from the working tree (docs, archive, two `reconcile.py` comments,
+  two test fixtures), replaced by generic wording. Git history is unchanged.
+
+---
+
 ## 2026-11-17 (opt-in hot swap proposed, `ADR-081`, `BR-DEPLOY-025`)
 
-**Health probe names the site (`BR-DEPLOY-017`).** Frappe picks the site from `X-Frappe-Site-Name` or Host and has no default-site fallback, so a probe of `localhost` answered 404 on Life Scientific's healthy production target. Both probes now send `X-Frappe-Site-Name: <site>`.
+**Health probe names the site (`BR-DEPLOY-017`).** Frappe picks the site from `X-Frappe-Site-Name` or Host and has no default-site fallback, so a probe of `localhost` answered 404 on a client's healthy production target. Both probes now send `X-Frappe-Site-Name: <site>`.
 
 **First live hot swap (prod target).** Site stayed up; nginx now reloads right after the old backend retires, closing a 30 second hang (`ADR-081`).
 
-Life Scientific runs user acceptance testing on its staging target and asked for a converge
+A client runs user acceptance testing on its staging target and asked for a converge
 that does not take the site down. Contributed as a pull request; nothing here is approved yet.
 
 - **`BR-DEPLOY-025`** (new, proposed). `[deploy] strategy = "hot-swap"` in the descriptor
@@ -212,116 +235,6 @@ that failing open on a parse error would resume deploys on a host somebody delib
 
 ---
 
-## 2026-09-29 (`W-013` narrowed; the stale `ADR-073` queue row reconciled)
-
-`docs/open/OPEN_WORK.md` (`W-013`) and `docs/open/OPEN_DECISIONS.md` (`ADR-073`) updated. No
-requirement, decision, or code changed — both are corrections to what the queues were reporting.
-
-Brian confirmed `setup` and `setup-timer` have been run against a real VPS, which closes
-`setup-timer`'s happy path — one of `W-013`'s two remaining verifications. `doctor`'s
-known-manifests listing is still unexercised and is now the only thing between that row and
-`done`.
-
-`ADR-073`'s queue row had been stale since 2026-08-18. The ADR answered both sub-questions that
-day — the hold **is** durable at `/etc/cairn/hold`, and the `.env` collision is moot since
-candidate (a) was rejected — and `W-035` implemented it, but the row still advertised both as
-needing Brian and was read back to him as outstanding. Reconciled against the ADR and marked
-`implemented`.
-
-Brian separately asked whether reboot-survival could be configuration rather than a fixed choice.
-No change made and none recorded: Claude's recommendation is against it, on the grounds that the
-two failure modes are not symmetric — a hold lost at reboot lets the timer converge a stack
-mid-maintenance silently, while a forgotten hold is visible, `BR-CLI-020` having made `doctor`
-report one on every run precisely as the counterweight to choosing durable. An **expiring** hold
-(`stop --for <duration>`) was offered as the better instrument if forgotten holds are the
-concern, since a reboot bears no relation to how long maintenance takes. Awaiting Brian's ruling;
-nothing is filed.
-
----
-
-## 2026-09-29 (build-machine retention specified: `BR-CFG-016`, `BR-CLI-018`'s fourth restriction)
-
-New `BR-CFG-016` in `docs/requirements/05-config.md`; `BR-CLI-018` amended in
-`docs/requirements/06a-cli-build.md` from three concentric restrictions to four. `W-042` and the
-implementation index updated. **No code changed** — `W-042` is now implementation-only.
-
-`BR-CFG-016` defines `[retention]` in `/etc/cairn/builder.toml`: `enabled` (default `false`),
-`keep_last` (per manifest), `require_pushed` (default `true`). `max_age_days` is deliberately
-absent, unlike `[registry.retention]` — an age ceiling cannot bound disk, since a burst inside
-the window is retained however large it grows, which is `W-041`'s defect. That absence is Brian's
-count-over-age argument written into a requirement.
-
-`BR-CLI-018`'s new restriction 4 removes only images beyond the newest `keep_last` per manifest,
-grouped by the opaque id and never by a readable environment name. Restriction 3 bounds
-duplicates *within* one build; restriction 4 bounds how many builds a manifest keeps — which is
-the one that actually bounds disk, and the one that did not exist. With `[retention]` absent or
-disabled, prune behaves exactly as before.
-
-Two exemptions apply to restriction 4 **only**, with restrictions 1-3 still in force: legacy
-images (no manifest id, unrelabellable because labels are immutable, left to the administrator
-but MUST be reported), and unpushed images while `require_pushed` is true.
-
-**Two defaults chosen by Claude, not ruled on by Brian, and flagged here rather than presented as
-settled:** `keep_last = 10`, taken from `[registry.retention]` on the instruction to mirror that
-table; and retention being file-only, with no `CAIRN_*` environment override and no CLI flag,
-which follows the same mirroring but was not separately discussed. Either is a one-line change if
-Brian wants it otherwise.
-
----
-
-## 2026-09-29 (`OQ-005` and `OQ-006` answered; `W-042` unblocked)
-
-`OQ-005` and `OQ-006` resolved in `docs/open/OPEN_QUESTIONS.md`; `W-042` moved from `blocked` to
-`open`. No requirement text written yet; no code changed.
-
-**`OQ-005` — images with no manifest label (Brian): ignore them.** An unlabelled image is assumed
-legacy, is never selected by the per-manifest axis, and is left for the administrator to remove
-by hand. Reporting is not optional — `BR-CLI-018` already binds prune to state what it leaves
-alone, and an operator cannot make a call about images they are not shown. **Scope confirmed by Brian the same
-day:** the exemption is scoped to the *new per-manifest axis only*, leaving today's
-per-input-hash `--keep` applying to legacy images unchanged. The alternative reading would make `cairn-build prune` a no-op on every
-existing host, since no image anywhere carries the label yet.
-
-**`OQ-006` — the `require_pushed` default (Brian): `true`.** Ruled `false` and reversed the same
-day as the safer default. A sweep must not evict an image that exists nowhere but this machine.
-`ADR-072` is not overturned — it remains the behaviour when the knob is `false` — but it
-deliberately removed pushed-ness as a protection, so a `true` default restores by default what
-that decision dropped. A reader of `ADR-072` alone would not predict the shipped default, so the
-requirement text must say so.
-
-Every decision `W-042` needs is now taken: `[retention]` in `builder.toml` needs a `BR-CFG` id,
-and the per-manifest axis needs `BR-CLI-018` amended or a new `BR-CLI` id.
-
----
-
-## 2026-09-29 (`ADR-079` amended: an opaque manifest id carries the grouping)
-
-`ADR-079` rewritten; `BR-BUILD-011` and `ADR-030`'s schema updated; `OQ-004`'s answer, `W-042`,
-the ADR index and the implementation index follow. **No code changed.**
-
-`ADR-079` had rejected an opaque digest hours earlier, on the grounds that it still binds the
-image to one environment and so is equally false after a promotion — it merely hides the
-falsehood. Brian reversed that: falsehood requires a claim, and an opaque value makes none. What
-made a plaintext `environment=staging` harmful was the *intent* a reader infers from it, and no
-reader infers intent from `d32jf32a`.
-
-So `BR-BUILD-011` now stamps a plaintext `com.datahenge.cairn.client` **and** an opaque
-`com.datahenge.cairn.manifest` — a deterministic digest of `(client, image_name, environment)`.
-`BR-DEPLOY-009a` and `BR-BUILD-001` still stand unamended and no environment name reaches the
-image. Retention groups per manifest after all, so the shared-pool consequence recorded in the
-entry below no longer applies.
-
-Brian's naming call, taken on a recommendation: the key is `manifest`, not `environment`. An
-opaque value under an `environment` key would still announce that the image is bound to one,
-moving the implied intent up a level rather than removing it. The digest covers the full triple.
-
-The id must never enter the input hash, on the same footing as `series` (`ADR-032`) — were it an
-input, renaming an environment would invalidate every existing image. Both the original
-rejection and its answer are kept visible in `ADR-079`; the digest is recorded there as
-obfuscation, not secrecy, and nothing relies on it being otherwise.
-
----
-
 ## Archived entries
 
 Older entries are moved out once this file grows past its word-count budget
@@ -341,3 +254,4 @@ contiguous range, newest-first within it same as here.
 - [CHANGELOG-2026-08-20.md](archive/CHANGELOG-2026-08-20.md)
 - [CHANGELOG-2026-09-02-to-2026-09-28.md](archive/CHANGELOG-2026-09-02-to-2026-09-28.md)
 - [CHANGELOG-2026-09-29.md](archive/CHANGELOG-2026-09-29.md)
+- [CHANGELOG-2026-09-29-2.md](archive/CHANGELOG-2026-09-29-2.md)

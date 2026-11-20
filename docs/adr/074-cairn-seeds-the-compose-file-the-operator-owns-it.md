@@ -47,7 +47,7 @@ AI's inference, not Brian's decision.** It is corrected here rather than quietly
 because the mistake is instructive.
 
 cairn requires no `.env` and never has: it injects `CUSTOM_IMAGE`/`CUSTOM_TAG` into the
-subprocess environment on every invocation (`reconcile.py:401-413`). Life Scientific's VPS has
+subprocess environment on every invocation (`reconcile.py:401-413`). One client's VPS has
 no `.env` beside its compose file and converges correctly — direct evidence that nothing on
 disk is needed for cairn's own operation. An `.env` serves exactly one actor: a human running
 `docker compose` directly, bypassing cairn. Commitment 4 grants the operator the right to
@@ -73,7 +73,7 @@ provide a paved path is undecided.
   `BR-DEPLOY-011` forbids cairn handling secret values — so the file's mode and permitted
   contents need their own ruling before implementation.
 * Whether take-ownership (`W-033`) converges an existing deployment's file onto cairn's recipe,
-  or merely relocates and adopts whatever is already there. Life Scientific's VPS is the first
+  or merely relocates and adopts whatever is already there. One client's VPS is the first
   case either way.
 
 *(BR-VEND-001, BR-DEPLOY-007, BR-DEPLOY-010, BR-DEPLOY-011, ADR-059, ADR-063, ADR-068, ADR-073)*

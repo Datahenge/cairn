@@ -455,7 +455,7 @@ def hot_swap(
         # Straight after the old backend goes, not at the end: its address no longer exists,
         # so the new nginx's connections to it hang until the connect timeout rather than
         # failing over. Reloading after the websocket step left a 30 second window of hung
-        # requests on Life Scientific's production target, 2026-11-17 (`BR-DEPLOY-025`).
+        # requests on a client's production target, 2026-11-17 (`BR-DEPLOY-025`).
         if service == "backend" and "frontend" in plan.web:
             for cid in container_ids(descriptor, "frontend"):
                 _run(
@@ -677,7 +677,7 @@ def _health_probe(descriptor: Descriptor, url: str) -> list[str]:
     Frappe picks the site from the ``X-Frappe-Site-Name`` header, else from the Host header,
     and has no default-site fallback. A probe from inside the stack reaches gunicorn as
     ``localhost``, which names no site, so without the header every probe answers 404 and a
-    healthy stack can never pass. Found on Life Scientific's production target, 2026-11-17.
+    healthy stack can never pass. Found on a client's production target, 2026-11-17.
     """
     return ["curl", "-fsS", "-o", "/dev/null", "-H", f"X-Frappe-Site-Name: {descriptor.site}", url]
 

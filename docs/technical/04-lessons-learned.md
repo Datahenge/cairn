@@ -24,7 +24,7 @@ Split by topic (2026-08-03) once the single file grew past the point of being lo
 a narrow task. Add new findings to the topic file they belong to; add a new topic file here
 only when a finding doesn't fit any existing one.
 
-_Last updated: 2026-09-29_
+_Last updated: 2026-11-20_
 
 ## Topics
 
@@ -37,3 +37,4 @@ _Last updated: 2026-09-29_
 | [04e-lessons-github-rate-limits.md](04e-lessons-github-rate-limits.md) | `github.com` rate limiting of unauthenticated git, why it presents as a `401`, and what a reachability probe does and does not prove |
 | [04f-lessons-frappe-queues.md](04f-lessons-frappe-queues.md) | Frappe's three background-job queues, why the recipe has no `queue-default` service, and why job timeout follows the queue rather than the worker |
 | [04g-lessons-frappe-pdf-generation.md](04g-lessons-frappe-pdf-generation.md) | Why v16 needs both `wkhtmltopdf` and Chromium, why Frappe never finds the recipe's apt-installed Chromium, and how finished the chrome path actually is |
+| [04h-lessons-frappe-asset-caching.md](04h-lessons-frappe-asset-caching.md) | Hashed bundle URLs versus plain `/assets` paths, the frontend's missing cache policy, and why browsers and CDNs keep stale app JavaScript after a deploy |

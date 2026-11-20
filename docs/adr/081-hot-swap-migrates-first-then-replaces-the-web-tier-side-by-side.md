@@ -6,7 +6,7 @@ purpose: ADR-081 — opt-in hot swap; migrate from the new image first, then sta
 
 # ADR-081 — Hot swap migrates first, then replaces the web tier side by side
 
-**Proposed:** 2026-11-17 (Life Scientific, contributed as a pull request; awaiting Brian).
+**Proposed:** 2026-11-17 (a client, contributed as a pull request; awaiting Brian).
 
 **Adds:** `BR-DEPLOY-025`. **Amends:** `BR-DEPLOY-003`, `BR-DEPLOY-016` (both now name
 `recreate` as the default strategy). **Relates to:** `ADR-014`, `ADR-025`, `ADR-037`.
@@ -21,7 +21,7 @@ follow, and both are visible to users:
    one, preloaded Frappe, and the frontend can reach it.
 2. The new code serves requests before `bench migrate` has run, against the old schema.
 
-Life Scientific runs user acceptance testing on its staging target. Every converge there
+A client runs user acceptance testing on its staging target. Every converge there
 interrupts the testers.
 
 ## Decision
@@ -47,8 +47,8 @@ behavior unchanged) and `hot-swap`. Under `hot-swap`, a pass with a running stac
    nginx resolves `backend` once, at start.
 5. **Retire the old containers**: `frontend` first, so no new request reaches the old
    `backend`, then `backend` with a 30 second stop grace for gunicorn. Reload the new frontend's
-   nginx at once, so it stops addressing the old backend, then retire `websocket`. On Life
-   Scientific's production target a reload after the `websocket` step left about 30 seconds of
+   nginx at once, so it stops addressing the old backend, then retire `websocket`. On a client's
+   production target a reload after the `websocket` step left about 30 seconds of
    hung requests: the removed backend's address answers nothing, so nginx waits for its connect
    timeout instead of failing over.
 6. **Recreate the other services that run the image** (workers, scheduler) in place. Only one
@@ -72,7 +72,8 @@ swap would remove the link under the running frontend for a moment.
 - **Mixed versions for a few seconds.** Between step 4's `frontend` and step 5, old and new
   code both serve. A page rendered by one version can ask for JS or CSS bundles that the other
   frontend does not have. This happens only when the bundles changed in the release. Removing
-  it needs paired blue/green stacks, which the compose layout does not offer today.
+  it needs paired blue/green stacks, which the compose layout does not offer today. Brian
+  accepted the window on 2026-11-20; blue/green is not planned for now.
 - **The outer proxy must resolve `frontend` per connection.** Caddy and Traefik do. A Caddy
   `lb_try_duration` lets a request that lands as the old frontend stops retry instead of
   failing.
@@ -93,8 +94,9 @@ swap would remove the link under the running frontend for a moment.
 
 ## Open for Brian
 
-1. **Paired blue/green** to remove the mixed-version window: worth the compose changes, or is
-   a few seconds acceptable?
+1. ~~**Paired blue/green** to remove the mixed-version window: worth the compose changes, or is
+   a few seconds acceptable?~~ **Answered by Brian, 2026-11-20:** a few seconds of mixed
+   versions is acceptable; no paired blue/green for now.
 2. **The 30 second stop grace** for the old web containers: a constant, or a descriptor key?
 3. **Removing a failed candidate**: is that consistent with "never roll back", or should the
    pass leave it running for inspection?

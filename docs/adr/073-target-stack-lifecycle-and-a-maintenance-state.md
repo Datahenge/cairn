@@ -36,8 +36,8 @@ disagree the moment somebody edits one without recreating the other," and `stage
 captures `.env`'s `CUSTOM_*` values into a revert note precisely because cairn is about to
 diverge from them.
 
-**2a. Verified on a live host, 2026-08-18 — the fallback is another vendor's image.** Life
-Scientific's test VPS was inspected to check factor 2 against reality. Its descriptor names
+**2a. Verified on a live host, 2026-08-18 — the fallback is another vendor's image.** A client's
+test VPS was inspected to check factor 2 against reality. Its descriptor names
 `directory = /opt/vps-setup/gitops`, `file = erpnext.yaml`, `overrides = []`, and **no**
 `env_file` — `examine` probes only `<directory>/.env` and found none. The compose file is
 *not* the rendered single-file `gitops` artifact its directory name suggests; it still
@@ -103,8 +103,8 @@ operators keep the tool they already know — no new verbs. Costs: it directly c
 secret, but `BR-DEPLOY-011` draws that boundary tightly enough to need an explicit ruling.
 It also does nothing about factor 3.
 
-*Reassessed 2026-08-18 after the live inspection above:* on a host shaped like Life
-Scientific's, (a) is both cheaper and safer than first judged. The `BR-DEPLOY-011` collision
+*Reassessed 2026-08-18 after the live inspection above:* on a host shaped like that
+client's, (a) is both cheaper and safer than first judged. The `BR-DEPLOY-011` collision
 largely evaporates — that compose file interpolates **no** secret-bearing variable, so the
 `.env` cairn would write holds only `CUSTOM_IMAGE`/`CUSTOM_TAG`, and creating it removes a
 live footgun outright rather than merely reducing drift. The collision returns only for

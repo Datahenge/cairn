@@ -62,7 +62,7 @@ Two corrections that changed the work: the client was **not** already on the ima
 New `OQ-004`-`OQ-006` in `docs/open/OPEN_QUESTIONS.md`; new `W-041`, `W-042` in
 `docs/open/OPEN_WORK.md`; `W-020` narrowed to its schedule half. No code changed.
 
-Brian asked why 11 pushed images were lingering on the Life Scientific test VPS. Not an error:
+Brian asked why 11 pushed images were lingering on a client's test VPS. Not an error:
 `prune.select` keeps the newest `--keep` **per input hash**, and with 11 distinct hashes every
 image is the newest of its group. There is no retention on any other axis, `--keep` has `min=1`,
 and nothing in `src/` invokes an engine-level prune, so growth is monotonic.
