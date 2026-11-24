@@ -43,7 +43,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import hold, registry
+from . import deploy_record, hold, registry
 from .descriptor import Descriptor
 from .errors import ReconcileError, RegistryError
 from .tagging import ADOPT_OWNED_TAG
@@ -188,6 +188,7 @@ def run(
     *,
     dry_run: bool = False,
     report: Callable[[str], None] = lambda message: None,
+    on_record: Callable[[str], None] = lambda line: None,
 ) -> Outcome:
     """Converge the host, or report why it did not (`BR-CLI-008`).
 
@@ -210,7 +211,7 @@ def run(
         )
 
     with _single_flight(dry_run=dry_run):
-        return run_locked(descriptor, dry_run=dry_run, report=report)
+        return run_locked(descriptor, dry_run=dry_run, report=report, on_record=on_record)
 
 
 def run_locked(
@@ -218,11 +219,15 @@ def run_locked(
     *,
     dry_run: bool = False,
     report: Callable[[str], None] = lambda message: None,
+    on_record: Callable[[str], None] = lambda line: None,
 ) -> Outcome:
     """A reconcile pass, assuming the caller already holds the lock (`BR-CLI-029`).
 
     Split out of :func:`run` so a lifecycle verb can take the lock once and perform several
     steps under it. Never acquires the lock itself; calling it unlocked is a caller error.
+
+    A pass that converges hands one deploy record line to *on_record* as its last act, whether
+    it succeeded or failed (`BR-DEPLOY-026`). A converged or dry-run pass hands none.
     """
     state = inspect(descriptor, report=report)
 
@@ -243,7 +248,21 @@ def run_locked(
             detail=_would_do(state, hot_swap=_will_hot_swap(descriptor, state)),
         )
 
-    converge(descriptor, state, report=report)
+    record = deploy_record.Record(
+        environment=descriptor.environment,
+        replaced=state.running_digest,
+        enabled=state.desired_digest,
+    )
+    probe = _start_probe(descriptor, report=report)
+    try:
+        converge(descriptor, state, report=report, record=record)
+    except BaseException as exc:
+        record.failed(exc)
+        raise
+    finally:
+        if probe is not None:
+            record.probe = _stop_probe(probe, report=report)
+        _emit(record, on_record, report=report)
     mark_owned(descriptor)
     return Outcome(
         converged=True,
@@ -280,6 +299,7 @@ def converge(
     state: State,
     *,
     report: Callable[[str], None] = lambda message: None,
+    record: deploy_record.Record | None = None,
 ) -> None:
     """Pull, recreate the stack in place, migrate, and verify health (`BR-DEPLOY-003`).
 
@@ -292,36 +312,55 @@ def converge(
     site creation already is (`BR-DEPLOY-007`).
     """
     reference = descriptor.reference
+    record = record if record is not None else deploy_record.Record()
 
     report(f"Pulling {reference}")
-    _run(["docker", "pull", reference], PULL_TIMEOUT_SECONDS, "pulling the image")
+    with record.step("pull"):
+        _run(["docker", "pull", reference], PULL_TIMEOUT_SECONDS, "pulling the image")
 
     if _will_hot_swap(descriptor, state):
         plan = plan_hot_swap(descriptor, report=report)
         if plan is not None:
-            hot_swap(descriptor, plan, report=report)
+            record.path = "hot-swap"
+            hot_swap(descriptor, plan, report=report, record=record)
             report("Verifying health")
-            await_health(descriptor, report=report)
+            with record.step("health"):
+                await_health(descriptor, report=report)
             return
+        record.path_note = (
+            "the new image's apps differ from the running image's, or could not be read"
+        )
+    elif descriptor.deploy.hot_swap:
+        record.path_note = "first deploy" if state.is_first_deploy else "the stack was not running"
 
+    record.path = "recreate"
     report("Starting the stack")
-    compose_run(
-        descriptor, ["up", "-d", "--remove-orphans"], COMPOSE_TIMEOUT_SECONDS, "starting the stack"
-    )
+    with record.step("start"):
+        compose_run(
+            descriptor,
+            ["up", "-d", "--remove-orphans"],
+            COMPOSE_TIMEOUT_SECONDS,
+            "starting the stack",
+        )
 
     # After every image enable, rollback included (BR-DEPLOY-016). Frappe owns the schema;
     # cairn only asks for the migration it already documents as the sole DB touch.
     report(f"Migrating {descriptor.site}")
-    compose_run(
-        descriptor,
-        ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, "migrate"],
-        MIGRATE_TIMEOUT_SECONDS,
-        "running bench migrate",
-    )
-    drop_asset_map(descriptor, report=report)
+    record.migrated = True
+    with record.step("migrate"):
+        compose_run(
+            descriptor,
+            ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, "migrate"],
+            MIGRATE_TIMEOUT_SECONDS,
+            "running bench migrate",
+        )
+    record.tables = touched_tables(descriptor)
+    with record.step("finish"):
+        drop_asset_map(descriptor, report=report)
 
     report("Verifying health")
-    await_health(descriptor, report=report)
+    with record.step("health"):
+        await_health(descriptor, report=report)
 
 
 def _will_hot_swap(descriptor: Descriptor, state: State) -> bool:
@@ -399,6 +438,7 @@ def hot_swap(
     plan: SwapPlan,
     *,
     report: Callable[[str], None] = lambda message: None,
+    record: deploy_record.Record | None = None,
 ) -> None:
     """Migrate from the new image, then replace the web tier side by side (`BR-DEPLOY-025`).
 
@@ -421,31 +461,82 @@ def hot_swap(
     migration is not undone.
     """
     site = descriptor.site
+    record = record if record is not None else deploy_record.Record()
     remove_drained_workers(descriptor, plan)
 
     report("Running the configurator from the new image")
-    compose_run(
-        descriptor,
-        ["run", "--rm", "--no-deps", "-T", CONFIGURATOR_SERVICE],
-        COMPOSE_TIMEOUT_SECONDS,
-        "running the configurator",
-    )
-
-    running = running_image_id(descriptor)
-    old_schema = schema_fingerprint(running) if running else None
-    migrate = old_schema is None or old_schema != schema_fingerprint(descriptor.reference)
-    if migrate:
-        report(f"Migrating {site} from the new image while the running stack keeps serving")
+    with record.step("configurator"):
         compose_run(
             descriptor,
-            ["run", "--rm", "--no-deps", "-T", BENCH_SERVICE, "bench", "--site", site, "migrate"],
-            MIGRATE_TIMEOUT_SECONDS,
-            "running bench migrate",
+            ["run", "--rm", "--no-deps", "-T", CONFIGURATOR_SERVICE],
+            COMPOSE_TIMEOUT_SECONDS,
+            "running the configurator",
         )
+
+    with record.step("fingerprint"):
+        running = running_image_id(descriptor)
+        old_schema = schema_fingerprint(running) if running else None
+        migrate = old_schema is None or old_schema != schema_fingerprint(descriptor.reference)
+    record.migrated = migrate
+    if migrate:
+        report(f"Migrating {site} from the new image while the running stack keeps serving")
+        with record.step("migrate"):
+            compose_run(
+                descriptor,
+                [
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "-T",
+                    BENCH_SERVICE,
+                    "bench",
+                    "--site",
+                    site,
+                    "migrate",
+                ],
+                MIGRATE_TIMEOUT_SECONDS,
+                "running bench migrate",
+            )
+        record.tables = touched_tables(descriptor)
     else:
         report(f"The schema files match the running image's, so {site} needs no migrate")
 
     old: dict[str, list[str]] = {}
+    with record.step("web"):
+        _start_web(descriptor, plan, old, report=report)
+
+    with record.step("retire"):
+        _retire_web(descriptor, plan, old, report=report)
+
+    with record.step("workers"):
+        _replace_workers(descriptor, plan, report=report)
+
+    with record.step("finish"):
+        if not migrate:
+            # Migrate clears Frappe's caches. Without it, values cached by the old code stay.
+            bench(descriptor, ["clear-cache"], "clearing the cache", report=report)
+        # Frappe sends this at the end of migrate, before the new code serves. Sent again now
+        # so open tabs check their version against the code that actually answers them.
+        bench(
+            descriptor,
+            ["execute", "frappe.publish_realtime", "--kwargs", '{"event": "version-update"}'],
+            "telling open tabs a new version is live",
+            report=report,
+            required=False,
+        )
+
+
+def _start_web(
+    descriptor: Descriptor,
+    plan: SwapPlan,
+    old: dict[str, list[str]],
+    *,
+    report: Callable[[str], None],
+) -> None:
+    """Start one new container beside each old web service, each answering before the next.
+
+    Fills *old* with the containers each service had before, for :func:`_retire_web`.
+    """
     started: list[str] = []
     for service in plan.web:
         old[service] = container_ids(descriptor, service)
@@ -482,6 +573,15 @@ def hot_swap(
                 f"applied and is not undone."
             ) from exc
 
+
+def _retire_web(
+    descriptor: Descriptor,
+    plan: SwapPlan,
+    old: dict[str, list[str]],
+    *,
+    report: Callable[[str], None],
+) -> None:
+    """Hand the old frontend's assets to the new one, then retire the old web containers."""
     if "frontend" in plan.web:
         for new_frontend in [
             c for c in container_ids(descriptor, "frontend") if c not in old["frontend"]
@@ -520,6 +620,11 @@ def hot_swap(
         if service == "backend":
             drop_asset_map(descriptor, report=report)
 
+
+def _replace_workers(
+    descriptor: Descriptor, plan: SwapPlan, *, report: Callable[[str], None]
+) -> None:
+    """Start new workers beside the old, drain the old ones, then recreate the scheduler."""
     workers = [name for name in plan.others if name != SCHEDULER_SERVICE]
     drained = _read_drained()
     for service in workers:
@@ -558,19 +663,6 @@ def hot_swap(
             COMPOSE_TIMEOUT_SECONDS,
             f"recreating {SCHEDULER_SERVICE}",
         )
-
-    if not migrate:
-        # Migrate clears Frappe's caches. Without it, values cached by the old code stay.
-        bench(descriptor, ["clear-cache"], "clearing the cache", report=report)
-    # Frappe sends this at the end of migrate, before the new code serves. Sent again now so
-    # open tabs check their version against the code that actually answers them.
-    bench(
-        descriptor,
-        ["execute", "frappe.publish_realtime", "--kwargs", '{"event": "version-update"}'],
-        "telling open tabs a new version is live",
-        report=report,
-        required=False,
-    )
 
 
 def pin_frontends(
@@ -787,6 +879,60 @@ def drop_asset_map(
         PROBE_TIMEOUT_SECONDS,
         "dropping the cached asset map",
     )
+
+
+def touched_tables(descriptor: Descriptor) -> list[str] | None:
+    """The tables Frappe recorded writing during the migrate just run (`BR-DEPLOY-026`).
+
+    Frappe leaves ``touched_tables.json`` in the site folder at the end of every migrate. The
+    sites volume is shared, so the running ``backend`` reads what a one-off migrate container
+    wrote. Best effort: None when it cannot be read.
+    """
+    output = _compose_capture(
+        descriptor,
+        ["exec", "-T", BENCH_SERVICE, "cat", f"sites/{descriptor.site}/touched_tables.json"],
+    )
+    return deploy_record.parse_tables(output)
+
+
+def _start_probe(
+    descriptor: Descriptor, *, report: Callable[[str], None]
+) -> deploy_record.Probe | None:
+    """Start the deploy record's probe when the descriptor names a URL (`BR-DEPLOY-026`).
+
+    Observation only: a probe that cannot start is reported, and the pass goes on without it.
+    """
+    settings = descriptor.record
+    if settings.probe_url is None:
+        return None
+    try:
+        return deploy_record.Probe(settings.probe_url, settings.probe_interval_ms).start()
+    except Exception as exc:
+        report(f"  could not start the deploy probe ({exc}); the record will not include it")
+        return None
+
+
+def _stop_probe(
+    probe: deploy_record.Probe, *, report: Callable[[str], None]
+) -> dict[str, float | int] | None:
+    try:
+        return probe.stop()
+    except Exception as exc:
+        report(f"  could not summarize the deploy probe ({exc})")
+        return None
+
+
+def _emit(
+    record: deploy_record.Record,
+    on_record: Callable[[str], None],
+    *,
+    report: Callable[[str], None],
+) -> None:
+    """Hand the record's line to *on_record*. A failure here never fails the pass."""
+    try:
+        on_record(record.line())
+    except Exception as exc:
+        report(f"  could not print the deploy record ({exc})")
 
 
 def await_health(

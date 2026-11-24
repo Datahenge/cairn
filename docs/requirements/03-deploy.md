@@ -229,6 +229,13 @@ attended-CLI build transcript (`BR-CLI-016`), where nothing else does. *(ADR-026
 Opt-in; the URL may be a referenced secret; a webhook error MUST NOT crash cairn or alter
 deploy behavior. *(ADR-026)*
 
+**`BR-DEPLOY-026`** *(deploy record; proposed 2026-11-24, awaiting Brian, `ADR-082`)* — A
+`reconcile` pass that starts to converge MUST end, on success or failure, by printing one
+`deploy record` JSON line to stdout: digests, outcome, path, whether `bench migrate` ran and
+what it wrote, and seconds per step. With `[record] probe_url` set it MUST add a summary of
+that URL's answers during the pass. Both observe only; an error in either is reported and
+ignored. *(ADR-082, BR-DEPLOY-019)*
+
 ---
 
 ## Deferred (not blocking; future work)

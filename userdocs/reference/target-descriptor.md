@@ -104,6 +104,25 @@ Before you choose `hot-swap`, check these four points:
 
 A first deploy, or a stack that is not running, always uses `recreate`.
 
+### `[record]`
+
+Every converge that changes the stack ends with one line on stdout, `deploy record` followed by
+JSON. It says whether the converge used `recreate` or `hot-swap`, whether `bench migrate` ran
+and for how long, which tables it wrote, and how long each step took. Under the timer, the line
+is in the journal:
+
+```bash
+journalctl -u cairn-reconcile.service | grep 'deploy record'
+```
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `probe_url` | no | A URL `reconcile` requests from the host, at a fixed interval, for the whole converge. The record then says how many requests failed, the median, 95th percentile and slowest response, and the longest run of failures in seconds. Point it at the site's public address, so the requests pass through the same proxy your users do. Absent means nothing is probed. |
+| `probe_interval_ms` | no | Milliseconds between probe requests. Defaults to 500; at least 100. |
+
+The probe and the record never change what a converge does. A converge that finds nothing to
+change prints no record.
+
 ### `[secrets]`
 
 | Key | Required | Meaning |
@@ -113,5 +132,5 @@ A first deploy, or a stack that is not running, always uses `recreate`.
 Any key outside this set fails to parse, naming the bad key, rather than being silently
 ignored.
 
-*`[deploy] strategy = "hot-swap"` is unit-tested only. It has not been run against a live
-target.*
+*`[deploy] strategy = "hot-swap"` and `[record]` are unit-tested only. Neither has been run
+against a live target.*

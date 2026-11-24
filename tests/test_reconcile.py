@@ -871,3 +871,133 @@ def test_new_frontends_are_pinned_to_the_new_backend_before_the_old_one_stops(st
     assert steps[pin].endswith("nginx -s reload")
     assert _index(steps, "docker stop -t 5 old-frontend") < pin
     assert pin < _index(steps, "docker stop -t 30 old-backend")
+
+
+# --- the deploy record (BR-DEPLOY-026) --------------------------------------
+
+
+def _record_of(lines):
+    assert len(lines) == 1, lines
+    marker, _, payload = lines[0].partition(" {")
+    assert marker == "deploy record"
+    return json.loads("{" + payload)
+
+
+def test_a_hot_swap_that_migrates_records_its_path_migrate_and_tables(stack):
+    """BR-DEPLOY-026: one line, naming the path, the migrate and what it wrote."""
+    stack.schema["old-image"] = "e" * 64
+    real_capture = stack.capture
+
+    def capture(command, *, env_overrides=None):
+        if "touched_tables.json" in " ".join(command):
+            stack.run.append(command)
+            return json.dumps(["tabItem", "tabBOM"])
+        return real_capture(command, env_overrides=env_overrides)
+
+    reconcile._capture = capture  # the fixture's monkeypatch restores the original
+    lines: list[str] = []
+
+    reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["outcome"] == "ok"
+    assert record["path"] == "hot-swap"
+    assert record["from"] == OTHER and record["to"] == DESIRED
+    assert record["migrate"]["ran"] is True
+    assert record["migrate"]["tables"] == ["tabBOM", "tabItem"]
+    assert record["migrate"]["tables_written"] == 2
+    assert {"pull", "configurator", "migrate", "web", "retire", "workers", "health"} <= set(
+        record["steps"]
+    )
+    assert "probe" not in record
+
+
+def test_a_hot_swap_that_skips_migrate_records_it(stack):
+    stack.schema["old-image"] = "f" * 64
+    lines: list[str] = []
+
+    reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["migrate"] == {"ran": False}
+    assert "migrate" not in record["steps"]
+    assert not any("touched_tables.json" in " ".join(command) for command in stack.run)
+
+
+def test_a_hot_swap_that_falls_back_records_why(stack):
+    stack.new_apps = "frappe\nerpnext\nhrms\n"
+    lines: list[str] = []
+
+    reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["path"] == "recreate"
+    assert "apps differ" in record["path_note"]
+    assert record["migrate"]["ran"] is True
+
+
+def test_a_failed_pass_still_prints_its_record(stack, monkeypatch):
+    """BR-DEPLOY-018 halts the pass; BR-DEPLOY-026 still reports what it saw."""
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+    lines: list[str] = []
+
+    with pytest.raises(ReconcileError):
+        reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["outcome"] == "failed"
+    assert "still serving the old code" in record["error"]
+    assert "\n" not in record["error"]
+
+
+def test_a_converged_pass_prints_no_record(monkeypatch, commands):
+    monkeypatch.setattr(registry, "digest_of", lambda ref: DESIRED)
+    monkeypatch.setattr(reconcile, "running_digest", lambda desc: DESIRED)
+    monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: True)
+    monkeypatch.setattr(reconcile, "_single_flight", _no_lock)
+    lines: list[str] = []
+
+    reconcile.run(_descriptor(), on_record=lines.append)
+
+    assert lines == []
+
+
+def test_a_dry_run_prints_no_record(converging, commands):
+    lines: list[str] = []
+
+    reconcile.run(_descriptor(), dry_run=True, on_record=lines.append)
+
+    assert lines == []
+
+
+def test_the_probe_summary_joins_the_record(stack, monkeypatch):
+    """BR-DEPLOY-026: with a probe URL, the record says what that URL answered."""
+    from cairn import deploy_record
+
+    monkeypatch.setattr(deploy_record, "_probe_once", lambda url: True)
+    lines: list[str] = []
+
+    reconcile.run(
+        _hot_swap_descriptor(
+            record=descriptor.DeployRecord(
+                probe_url="https://erp.example.com/api/method/ping", probe_interval_ms=100
+            )
+        ),
+        on_record=lines.append,
+    )
+
+    probe = _record_of(lines)["probe"]
+    assert probe["requests"] >= 1
+    assert probe["failed"] == 0
+
+
+def test_a_record_that_cannot_print_never_fails_the_pass(stack):
+    """BR-DEPLOY-026: observation only."""
+
+    def broken(line):
+        raise OSError("stdout closed")
+
+    outcome = reconcile.run(_hot_swap_descriptor(), on_record=broken)
+
+    assert outcome.converged is True
