@@ -93,7 +93,9 @@ def reconcile_command(
         step(f"Environment {environment.environment} — site {environment.site}")
 
         with watch.phase("converge"):
-            outcome = reconcile.run(environment, dry_run=dry_run, report=step)
+            outcome = reconcile.run(
+                environment, dry_run=dry_run, report=step, on_record=_print_record
+            )
 
         if outcome.changed:
             done(outcome.detail)
@@ -108,6 +110,11 @@ def reconcile_command(
     except KeyboardInterrupt:
         typer.secho("Interrupted.", fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(130) from None
+
+
+def _print_record(line: str) -> None:
+    """Print the deploy record on stdout, uncoloured, for journald and `jq` (`BR-DEPLOY-026`)."""
+    typer.echo(line)
 
 
 @app.command(

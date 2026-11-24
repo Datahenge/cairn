@@ -53,6 +53,7 @@ TOP_LEVEL_KEYS = {
     "secrets",
     "health",
     "deploy",
+    "record",
 }
 
 #: How `reconcile` replaces a running stack (`BR-DEPLOY-016`, `BR-DEPLOY-025`, `ADR-081`).
@@ -111,6 +112,24 @@ class Deploy:
 
 
 @dataclass(frozen=True)
+class DeployRecord:
+    """What the deploy record measures beyond the pass itself (`BR-DEPLOY-026`, `ADR-082`).
+
+    The record prints on every converging pass whatever this says. A ``probe_url`` adds a
+    summary of how that URL answered while the pass ran; without one, nothing is probed.
+    """
+
+    #: A URL requested from the host, through whatever proxy users reach the site by.
+    probe_url: str | None = None
+    #: Milliseconds between probe requests.
+    probe_interval_ms: int = 500
+
+
+#: The fastest the probe may run. Faster adds load without telling the operator anything new.
+MIN_PROBE_INTERVAL_MS = 100
+
+
+@dataclass(frozen=True)
 class Descriptor:
     """A validated environment descriptor (`BR-DEPLOY-010`)."""
 
@@ -126,6 +145,7 @@ class Descriptor:
     compose: Compose = field(default_factory=Compose)
     health: Health = field(default_factory=Health)
     deploy: Deploy = field(default_factory=Deploy)
+    record: DeployRecord = field(default_factory=DeployRecord)
     secret_mechanism: str = "none"
     path: Path | None = None
 
@@ -175,6 +195,7 @@ def load(path: Path | None = None) -> Descriptor:
         compose=_compose(target, data.get("compose", {})),
         health=_health(target, data.get("health", {})),
         deploy=_deploy(target, data.get("deploy", {})),
+        record=_record(target, data.get("record", {})),
         secret_mechanism=_secret_mechanism(target, data.get("secrets", {})),
         path=target,
     )
@@ -250,6 +271,30 @@ def _deploy(path: Path, section: object) -> Deploy:
             f"expected one of {', '.join(DEPLOY_STRATEGIES)}."
         )
     return Deploy(strategy=str(strategy))
+
+
+def _record(path: Path, section: object) -> DeployRecord:
+    if not isinstance(section, dict):
+        raise DescriptorError(f"{path}: [record] must be a table.")
+    _reject_unknown(path, "[record]", set(section), {"probe_url", "probe_interval_ms"})
+
+    url = _optional_string(path, "[record]", section, "probe_url")
+    if url is not None and not url.startswith(("http://", "https://")):
+        raise DescriptorError(
+            f"{path}: [record] probe_url must start with http:// or https://, "
+            f"because it is requested from the host."
+        )
+    interval = section.get("probe_interval_ms", DeployRecord().probe_interval_ms)
+    if (
+        not isinstance(interval, int)
+        or isinstance(interval, bool)
+        or interval < MIN_PROBE_INTERVAL_MS
+    ):
+        raise DescriptorError(
+            f"{path}: [record] probe_interval_ms must be a whole number of milliseconds, "
+            f"at least {MIN_PROBE_INTERVAL_MS}."
+        )
+    return DeployRecord(probe_url=url, probe_interval_ms=interval)
 
 
 def _secret_mechanism(path: Path, section: object) -> str:
