@@ -56,7 +56,7 @@ def start(descriptor: Descriptor, *, report: Report = lambda message: None) -> s
     with reconcile.single_flight():
         if hold.release():
             report("Hold released")
-        outcome = reconcile.run_locked(descriptor, report=report)
+        outcome = reconcile.run_locked(descriptor, report=report, retry_now=True)
         return outcome.detail
 
 
@@ -77,5 +77,5 @@ def restart(descriptor: Descriptor, *, report: Report = lambda message: None) ->
         reconcile.compose_run(
             descriptor, ["stop"], reconcile.COMPOSE_TIMEOUT_SECONDS, "stopping the stack"
         )
-        outcome = reconcile.run_locked(descriptor, report=report)
+        outcome = reconcile.run_locked(descriptor, report=report, retry_now=True)
         return outcome.detail
