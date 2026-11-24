@@ -73,6 +73,16 @@ def reconcile_command(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show what would converge, and change nothing.")
     ] = False,
+    retry_now: Annotated[
+        bool,
+        typer.Option(
+            "--retry-now",
+            help=(
+                "Try an image that failed recently now, instead of waiting out the pause "
+                "after a failure."
+            ),
+        ),
+    ] = False,
     descriptor_path: Annotated[
         Path | None,
         typer.Option(
@@ -82,7 +92,7 @@ def reconcile_command(
         ),
     ] = None,
 ) -> None:
-    """Converge the target to its desired state (BR-CLI-008, BR-DEPLOY-003).
+    """Converge the target to its desired state (BR-CLI-008, BR-DEPLOY-003, BR-DEPLOY-027).
 
     Deliberately does **not** require a cairn project: a target has no manifest and no
     recipe tree, only the descriptor that says what it runs (`ADR-034`).
@@ -94,7 +104,11 @@ def reconcile_command(
 
         with watch.phase("converge"):
             outcome = reconcile.run(
-                environment, dry_run=dry_run, report=step, on_record=_print_record
+                environment,
+                dry_run=dry_run,
+                report=step,
+                on_record=_print_record,
+                retry_now=retry_now,
             )
 
         if outcome.changed:
@@ -102,7 +116,9 @@ def reconcile_command(
         else:
             note(outcome.detail)
         report_timing(watch)
-        raise typer.Exit(0)
+        # A digest waiting out its back-off is still not where its tag says, so the pass
+        # exits as a failure and the timer's unit keeps showing it (BR-DEPLOY-027).
+        raise typer.Exit(1 if outcome.waiting else 0)
     except CairnError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         report_timing(watch)

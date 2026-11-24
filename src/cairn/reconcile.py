@@ -43,7 +43,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import deploy_record, hold, registry
+from . import backoff, deploy_record, hold, registry
 from .descriptor import Descriptor
 from .errors import ReconcileError, RegistryError
 from .tagging import ADOPT_OWNED_TAG
@@ -156,6 +156,9 @@ class Outcome:
     #: True when a hold stopped the pass before it began (`BR-DEPLOY-024`). Distinct from both
     #: converged and failed — that third state is the whole reason the hold exists.
     held: bool = False
+    #: True when the desired digest failed recently and is waiting out its back-off
+    #: (`BR-DEPLOY-027`). Nothing was tried.
+    waiting: bool = False
 
 
 @dataclass(frozen=True)
@@ -189,6 +192,7 @@ def run(
     dry_run: bool = False,
     report: Callable[[str], None] = lambda message: None,
     on_record: Callable[[str], None] = lambda line: None,
+    retry_now: bool = False,
 ) -> Outcome:
     """Converge the host, or report why it did not (`BR-CLI-008`).
 
@@ -211,7 +215,13 @@ def run(
         )
 
     with _single_flight(dry_run=dry_run):
-        return run_locked(descriptor, dry_run=dry_run, report=report, on_record=on_record)
+        return run_locked(
+            descriptor,
+            dry_run=dry_run,
+            report=report,
+            on_record=on_record,
+            retry_now=retry_now,
+        )
 
 
 def run_locked(
@@ -220,6 +230,7 @@ def run_locked(
     dry_run: bool = False,
     report: Callable[[str], None] = lambda message: None,
     on_record: Callable[[str], None] = lambda line: None,
+    retry_now: bool = False,
 ) -> Outcome:
     """A reconcile pass, assuming the caller already holds the lock (`BR-CLI-029`).
 
@@ -228,16 +239,29 @@ def run_locked(
 
     A pass that converges hands one deploy record line to *on_record* as its last act, whether
     it succeeded or failed (`BR-DEPLOY-026`). A converged or dry-run pass hands none.
+
+    A digest that failed recently waits out its back-off unless *retry_now* (`BR-DEPLOY-027`).
     """
     state = inspect(descriptor, report=report)
 
     if state.is_converged:
+        backoff.clear()
         mark_owned(descriptor)
         return Outcome(
             converged=True,
             changed=False,
             state=state,
             detail=f"Already running {state.desired_digest}.",
+        )
+
+    failure = None if retry_now else backoff.waiting(state.desired_digest)
+    if failure is not None:
+        return Outcome(
+            converged=False,
+            changed=False,
+            state=state,
+            detail=backoff.describe(failure),
+            waiting=True,
         )
 
     if dry_run:
@@ -256,13 +280,19 @@ def run_locked(
     probe = _start_probe(descriptor, report=report)
     try:
         converge(descriptor, state, report=report, record=record)
+    except Exception as exc:
+        record.failed(exc)
+        backoff.record(state.desired_digest, record.error or "")
+        raise
     except BaseException as exc:
+        # An interrupt is the operator's act, not a failed deploy: no back-off.
         record.failed(exc)
         raise
     finally:
         if probe is not None:
             record.probe = _stop_probe(probe, report=report)
         _emit(record, on_record, report=report)
+    backoff.clear()
     mark_owned(descriptor)
     return Outcome(
         converged=True,

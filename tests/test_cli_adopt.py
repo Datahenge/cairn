@@ -110,7 +110,7 @@ def test_reconcile_needs_no_project(target, monkeypatch):
     monkeypatch.setattr(
         reconcile,
         "run",
-        lambda desc, dry_run=False, report=None, on_record=None: reconcile.Outcome(
+        lambda desc, **kwargs: reconcile.Outcome(
             converged=True, changed=True, state=state, detail="Converged to sha256:aaa."
         ),
     )
@@ -127,7 +127,7 @@ def test_reconcile_reports_a_no_change_run_without_claiming_a_deploy(target, mon
     monkeypatch.setattr(
         reconcile,
         "run",
-        lambda desc, dry_run=False, report=None, on_record=None: reconcile.Outcome(
+        lambda desc, **kwargs: reconcile.Outcome(
             converged=True, changed=False, state=state, detail="Already running sha256:aaa."
         ),
     )
@@ -142,7 +142,7 @@ def test_reconcile_reports_a_no_change_run_without_claiming_a_deploy(target, mon
 def test_reconcile_halts_and_reports_on_failure(target, monkeypatch):
     """BR-DEPLOY-018: it stops rather than rolling back, and the exit code says so."""
 
-    def _fail(desc, dry_run=False, report=None, on_record=None):
+    def _fail(desc, **kwargs):
         raise ReconcileError("Failed while running bench migrate (exit code 1).")
 
     monkeypatch.setattr(reconcile, "run", _fail)
@@ -158,8 +158,8 @@ def test_reconcile_prints_the_deploy_record_on_stdout(target, monkeypatch):
     """BR-DEPLOY-026: the record is plain stdout, so journald keeps it and `jq` can read it."""
     state = reconcile.State(desired_digest="sha256:aaa", running_digest="sha256:bbb", stack_up=True)
 
-    def _run(desc, dry_run=False, report=None, on_record=None):
-        on_record('deploy record {"outcome":"ok"}')
+    def _run(desc, **kwargs):
+        kwargs["on_record"]('deploy record {"outcome":"ok"}')
         return reconcile.Outcome(
             converged=True, changed=True, state=state, detail="Converged to sha256:aaa."
         )
@@ -171,6 +171,38 @@ def test_reconcile_prints_the_deploy_record_on_stdout(target, monkeypatch):
     assert result.exit_code == 0
     assert 'deploy record {"outcome":"ok"}' in result.stdout.splitlines()
     assert "deploy record" not in result.stderr
+
+
+def test_a_waiting_pass_exits_as_a_failure(target, monkeypatch):
+    """BR-DEPLOY-027: the environment is still not where its tag says."""
+    state = reconcile.State(desired_digest="sha256:aaa", running_digest="sha256:bbb", stack_up=True)
+    monkeypatch.setattr(
+        reconcile,
+        "run",
+        lambda desc, **kwargs: reconcile.Outcome(
+            converged=False, changed=False, state=state, detail="Waiting for a while.", waiting=True
+        ),
+    )
+
+    result = runner.invoke(cli_adopt.app, ["reconcile", "--descriptor", str(target)])
+
+    assert result.exit_code == 1
+    assert "Waiting for a while." in result.stderr
+
+
+def test_retry_now_reaches_the_pass(target, monkeypatch):
+    seen = {}
+    state = reconcile.State(desired_digest="sha256:aaa", running_digest="sha256:bbb", stack_up=True)
+
+    def _run(desc, **kwargs):
+        seen.update(kwargs)
+        return reconcile.Outcome(converged=True, changed=True, state=state, detail="Converged.")
+
+    monkeypatch.setattr(reconcile, "run", _run)
+
+    runner.invoke(cli_adopt.app, ["reconcile", "--retry-now", "--descriptor", str(target)])
+
+    assert seen["retry_now"] is True
 
 
 def test_a_missing_descriptor_names_the_file(tmp_path, monkeypatch):

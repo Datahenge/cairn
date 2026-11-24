@@ -210,6 +210,13 @@ ones, each answering before the next; stop the old ones; recreate the other imag
 verify health. A candidate that never answers is removed and the pass halts (`BR-DEPLOY-018`).
 *(ADR-014, ADR-025, ADR-081)*
 
+**`BR-DEPLOY-027`** *(back-off after a failed converge; proposed 2026-11-24, awaiting Brian,
+`ADR-083`)* — After a pass fails to converge to a digest, later passes MUST NOT try that same
+digest again until a back-off has passed: 1, 5, 15, then every 60 minutes. A waiting pass
+changes nothing and reports *waiting*, with the failure and when it will retry; it is a failure
+for the exit code. A different digest, a converged stack, or `reconcile --retry-now` ends the
+back-off. The state lives in `/run`, so a reboot clears it. *(ADR-025, ADR-083)*
+
 **`BR-DEPLOY-017`** — cairn MUST verify the stack reaches a **healthy** state (frappe_docker
 health + the site responds) within a configurable **timeout** before recording success.
 

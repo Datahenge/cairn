@@ -1001,3 +1001,87 @@ def test_a_record_that_cannot_print_never_fails_the_pass(stack):
     outcome = reconcile.run(_hot_swap_descriptor(), on_record=broken)
 
     assert outcome.converged is True
+
+
+# --- back-off after a failed converge (BR-DEPLOY-027) -----------------------
+
+
+def test_a_failed_converge_is_not_retried_on_the_next_pass(stack, monkeypatch):
+    """BR-DEPLOY-027: the next timer pass waits instead of migrating the same digest again."""
+    from cairn import backoff
+
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+    with pytest.raises(ReconcileError):
+        reconcile.run(_hot_swap_descriptor())
+    stack.run.clear()
+
+    outcome = reconcile.run(_hot_swap_descriptor())
+
+    assert outcome.waiting is True
+    assert outcome.converged is False
+    assert "--retry-now" in outcome.detail
+    assert stack.run == []  # not even a pull
+    assert backoff.read().attempts == 1
+
+
+def test_retry_now_tries_a_waiting_digest(stack):
+    from cairn import backoff
+
+    backoff.record(DESIRED, "migrate failed")
+
+    outcome = reconcile.run(_hot_swap_descriptor(), retry_now=True)
+
+    assert outcome.converged is True
+    assert backoff.read() is None  # success forgets the failure
+
+
+def test_a_new_digest_goes_ahead_while_an_old_one_waits(stack):
+    from cairn import backoff
+
+    backoff.record("sha256:" + "c" * 64, "migrate failed")
+
+    outcome = reconcile.run(_hot_swap_descriptor())
+
+    assert outcome.converged is True
+    assert outcome.waiting is False
+
+
+def test_a_dry_run_reports_the_wait(converging, commands):
+    from cairn import backoff
+
+    backoff.record(DESIRED, "migrate failed")
+
+    outcome = reconcile.run(_descriptor(), dry_run=True)
+
+    assert outcome.waiting is True
+    assert "Waiting" in outcome.detail
+
+
+def test_a_converged_stack_forgets_an_old_failure(monkeypatch, commands):
+    from cairn import backoff
+
+    monkeypatch.setattr(registry, "digest_of", lambda ref: DESIRED)
+    monkeypatch.setattr(reconcile, "running_digest", lambda desc: DESIRED)
+    monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: True)
+    monkeypatch.setattr(reconcile, "_single_flight", _no_lock)
+    backoff.record(DESIRED, "migrate failed")
+
+    reconcile.run(_descriptor())
+
+    assert backoff.read() is None
+
+
+def test_an_interrupt_is_not_a_failure_to_back_off_from(stack, monkeypatch):
+    """Stopping a pass by hand is the operator's act, not a failed deploy."""
+    from cairn import backoff
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(reconcile, "hot_swap", interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        reconcile.run(_hot_swap_descriptor())
+
+    assert backoff.read() is None

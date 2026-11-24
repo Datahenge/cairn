@@ -9,6 +9,25 @@ code changes live in git history.
 
 ---
 
+## 2026-11-24 (back-off after a failed converge proposed, `ADR-083`, `BR-DEPLOY-027`)
+
+A failed converge halted (`ADR-025`), but the next timer pass tried the same digest at once:
+on a 15 second timer, a failing `bench migrate` ran four times a minute against the database the
+old code was serving. Contributed as a pull request, stacked on the deploy record; nothing here is
+approved yet.
+
+- **`BR-DEPLOY-027`** (new, proposed). The failed digest is remembered in `/run/cairn/failed-deploy`
+  and waits 1, 5, 15, then 60 minutes. A waiting pass changes nothing and exits 1. A different
+  digest, a converged stack or `reconcile --retry-now` ends the wait; `start` and `restart` retry
+  at once. Rationale in `ADR-083` (`exploratory`), two open points in `docs/open/OPEN_DECISIONS.md`.
+- `userdocs/target/automation.md` said a failed pass was not retried in a loop. It was, by the
+  timer. The page now describes the back-off.
+- `tests/conftest.py` (new) gives every test its own back-off file, so a test that fails a
+  converge cannot leave the next one waiting. Implementation index row and `W-046` added.
+  Unit-tested only.
+
+---
+
 ## 2026-11-24 (deploy record proposed, `ADR-082`, `BR-DEPLOY-026`)
 
 Life Scientific's staging testers still notice some hot swaps, apparently the ones that run

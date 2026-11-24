@@ -42,8 +42,14 @@ ExecStart=cairn-adopt reconcile
 Each pass reads the environment's tag, and does nothing at all unless the digest it resolves
 to has changed since the last pass — the common case under a 5-minute poll, since most passes
 land between deploys. `Type=oneshot` with no `Restart=` means a failed pass is left failed and
-visible in `systemctl status`/journald rather than retried in a loop against a migration that's
-already failed once.
+visible in `systemctl status` and the journal.
+
+When a converge fails, later passes do not try that same image again straight away. They wait
+1 minute after the first failure, then 5, then 15, then 60 minutes after each one after that.
+A waiting pass changes nothing, says in the journal what failed and when it will try again, and
+exits as a failure. Pushing a different image ends the wait at once. Once you have fixed a
+cause outside the image, run `sudo cairn-adopt reconcile --retry-now` to try again without
+waiting. A reboot also ends the wait.
 
 ## If you'd rather install it by hand
 
