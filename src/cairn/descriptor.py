@@ -26,6 +26,7 @@ is not committed with the manifest.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,12 +54,16 @@ TOP_LEVEL_KEYS = {
     "secrets",
     "health",
     "deploy",
+    "record",
 }
 
 #: How `reconcile` replaces a running stack (`BR-DEPLOY-016`, `BR-DEPLOY-025`, `ADR-081`).
 #: ``recreate`` is the original in-place `compose up`; ``hot-swap`` starts the new web
 #: containers beside the old ones and retires the old ones once the new ones answer.
 STRATEGY_RECREATE = "recreate"
+
+#: A dotted Python path, as `bench execute` takes it.
+_DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+")
 STRATEGY_HOT_SWAP = "hot-swap"
 DEPLOY_STRATEGIES = (STRATEGY_RECREATE, STRATEGY_HOT_SWAP)
 
@@ -104,10 +109,37 @@ class Deploy:
     """
 
     strategy: str = STRATEGY_RECREATE
+    #: Paths (``fnmatch`` patterns, relative to ``apps/``) whose files a hot swap may load with
+    #: ``content_sync`` instead of a migrate (`BR-DEPLOY-028`). Empty: never.
+    content_paths: tuple[str, ...] = ()
+    #: A dotted method ``bench execute`` runs with the changed paths as ``paths``.
+    content_sync: str | None = None
 
     @property
     def hot_swap(self) -> bool:
         return self.strategy == STRATEGY_HOT_SWAP
+
+    @property
+    def syncs_content(self) -> bool:
+        return bool(self.content_paths) and self.content_sync is not None
+
+
+@dataclass(frozen=True)
+class DeployRecord:
+    """What the deploy record measures beyond the pass itself (`BR-DEPLOY-026`, `ADR-082`).
+
+    The record prints on every converging pass whatever this says. A ``probe_url`` adds a
+    summary of how that URL answered while the pass ran; without one, nothing is probed.
+    """
+
+    #: A URL requested from the host, through whatever proxy users reach the site by.
+    probe_url: str | None = None
+    #: Milliseconds between probe requests.
+    probe_interval_ms: int = 500
+
+
+#: The fastest the probe may run. Faster adds load without telling the operator anything new.
+MIN_PROBE_INTERVAL_MS = 100
 
 
 @dataclass(frozen=True)
@@ -126,6 +158,7 @@ class Descriptor:
     compose: Compose = field(default_factory=Compose)
     health: Health = field(default_factory=Health)
     deploy: Deploy = field(default_factory=Deploy)
+    record: DeployRecord = field(default_factory=DeployRecord)
     secret_mechanism: str = "none"
     path: Path | None = None
 
@@ -175,6 +208,7 @@ def load(path: Path | None = None) -> Descriptor:
         compose=_compose(target, data.get("compose", {})),
         health=_health(target, data.get("health", {})),
         deploy=_deploy(target, data.get("deploy", {})),
+        record=_record(target, data.get("record", {})),
         secret_mechanism=_secret_mechanism(target, data.get("secrets", {})),
         path=target,
     )
@@ -241,7 +275,7 @@ def _health(path: Path, section: object) -> Health:
 def _deploy(path: Path, section: object) -> Deploy:
     if not isinstance(section, dict):
         raise DescriptorError(f"{path}: [deploy] must be a table.")
-    _reject_unknown(path, "[deploy]", set(section), {"strategy"})
+    _reject_unknown(path, "[deploy]", set(section), {"strategy", "content_paths", "content_sync"})
 
     strategy = section.get("strategy", STRATEGY_RECREATE)
     if strategy not in DEPLOY_STRATEGIES:
@@ -249,7 +283,51 @@ def _deploy(path: Path, section: object) -> Deploy:
             f"{path}: [deploy] strategy '{strategy}' is not one cairn knows; "
             f"expected one of {', '.join(DEPLOY_STRATEGIES)}."
         )
-    return Deploy(strategy=str(strategy))
+
+    patterns = section.get("content_paths", [])
+    if not isinstance(patterns, list) or not all(
+        isinstance(item, str) and item.strip() for item in patterns
+    ):
+        raise DescriptorError(
+            f"{path}: [deploy] content_paths must be a list of path patterns, relative to "
+            f'the bench\'s apps folder, e.g. ["myapp/*/print_format/*"].'
+        )
+    method = _optional_string(path, "[deploy]", section, "content_sync")
+    if method is not None and not _DOTTED.fullmatch(method):
+        raise DescriptorError(
+            f"{path}: [deploy] content_sync must be a dotted Python path to a method, "
+            f'e.g. "myapp.deploy.sync_content".'
+        )
+    if bool(patterns) != (method is not None):
+        raise DescriptorError(
+            f"{path}: [deploy] content_paths and content_sync go together: the patterns say "
+            f"which files the method loads."
+        )
+    return Deploy(strategy=str(strategy), content_paths=tuple(patterns), content_sync=method)
+
+
+def _record(path: Path, section: object) -> DeployRecord:
+    if not isinstance(section, dict):
+        raise DescriptorError(f"{path}: [record] must be a table.")
+    _reject_unknown(path, "[record]", set(section), {"probe_url", "probe_interval_ms"})
+
+    url = _optional_string(path, "[record]", section, "probe_url")
+    if url is not None and not url.startswith(("http://", "https://")):
+        raise DescriptorError(
+            f"{path}: [record] probe_url must start with http:// or https://, "
+            f"because it is requested from the host."
+        )
+    interval = section.get("probe_interval_ms", DeployRecord().probe_interval_ms)
+    if (
+        not isinstance(interval, int)
+        or isinstance(interval, bool)
+        or interval < MIN_PROBE_INTERVAL_MS
+    ):
+        raise DescriptorError(
+            f"{path}: [record] probe_interval_ms must be a whole number of milliseconds, "
+            f"at least {MIN_PROBE_INTERVAL_MS}."
+        )
+    return DeployRecord(probe_url=url, probe_interval_ms=interval)
 
 
 def _secret_mechanism(path: Path, section: object) -> str:

@@ -238,3 +238,96 @@ def test_an_unknown_strategy_names_the_choices(tmp_path):
 def test_an_unknown_deploy_key_is_refused(tmp_path):
     with pytest.raises(DescriptorError, match="strategies"):
         descriptor.load(_write(tmp_path, MINIMAL + '[deploy]\nstrategies = "hot-swap"\n'))
+
+
+# --- deploy record (BR-DEPLOY-026, ADR-082) ---------------------------------
+
+
+def test_the_record_probes_nothing_by_default(tmp_path):
+    loaded = descriptor.load(_write(tmp_path, MINIMAL))
+
+    assert loaded.record.probe_url is None
+    assert loaded.record.probe_interval_ms == 500
+
+
+def test_a_probe_url_and_interval_are_read(tmp_path):
+    loaded = descriptor.load(
+        _write(
+            tmp_path,
+            MINIMAL
+            + '[record]\nprobe_url = "https://erp.example.com/api/method/ping"\n'
+            + "probe_interval_ms = 250\n",
+        )
+    )
+
+    assert loaded.record.probe_url == "https://erp.example.com/api/method/ping"
+    assert loaded.record.probe_interval_ms == 250
+
+
+def test_a_probe_url_must_be_http(tmp_path):
+    with pytest.raises(DescriptorError, match="http:// or https://"):
+        descriptor.load(_write(tmp_path, MINIMAL + '[record]\nprobe_url = "erp.example.com"\n'))
+
+
+@pytest.mark.parametrize("interval", ["50", "0", "true", '"500"'])
+def test_a_probe_interval_below_the_floor_or_not_a_number_is_refused(tmp_path, interval):
+    with pytest.raises(DescriptorError, match="at least 100"):
+        descriptor.load(_write(tmp_path, MINIMAL + f"[record]\nprobe_interval_ms = {interval}\n"))
+
+
+def test_an_unknown_record_key_is_refused(tmp_path):
+    with pytest.raises(DescriptorError, match="probe_uri"):
+        descriptor.load(_write(tmp_path, MINIMAL + '[record]\nprobe_uri = "https://x"\n'))
+
+
+# --- content sync (BR-DEPLOY-028, ADR-084) ----------------------------------
+
+
+def test_content_sync_is_off_by_default(tmp_path):
+    loaded = descriptor.load(_write(tmp_path, MINIMAL + '[deploy]\nstrategy = "hot-swap"\n'))
+
+    assert loaded.deploy.syncs_content is False
+
+
+def test_content_paths_and_method_are_read(tmp_path):
+    loaded = descriptor.load(
+        _write(
+            tmp_path,
+            MINIMAL
+            + '[deploy]\nstrategy = "hot-swap"\n'
+            + 'content_paths = ["myapp/*/print_format/*"]\n'
+            + 'content_sync = "myapp.deploy.sync_content"\n',
+        )
+    )
+
+    assert loaded.deploy.content_paths == ("myapp/*/print_format/*",)
+    assert loaded.deploy.content_sync == "myapp.deploy.sync_content"
+    assert loaded.deploy.syncs_content is True
+
+
+def test_content_paths_without_a_method_are_refused(tmp_path):
+    with pytest.raises(DescriptorError, match="go together"):
+        descriptor.load(
+            _write(tmp_path, MINIMAL + '[deploy]\ncontent_paths = ["myapp/*/print_format/*"]\n')
+        )
+
+
+@pytest.mark.parametrize("method", ["sync_content", "myapp.deploy.sync content", "1app.x"])
+def test_a_method_must_be_a_dotted_path(tmp_path, method):
+    with pytest.raises(DescriptorError, match="dotted Python path"):
+        descriptor.load(
+            _write(
+                tmp_path,
+                MINIMAL + '[deploy]\ncontent_paths = ["x/*"]\n' + f'content_sync = "{method}"\n',
+            )
+        )
+
+
+def test_content_paths_must_be_a_list_of_strings(tmp_path):
+    with pytest.raises(DescriptorError, match="list of path patterns"):
+        descriptor.load(
+            _write(
+                tmp_path,
+                MINIMAL + '[deploy]\ncontent_paths = "x/*"\ncontent_sync = "a.b"\n',
+            )
+        )

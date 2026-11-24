@@ -222,3 +222,21 @@ def _no_lock(**kwargs):
 
 def _no_lock_cm(**kwargs):
     return _NoLock()
+
+
+@pytest.mark.parametrize("verb", ["start", "restart"])
+def test_attended_verbs_try_a_waiting_digest_at_once(held_at, monkeypatch, verb) -> None:
+    """BR-DEPLOY-027: an operator running start or restart wants the deploy now."""
+    seen = {}
+
+    def _run_locked(desc, **kw):
+        seen.update(kw)
+        return reconcile.Outcome(True, True, None, "Converged.", False)
+
+    monkeypatch.setattr(reconcile, "compose_run", lambda desc, args, timeout, what: None)
+    monkeypatch.setattr(reconcile, "run_locked", _run_locked)
+    monkeypatch.setattr(reconcile, "single_flight", _no_lock_cm)
+
+    getattr(lifecycle, verb)(_descriptor())
+
+    assert seen["retry_now"] is True

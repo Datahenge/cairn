@@ -24,7 +24,12 @@ on its own.
 Honours a maintenance hold: while one is in place, this reports the environment as *held* and
 changes nothing. See [The hold](../target/operating.md#the-hold).
 
-Flags: `--dry-run` — show what would converge, change nothing.
+After a failed converge, later passes wait before trying that same image again: 1, 5, 15, then
+60 minutes. While waiting, a pass changes nothing and exits as a failure. A different image is
+tried at once. See [Automation](../target/automation.md).
+
+Flags: `--dry-run` shows what would converge and changes nothing. `--retry-now` tries an image
+that failed recently without waiting.
 
 ## Everyday operation
 
