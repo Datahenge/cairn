@@ -84,6 +84,8 @@ hand you something `reconcile` would go on to reject.
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `strategy` | no | How `reconcile` replaces a running stack: `"recreate"` (default) or `"hot-swap"`. |
+| `content_paths` | no | Path patterns, relative to the bench's `apps` folder, for files a hot swap may load without `bench migrate`, for example `["myapp/*/print_format/*"]`. `*` also matches `/`. Needs `content_sync`. |
+| `content_sync` | no | The method that loads those files, as a dotted Python path, for example `"myapp.deploy.sync_content"`. `reconcile` runs it with `bench execute`, passing the changed paths as `paths`. Needs `content_paths`. |
 
 With `recreate`, `reconcile` runs `docker compose up -d`, then `bench migrate` in the new
 `backend`. The site is down while the new containers start.
@@ -103,6 +105,16 @@ Before you choose `hot-swap`, check these four points:
   page loaded in that window can fail to load its bundles until it is refreshed.
 
 A first deploy, or a stack that is not running, always uses `recreate`.
+
+A hot swap compares the schema files of the running image and the new one: JSON, YAML and CSV
+files, `patches.txt` and `hooks.py` in each app. If none differs, it skips `bench migrate` and
+clears the cache. If only files matching `content_paths` changed or were added, it skips
+`bench migrate` too, and runs `content_sync` with those files once the new code is serving. If
+`content_sync` fails, `bench migrate` runs instead. Any other change runs `bench migrate` first,
+while the old stack keeps serving.
+
+List only files your method can load on their own, such as print formats and reports. A pattern
+that matches a DocType's file loads it without the table changes `bench migrate` would make.
 
 ### `[record]`
 
@@ -132,5 +144,5 @@ change prints no record.
 Any key outside this set fails to parse, naming the bad key, rather than being silently
 ignored.
 
-*`[deploy] strategy = "hot-swap"` and `[record]` are unit-tested only. Neither has been run
-against a live target.*
+*`[deploy] strategy = "hot-swap"`, `content_paths`, `content_sync` and `[record]` are
+unit-tested only. None has been run against a live target.*

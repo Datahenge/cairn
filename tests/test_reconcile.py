@@ -568,6 +568,12 @@ SERVICES = {
 }
 
 
+#: What `--entrypoint sh` answers for an image whose schema files match the new image's.
+SAME_SCHEMA = "f" * 64 + "  app/app/app/doctype/thing/thing.json"
+#: An image whose one DocType file differs from the new image's.
+OTHER_SCHEMA = "e" * 64 + "  app/app/app/doctype/thing/thing.json"
+
+
 class Stack:
     """A fake compose project: one container per web service until a pass scales it up."""
 
@@ -607,7 +613,7 @@ class Stack:
             return "erpnext\nfrappe\n" if "old-image" in text else self.new_apps
         if "--entrypoint sh" in text:
             image = command[command.index("sh") + 1]
-            return self.schema.get(image, "f" * 64)
+            return self.schema.get(image, SAME_SCHEMA)
         if "{{.Name}}" in text:
             return f"/erpnext-{command[-1]}\n"
         if "docker inspect" in text:
@@ -804,7 +810,7 @@ def test_recreate_drops_the_asset_map_after_migrating(converging, commands):
 
 def test_hot_swap_skips_migrate_when_the_schema_files_match(stack):
     """A code-only change needs no migrate. The cache migrate would clear is cleared instead."""
-    stack.schema["old-image"] = "f" * 64
+    stack.schema["old-image"] = SAME_SCHEMA
 
     reconcile.run(_hot_swap_descriptor())
 
@@ -816,7 +822,7 @@ def test_hot_swap_skips_migrate_when_the_schema_files_match(stack):
 
 
 def test_hot_swap_migrates_when_the_schema_files_differ(stack):
-    stack.schema["old-image"] = "e" * 64
+    stack.schema["old-image"] = OTHER_SCHEMA
 
     reconcile.run(_hot_swap_descriptor())
 
@@ -885,7 +891,7 @@ def _record_of(lines):
 
 def test_a_hot_swap_that_migrates_records_its_path_migrate_and_tables(stack):
     """BR-DEPLOY-026: one line, naming the path, the migrate and what it wrote."""
-    stack.schema["old-image"] = "e" * 64
+    stack.schema["old-image"] = OTHER_SCHEMA
     real_capture = stack.capture
 
     def capture(command, *, env_overrides=None):
@@ -913,7 +919,7 @@ def test_a_hot_swap_that_migrates_records_its_path_migrate_and_tables(stack):
 
 
 def test_a_hot_swap_that_skips_migrate_records_it(stack):
-    stack.schema["old-image"] = "f" * 64
+    stack.schema["old-image"] = SAME_SCHEMA
     lines: list[str] = []
 
     reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
@@ -1085,3 +1091,121 @@ def test_an_interrupt_is_not_a_failure_to_back_off_from(stack, monkeypatch):
         reconcile.run(_hot_swap_descriptor())
 
     assert backoff.read() is None
+
+
+# --- migrating only what changed (BR-DEPLOY-028) ----------------------------
+
+PRINT_FORMAT = "app/app/app/print_format/invoice/invoice.json"
+DOCTYPE = "app/app/app/doctype/thing/thing.json"
+
+
+def _content_descriptor():
+    return _descriptor(
+        deploy=descriptor.Deploy(
+            strategy="hot-swap",
+            content_paths=("app/*/print_format/*",),
+            content_sync="app.deploy.sync_content",
+        ),
+        health=descriptor.Health(url="http://localhost:8000/api/method/ping"),
+    )
+
+
+def _manifest(**files):
+    return "\n".join(f"{digest * 64}  {path}" for path, digest in files.items())
+
+
+def test_the_decision_compares_file_by_file():
+    deploy = descriptor.Deploy(
+        strategy="hot-swap", content_paths=("app/*/print_format/*",), content_sync="app.x.y"
+    )
+    old = {DOCTYPE: "a", PRINT_FORMAT: "b"}
+    decide = reconcile.migrate_decision
+
+    assert decide(old, dict(old), deploy) == (reconcile.NO_MIGRATE, [])
+    assert decide(old, {DOCTYPE: "a", PRINT_FORMAT: "c"}, deploy) == (
+        reconcile.SYNC_CONTENT,
+        [PRINT_FORMAT],
+    )
+    assert decide(old, {DOCTYPE: "z", PRINT_FORMAT: "c"}, deploy)[0] == reconcile.MIGRATE
+    # a new print format is content; a deleted one is not, since only migrate removes records
+    assert decide(old, {**old, "app/app/app/print_format/new/new.json": "d"}, deploy)[0] == (
+        reconcile.SYNC_CONTENT
+    )
+    assert decide(old, {DOCTYPE: "a"}, deploy)[0] == reconcile.MIGRATE
+    # either side unreadable means migrate
+    assert decide(None, old, deploy)[0] == reconcile.MIGRATE
+    assert decide(old, None, deploy)[0] == reconcile.MIGRATE
+
+
+def test_without_content_settings_any_change_migrates():
+    old = {PRINT_FORMAT: "b"}
+
+    assert reconcile.migrate_decision(old, {PRINT_FORMAT: "c"}, descriptor.Deploy())[0] == (
+        reconcile.MIGRATE
+    )
+
+
+def test_a_content_only_change_syncs_after_the_old_backend_retires(stack):
+    """BR-DEPLOY-028: content that may need new code loads once the new code serves."""
+    stack.schema["old-image"] = _manifest(**{DOCTYPE: "a", PRINT_FORMAT: "b"})
+    stack.schema[_content_descriptor().reference] = _manifest(**{DOCTYPE: "a", PRINT_FORMAT: "c"})
+    lines: list[str] = []
+
+    reconcile.run(_content_descriptor(), on_record=lines.append)
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("migrate" in step for step in steps)
+    sync = _index(steps, "execute app.deploy.sync_content")
+    assert sync > _index(steps, "docker stop -t 30 old-backend")
+    assert PRINT_FORMAT in steps[sync]
+    assert _record_of(lines)["migrate"] == {"ran": False, "content_files": 1}
+
+
+def test_a_failed_content_sync_falls_back_to_migrate(stack):
+    """BR-DEPLOY-028: the content must not be left unloaded once the stack is converged."""
+    stack.schema["old-image"] = _manifest(**{PRINT_FORMAT: "b"})
+    stack.schema[_content_descriptor().reference] = _manifest(**{PRINT_FORMAT: "c"})
+    real_try = stack.try_
+
+    def try_(command, timeout, *, env_overrides=None):
+        if "app.deploy.sync_content" in " ".join(command):
+            stack.run.append(command)
+            return subprocess.CompletedProcess(command, 1)
+        return real_try(command, timeout, env_overrides=env_overrides)
+
+    reconcile._try = try_
+    lines: list[str] = []
+
+    reconcile.run(_content_descriptor(), on_record=lines.append)
+
+    steps = [" ".join(command) for command in stack.run]
+    assert _index(steps, "exec -T backend bench --site erp.example.com migrate") > _index(
+        steps, "execute app.deploy.sync_content"
+    )
+    migrate = _record_of(lines)["migrate"]
+    assert migrate["ran"] is True and migrate["content_failed"] is True
+
+
+def test_a_doctype_change_still_migrates_before_the_swap(stack):
+    stack.schema["old-image"] = _manifest(**{DOCTYPE: "a", PRINT_FORMAT: "b"})
+    stack.schema[_content_descriptor().reference] = _manifest(**{DOCTYPE: "z", PRINT_FORMAT: "c"})
+
+    reconcile.run(_content_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert _index(steps, "run --rm --no-deps -T backend bench --site erp.example.com migrate") < (
+        _index(steps, "--scale backend=2 backend")
+    )
+    assert not any("sync_content" in step for step in steps)
+
+
+def test_a_malformed_manifest_means_migrate(monkeypatch, commands):
+    commands.captures = {"--entrypoint sh": "not a manifest line"}
+
+    assert reconcile.schema_manifest("some-image") is None
+
+
+def test_the_manifest_lists_each_file():
+    """The script prints `sha256  path`, one line per file (BR-DEPLOY-028)."""
+    assert "| sha256sum" not in reconcile.SCHEMA_MANIFEST_SCRIPT
+    assert "xargs -r -d" in reconcile.SCHEMA_MANIFEST_SCRIPT

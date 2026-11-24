@@ -26,6 +26,7 @@ is not committed with the manifest.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,6 +61,9 @@ TOP_LEVEL_KEYS = {
 #: ``recreate`` is the original in-place `compose up`; ``hot-swap`` starts the new web
 #: containers beside the old ones and retires the old ones once the new ones answer.
 STRATEGY_RECREATE = "recreate"
+
+#: A dotted Python path, as `bench execute` takes it.
+_DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+")
 STRATEGY_HOT_SWAP = "hot-swap"
 DEPLOY_STRATEGIES = (STRATEGY_RECREATE, STRATEGY_HOT_SWAP)
 
@@ -105,10 +109,19 @@ class Deploy:
     """
 
     strategy: str = STRATEGY_RECREATE
+    #: Paths (``fnmatch`` patterns, relative to ``apps/``) whose files a hot swap may load with
+    #: ``content_sync`` instead of a migrate (`BR-DEPLOY-028`). Empty: never.
+    content_paths: tuple[str, ...] = ()
+    #: A dotted method ``bench execute`` runs with the changed paths as ``paths``.
+    content_sync: str | None = None
 
     @property
     def hot_swap(self) -> bool:
         return self.strategy == STRATEGY_HOT_SWAP
+
+    @property
+    def syncs_content(self) -> bool:
+        return bool(self.content_paths) and self.content_sync is not None
 
 
 @dataclass(frozen=True)
@@ -262,7 +275,7 @@ def _health(path: Path, section: object) -> Health:
 def _deploy(path: Path, section: object) -> Deploy:
     if not isinstance(section, dict):
         raise DescriptorError(f"{path}: [deploy] must be a table.")
-    _reject_unknown(path, "[deploy]", set(section), {"strategy"})
+    _reject_unknown(path, "[deploy]", set(section), {"strategy", "content_paths", "content_sync"})
 
     strategy = section.get("strategy", STRATEGY_RECREATE)
     if strategy not in DEPLOY_STRATEGIES:
@@ -270,7 +283,27 @@ def _deploy(path: Path, section: object) -> Deploy:
             f"{path}: [deploy] strategy '{strategy}' is not one cairn knows; "
             f"expected one of {', '.join(DEPLOY_STRATEGIES)}."
         )
-    return Deploy(strategy=str(strategy))
+
+    patterns = section.get("content_paths", [])
+    if not isinstance(patterns, list) or not all(
+        isinstance(item, str) and item.strip() for item in patterns
+    ):
+        raise DescriptorError(
+            f"{path}: [deploy] content_paths must be a list of path patterns, relative to "
+            f'the bench\'s apps folder, e.g. ["myapp/*/print_format/*"].'
+        )
+    method = _optional_string(path, "[deploy]", section, "content_sync")
+    if method is not None and not _DOTTED.fullmatch(method):
+        raise DescriptorError(
+            f"{path}: [deploy] content_sync must be a dotted Python path to a method, "
+            f'e.g. "myapp.deploy.sync_content".'
+        )
+    if bool(patterns) != (method is not None):
+        raise DescriptorError(
+            f"{path}: [deploy] content_paths and content_sync go together: the patterns say "
+            f"which files the method loads."
+        )
+    return Deploy(strategy=str(strategy), content_paths=tuple(patterns), content_sync=method)
 
 
 def _record(path: Path, section: object) -> DeployRecord:

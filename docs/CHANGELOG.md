@@ -9,6 +9,29 @@ code changes live in git history.
 
 ---
 
+## 2026-11-24 (a hot swap migrates only what changed, `ADR-084`, `BR-DEPLOY-028`)
+
+Life Scientific's fork already skipped `bench migrate` when no schema file changed (`7af9888`),
+undocumented. A print format change still cost a full migrate, about 35 of its last 300
+staging merges. Contributed as a pull request, stacked on the back-off; nothing approved yet.
+
+- **`BR-DEPLOY-028`** (new, proposed) documents the existing skip and adds a third outcome:
+  when only files matching `[deploy] content_paths` changed, the operator's `content_sync`
+  method loads them with `bench execute` after the old backend retires, falling back to
+  `bench migrate` if it fails. `BR-DEPLOY-016` amended in substance; rationale and the second
+  data-plane touch in `ADR-084` (`exploratory`), two open points in `OPEN_DECISIONS.md`.
+- The fingerprint script prints one `sha256  path` line per file instead of one hash, so the
+  images are compared file by file. Same `docker run`; nothing added to the image.
+- Deploy record gains `content_files` and `content_failed`. `userdocs/reference/target-descriptor.md`
+  documents both keys and the three outcomes. Implementation index row and `W-047` added.
+- **Checked end to end on a local stack** (stock `frappe/erpnext:v16.26.1`, Caddy edge, TLS
+  registry), not a real target. A print-format-only image: no migrate, the content method ran
+  after the old backend retired, the new CSS reached the database, 0 of 116 probes failed. The
+  same with a method that raises: fell back to `bench migrate` (9.0 s), CSS still loaded, 0 of
+  153 failed. A DocType change: migrate before the swap (10.6 s), no content step, 0 of 162.
+
+---
+
 ## 2026-11-24 (back-off after a failed converge proposed, `ADR-083`, `BR-DEPLOY-027`)
 
 A failed converge halted (`ADR-025`), but the next timer pass tried the same digest at once:

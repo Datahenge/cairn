@@ -138,6 +138,8 @@ class Record:
     path_note: str | None = None
     migrated: bool | None = None
     tables: list[str] | None = None
+    content_files: int | None = None
+    content_failed: bool = False
     steps: dict[str, float] = field(default_factory=dict)
     probe: dict[str, float | int] | None = None
 
@@ -162,6 +164,10 @@ class Record:
 
     def as_dict(self) -> dict[str, object]:
         migrate: dict[str, object] = {"ran": self.migrated}
+        if self.content_files is not None:
+            migrate["content_files"] = self.content_files
+        if self.content_failed:
+            migrate["content_failed"] = True
         if self.migrated:
             migrate["seconds"] = self.steps.get("migrate")
             if self.tables is not None:

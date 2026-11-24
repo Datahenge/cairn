@@ -34,6 +34,7 @@ journald already owns the record.
 from __future__ import annotations
 
 import fcntl
+import fnmatch
 import json
 import os
 import subprocess
@@ -44,7 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import backoff, deploy_record, hold, registry
-from .descriptor import Descriptor
+from .descriptor import Deploy, Descriptor
 from .errors import ReconcileError, RegistryError
 from .tagging import ADOPT_OWNED_TAG
 
@@ -112,14 +113,20 @@ ASSET_RETENTION_MINUTES = 24 * 60
 
 #: What `bench migrate` reads: schema JSON and fixtures, patch lists, hooks, and the YAML and
 #: CSV some apps sync on migrate, inside each app's package (the folder holding hooks.py). Files
-#: outside it, such as CI workflows, never reach migrate. Two images with the same hash of these
-#: files need no migrate.
-SCHEMA_FINGERPRINT_SCRIPT = (
+#: outside it, such as CI workflows, never reach migrate. Prints one ``sha256  path`` line per
+#: file, the path relative to ``apps/``, so two images can be compared file by file
+#: (`BR-DEPLOY-028`).
+SCHEMA_MANIFEST_SCRIPT = (
     f"cd {APPS_DIRECTORY} && find $(dirname */*/hooks.py) \\( -name node_modules -o -name public "
     "\\) -prune -o -type f \\( -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.csv' "
-    "-o -name patches.txt -o -name hooks.py \\) -print | LC_ALL=C sort | xargs -d '\\n' sha256sum "
-    "| sha256sum | cut -d' ' -f1"
+    "-o -name patches.txt -o -name hooks.py \\) -print | LC_ALL=C sort "
+    "| xargs -r -d '\\n' sha256sum"
 )
+
+#: What a hot swap does about the schema (`BR-DEPLOY-028`).
+NO_MIGRATE = "none"
+SYNC_CONTENT = "content"
+MIGRATE = "migrate"
 
 
 @dataclass(frozen=True)
@@ -505,9 +512,15 @@ def hot_swap(
 
     with record.step("fingerprint"):
         running = running_image_id(descriptor)
-        old_schema = schema_fingerprint(running) if running else None
-        migrate = old_schema is None or old_schema != schema_fingerprint(descriptor.reference)
+        decision, changed = migrate_decision(
+            schema_manifest(running) if running else None,
+            schema_manifest(descriptor.reference),
+            descriptor.deploy,
+        )
+    migrate = decision == MIGRATE
     record.migrated = migrate
+    if decision == SYNC_CONTENT:
+        record.content_files = len(changed)
     if migrate:
         report(f"Migrating {site} from the new image while the running stack keeps serving")
         with record.step("migrate"):
@@ -528,6 +541,11 @@ def hot_swap(
                 "running bench migrate",
             )
         record.tables = touched_tables(descriptor)
+    elif decision == SYNC_CONTENT:
+        report(
+            f"Only content changed ({len(changed)} file(s)), so {site} needs no migrate; "
+            f"it is loaded once the new code serves"
+        )
     else:
         report(f"The schema files match the running image's, so {site} needs no migrate")
 
@@ -542,6 +560,8 @@ def hot_swap(
         _replace_workers(descriptor, plan, report=report)
 
     with record.step("finish"):
+        if decision == SYNC_CONTENT:
+            _sync_content(descriptor, changed, report=report, record=record)
         if not migrate:
             # Migrate clears Frappe's caches. Without it, values cached by the old code stay.
             bench(descriptor, ["clear-cache"], "clearing the cache", report=report)
@@ -737,13 +757,96 @@ def pin_frontends(
             report("  could not; requests may wait on the old backend until it is gone")
 
 
-def schema_fingerprint(image: str) -> str | None:
-    """Hash the files `bench migrate` reads in *image*, or None if they could not be read."""
+def schema_manifest(image: str) -> dict[str, str] | None:
+    """Each schema file in *image* and its sha256, or None if they could not be read.
+
+    The paths are relative to ``apps/``. An image with an unreadable or malformed listing
+    answers None, which means a migrate (`BR-DEPLOY-028`).
+    """
     output = _capture(
-        ["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", SCHEMA_FINGERPRINT_SCRIPT]
+        ["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", SCHEMA_MANIFEST_SCRIPT]
     )
-    value = (output or "").strip()
-    return value if len(value) == 64 else None
+    if not output or not output.strip():
+        return None
+    manifest: dict[str, str] = {}
+    for line in output.splitlines():
+        digest, _, path = line.partition("  ")
+        if len(digest) != 64 or not path:
+            return None
+        manifest[path] = digest
+    return manifest
+
+
+def migrate_decision(
+    old: dict[str, str] | None, new: dict[str, str] | None, deploy: Deploy
+) -> tuple[str, list[str]]:
+    """Whether a hot swap migrates, syncs content, or neither, and which files changed.
+
+    `BR-DEPLOY-028`: nothing differs, no migrate. Only files matching ``content_paths``
+    changed or were added, and none was deleted: sync those. Anything else, or a side that
+    could not be read: migrate.
+    """
+    if old is None or new is None:
+        return MIGRATE, []
+    changed = sorted(path for path, digest in new.items() if old.get(path) != digest)
+    deleted = [path for path in old if path not in new]
+    if not changed and not deleted:
+        return NO_MIGRATE, []
+    if (
+        deploy.syncs_content
+        and not deleted
+        and all(
+            any(fnmatch.fnmatchcase(path, pattern) for pattern in deploy.content_paths)
+            for path in changed
+        )
+    ):
+        return SYNC_CONTENT, changed
+    return MIGRATE, changed
+
+
+def _sync_content(
+    descriptor: Descriptor,
+    paths: list[str],
+    *,
+    report: Callable[[str], None],
+    record: deploy_record.Record,
+) -> None:
+    """Load changed content with the operator's method, now the new code serves (`BR-DEPLOY-028`).
+
+    If the method fails, migrate instead: by the next pass the stack is converged, and nothing
+    would try to load the content again.
+    """
+    method = descriptor.deploy.content_sync
+    report(f"Loading {len(paths)} changed content file(s) with {method}")
+    result = _compose_try(
+        descriptor,
+        [
+            "exec",
+            "-T",
+            BENCH_SERVICE,
+            "bench",
+            "--site",
+            descriptor.site,
+            "execute",
+            str(method),
+            "--kwargs",
+            json.dumps({"paths": paths}),
+        ],
+        MIGRATE_TIMEOUT_SECONDS,
+    )
+    if result is not None and result.returncode == 0:
+        return
+    record.content_failed = True
+    report(f"  {method} did not finish, so {descriptor.site} is migrated instead")
+    with record.step("migrate"):
+        compose_run(
+            descriptor,
+            ["exec", "-T", BENCH_SERVICE, "bench", "--site", descriptor.site, "migrate"],
+            MIGRATE_TIMEOUT_SECONDS,
+            "running bench migrate",
+        )
+    record.migrated = True
+    record.tables = touched_tables(descriptor)
 
 
 def carry_assets(

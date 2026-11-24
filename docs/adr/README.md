@@ -98,6 +98,7 @@ unarchived.
 | [ADR-081](081-hot-swap-migrates-first-then-replaces-the-web-tier-side-by-side.md) | `exploratory` | Opt-in `[deploy] strategy = "hot-swap"`: migrate from the new image in a one-off container, start the new web containers beside the old ones, then retire the old ones (`BR-DEPLOY-025`); awaiting Brian |
 | [ADR-082](082-every-converge-ends-with-a-deploy-record.md) | `exploratory` | Every converging `reconcile` pass ends with one `deploy record` JSON line on stdout: path, migrate, step timings, and an optional probe of what users saw (`BR-DEPLOY-026`); awaiting Brian |
 | [ADR-083](083-a-failed-digest-is-retried-with-back-off-not-every-pass.md) | `exploratory` | After a failed converge the same digest waits 1, 5, 15, then 60 minutes before the next attempt; a new digest, a converged stack or `--retry-now` ends the wait (`BR-DEPLOY-027`); awaiting Brian |
+| [ADR-084](084-a-hot-swap-migrates-only-what-changed.md) | `exploratory` | A hot swap compares schema files one by one: nothing changed skips migrate, only operator-named content changed runs the operator's sync after the swap, anything else migrates first (`BR-DEPLOY-028`); documents the fork's existing migrate skip; awaiting Brian |
 
 `ADR-008`, `ADR-011`, `ADR-041`, and `ADR-049` are recorded in [../decisions/](../decisions/)
 instead, as lightweight decisions.

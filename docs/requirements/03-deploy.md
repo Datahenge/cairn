@@ -217,6 +217,14 @@ changes nothing and reports *waiting*, with the failure and when it will retry; 
 for the exit code. A different digest, a converged stack, or `reconcile --retry-now` ends the
 back-off. The state lives in `/run`, so a reboot clears it. *(ADR-025, ADR-083)*
 
+**`BR-DEPLOY-028`** *(what a hot swap migrates; proposed 2026-11-24, awaiting Brian,
+`ADR-084`)* — A hot swap MUST compare the schema files (JSON, YAML, CSV, `patches.txt`,
+`hooks.py` in each app package) of the running and new images, file by file. No difference:
+skip `bench migrate` and clear the cache. Only files matching `[deploy] content_paths` changed
+or added, none deleted: skip migrate and, after the old backend retires, run `[deploy]
+content_sync` with those paths; if that fails, run `bench migrate`. Anything else, or a side
+that cannot be read: migrate first, as `BR-DEPLOY-025`. *(ADR-081, ADR-084)*
+
 **`BR-DEPLOY-017`** — cairn MUST verify the stack reaches a **healthy** state (frappe_docker
 health + the site responds) within a configurable **timeout** before recording success.
 
