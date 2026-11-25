@@ -9,6 +9,23 @@ code changes live in git history.
 
 ---
 
+## 2026-11-25 (a hot swap removes old containers' volumes, `ADR-081`, `BR-DEPLOY-025`)
+
+Life Scientific's staging disk reached 99%. Part of it was old images, which nothing pruned.
+Part was volumes: the image declares `logs` as a volume, every container gets an anonymous one,
+and a hot swap removed the old containers with a plain `docker rm`, which keeps it. Every
+deploy replaces every container that runs the image, so each deploy left several behind, each
+holding a container's whole log history. A local stack showed 23 such volumes after six
+deploys.
+
+- Retired web containers, drained workers and failed candidates are now removed with
+  `docker rm -v`, which removes only anonymous volumes. The named `sites` volume is not touched;
+  checked by removing a container with both kinds. `ADR-081` step 5 says so.
+- Volumes already left on a target are not removed by this change. `docker volume prune`
+  (Docker 23 and later: unused anonymous volumes only) clears them once.
+
+---
+
 ## 2026-11-24 (a hot swap migrates only what changed, `ADR-084`, `BR-DEPLOY-028`)
 
 Life Scientific's fork already skipped `bench migrate` when no schema file changed (`7af9888`),

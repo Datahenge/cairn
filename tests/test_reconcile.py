@@ -746,7 +746,7 @@ def test_an_unready_candidate_is_removed_and_the_old_stack_keeps_serving(stack, 
         reconcile.run(_hot_swap_descriptor())
 
     steps = [" ".join(command) for command in stack.run]
-    assert "docker rm -f new-backend" in steps
+    assert "docker rm -f -v new-backend" in steps
     assert not any(step.startswith("docker stop") for step in steps)
 
 
@@ -794,7 +794,7 @@ def test_hot_swap_drops_the_asset_map_once_the_old_backend_is_gone(stack):
     steps = [" ".join(command) for command in stack.run]
     drop = _index(steps, "frappe.client_cache.delete_value")
     assert (
-        _index(steps, "docker rm old-backend")
+        _index(steps, "docker rm -v old-backend")
         < drop
         < _index(steps, "docker stop -t 5 old-websocket")
     )
@@ -1209,3 +1209,42 @@ def test_the_manifest_lists_each_file():
     """The script prints `sha256  path`, one line per file (BR-DEPLOY-028)."""
     assert "| sha256sum" not in reconcile.SCHEMA_MANIFEST_SCRIPT
     assert "xargs -r -d" in reconcile.SCHEMA_MANIFEST_SCRIPT
+
+
+# --- no leftover volumes (BR-DEPLOY-025) ------------------------------------
+
+
+def test_every_container_a_swap_removes_takes_its_anonymous_volumes(stack, monkeypatch):
+    """Each container's anonymous `logs` volume would otherwise stay on disk for good.
+
+    Found on Life Scientific's staging target, whose disk reached 99%: a plain `docker rm`
+    leaves the volume, and a hot swap replaces every image container on every deploy.
+    """
+    reconcile.run(_hot_swap_descriptor())
+    stack.containers["queue-short"] = ["drained-queue-short"]
+
+    def exited(command, *, env_overrides=None):
+        if "--status" in command:
+            stack.run.append(command)
+            return "drained-queue-short"
+        return Stack.capture(stack, command, env_overrides=env_overrides)
+
+    reconcile._capture = exited
+    reconcile.remove_drained_workers(
+        _hot_swap_descriptor(), reconcile.SwapPlan(("backend",), ("queue-short",))
+    )
+
+    removals = [command for command in stack.run if command[:2] == ["docker", "rm"]]
+    assert removals
+    assert all("-v" in command for command in removals)
+    assert ["docker", "rm", "-v", "drained-queue-short"] in removals
+
+
+def test_a_failed_candidate_is_removed_with_its_volumes(stack, monkeypatch):
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+
+    with pytest.raises(ReconcileError):
+        reconcile.run(_hot_swap_descriptor())
+
+    assert ["docker", "rm", "-f", "-v", "new-backend"] in stack.run

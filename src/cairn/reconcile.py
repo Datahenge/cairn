@@ -616,7 +616,7 @@ def _start_web(
             _await_container(descriptor, fresh[0], url, service, report=report)
         except ReconcileError as exc:
             for candidate in started:
-                _try(["docker", "rm", "-f", candidate], PROBE_TIMEOUT_SECONDS)
+                _try(["docker", "rm", "-f", "-v", candidate], PROBE_TIMEOUT_SECONDS)
             raise ReconcileError(
                 f"{exc} The new containers were removed and the old ones never stopped, so "
                 f"the site is still serving the old code. The migration has already been "
@@ -655,7 +655,7 @@ def _retire_web(
                 grace + PROBE_TIMEOUT_SECONDS,
                 f"stopping the old {service}",
             )
-            _run(["docker", "rm", cid], PROBE_TIMEOUT_SECONDS, f"removing the old {service}")
+            _remove_container(cid, f"removing the old {service}")
         # Straight after the old backend goes, not at the end: its address no longer exists,
         # so the new nginx's connections to it hang until the connect timeout rather than
         # failing over. Reloading after the websocket step left a 30 second window of hung
@@ -894,6 +894,17 @@ def _write_drained(ids: set[str]) -> None:
         pass
 
 
+def _remove_container(cid: str, what: str) -> None:
+    """Remove a container the swap replaced, with its anonymous volumes (`BR-DEPLOY-025`).
+
+    The image declares ``logs`` as a volume, so every container gets an anonymous one. A plain
+    ``docker rm`` leaves it, with the container's log files, on the host's disk for good, and a
+    hot swap replaces every container that runs the image on every deploy. ``-v`` removes only
+    anonymous volumes; the named ``sites`` volume the stack mounts is never touched.
+    """
+    _run(["docker", "rm", "-v", cid], PROBE_TIMEOUT_SECONDS, what)
+
+
 def remove_drained_workers(descriptor: Descriptor, plan: SwapPlan) -> None:
     """Remove worker containers that a previous swap drained and that have since exited."""
     for service in plan.others:
@@ -902,7 +913,7 @@ def remove_drained_workers(descriptor: Descriptor, plan: SwapPlan) -> None:
         )
         for cid in (line.strip() for line in output.splitlines()):
             if cid:
-                _try(["docker", "rm", cid], PROBE_TIMEOUT_SECONDS)
+                _try(["docker", "rm", "-v", cid], PROBE_TIMEOUT_SECONDS)
 
 
 def bench(
