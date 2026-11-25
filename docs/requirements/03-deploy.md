@@ -210,6 +210,21 @@ ones, each answering before the next; stop the old ones; recreate the other imag
 verify health. A candidate that never answers is removed and the pass halts (`BR-DEPLOY-018`).
 *(ADR-014, ADR-025, ADR-081)*
 
+**`BR-DEPLOY-027`** *(back-off after a failed converge; proposed 2026-11-24, awaiting Brian,
+`ADR-083`)* — After a pass fails to converge to a digest, later passes MUST NOT try that same
+digest again until a back-off has passed: 1, 5, 15, then every 60 minutes. A waiting pass
+changes nothing and reports *waiting*, with the failure and when it will retry; it is a failure
+for the exit code. A different digest, a converged stack, or `reconcile --retry-now` ends the
+back-off. The state lives in `/run`, so a reboot clears it. *(ADR-025, ADR-083)*
+
+**`BR-DEPLOY-028`** *(what a hot swap migrates; proposed 2026-11-24, awaiting Brian,
+`ADR-084`)* — A hot swap MUST compare the schema files (JSON, YAML, CSV, `patches.txt`,
+`hooks.py` in each app package) of the running and new images, file by file. No difference:
+skip `bench migrate` and clear the cache. Only files matching `[deploy] content_paths` changed
+or added, none deleted: skip migrate and, after the old backend retires, run `[deploy]
+content_sync` with those paths; if that fails, run `bench migrate`. Anything else, or a side
+that cannot be read: migrate first, as `BR-DEPLOY-025`. *(ADR-081, ADR-084)*
+
 **`BR-DEPLOY-017`** — cairn MUST verify the stack reaches a **healthy** state (frappe_docker
 health + the site responds) within a configurable **timeout** before recording success.
 
@@ -228,6 +243,13 @@ attended-CLI build transcript (`BR-CLI-016`), where nothing else does. *(ADR-026
 (environment, failed step, image tag/digest, timestamp, error summary), transport-agnostic.
 Opt-in; the URL may be a referenced secret; a webhook error MUST NOT crash cairn or alter
 deploy behavior. *(ADR-026)*
+
+**`BR-DEPLOY-026`** *(deploy record; proposed 2026-11-24, awaiting Brian, `ADR-082`)* — A
+`reconcile` pass that starts to converge MUST end, on success or failure, by printing one
+`deploy record` JSON line to stdout: digests, outcome, path, whether `bench migrate` ran and
+what it wrote, and seconds per step. With `[record] probe_url` set it MUST add a summary of
+that URL's answers during the pass. Both observe only; an error in either is reported and
+ignored. *(ADR-082, BR-DEPLOY-019)*
 
 ---
 

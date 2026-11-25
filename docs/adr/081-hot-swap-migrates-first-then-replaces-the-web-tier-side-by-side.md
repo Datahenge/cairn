@@ -51,6 +51,16 @@ behavior unchanged) and `hot-swap`. Under `hot-swap`, a pass with a running stac
    Scientific's production target a reload after the `websocket` step left about 30 seconds of
    hung requests: the removed backend's address answers nothing, so nginx waits for its connect
    timeout instead of failing over.
+   Each old container is removed with `docker rm -v`. The image declares `logs` as a volume,
+   so every container has an anonymous one; a plain `docker rm` left it, with that container's
+   log files, on the host for good. On Life Scientific's staging target the disk reached 99%
+   (2026-11-25). `-v` removes only anonymous volumes, never the named `sites` volume.
+   Then drop Frappe's cached asset map (`frappe.client_cache.delete_value("assets_json", shared=True)`).
+   With developer mode off, Frappe 16 keeps `assets.json` in Redis with no expiry, and the
+   Redis volume outlives the deploy; on Life Scientific's staging target the Desk then named
+   the previous image's bundles and rendered unstyled. It is dropped only once the old backend
+   is gone, because the old backend can write its own map back while it still serves. The
+   recreate path drops it after migrating, for the same reason.
 6. **Recreate the other services that run the image** (workers, scheduler) in place. Only one
    scheduler runs at a time.
 7. **Verify health**, as today.

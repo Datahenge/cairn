@@ -568,15 +568,25 @@ SERVICES = {
 }
 
 
+#: What `--entrypoint sh` answers for an image whose schema files match the new image's.
+SAME_SCHEMA = "f" * 64 + "  app/app/app/doctype/thing/thing.json"
+#: An image whose one DocType file differs from the new image's.
+OTHER_SCHEMA = "e" * 64 + "  app/app/app/doctype/thing/thing.json"
+
+
 class Stack:
     """A fake compose project: one container per web service until a pass scales it up."""
 
     def __init__(self, *, services=None, new_apps="frappe\nerpnext\n", ready=True):
         self.run: list[list[str]] = []
         self.services = SERVICES if services is None else services
-        self.containers = {name: [f"old-{name}"] for name in ("backend", "websocket", "frontend")}
+        self.containers = {
+            name: [f"old-{name}"] for name in ("backend", "websocket", "frontend", "queue-short")
+        }
         self.new_apps = new_apps
         self.ready = ready
+        #: The schema hash each image answers with; None means it could not be read.
+        self.schema = {"old-image": None}
 
     def try_(self, command, timeout, *, env_overrides=None):
         self.run.append(command)
@@ -601,18 +611,24 @@ class Stack:
             return "\n".join(self.containers.get(command[-1], []))
         if "--entrypoint ls" in text:
             return "erpnext\nfrappe\n" if "old-image" in text else self.new_apps
+        if "--entrypoint sh" in text:
+            image = command[command.index("sh") + 1]
+            return self.schema.get(image, SAME_SCHEMA)
+        if "{{.Name}}" in text:
+            return f"/erpnext-{command[-1]}\n"
         if "docker inspect" in text:
             return "true\n"
         return None
 
 
 @pytest.fixture
-def stack(monkeypatch, converging):
+def stack(monkeypatch, converging, tmp_path):
     fake = Stack()
     monkeypatch.setattr(reconcile, "_try", fake.try_)
     monkeypatch.setattr(reconcile, "_capture", fake.capture)
     monkeypatch.setattr(reconcile.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(reconcile, "running_image_id", lambda desc: "old-image")
+    monkeypatch.setattr(reconcile, "DRAINED_PATH", tmp_path / "drained-workers")
     return fake
 
 
@@ -642,14 +658,17 @@ def test_hot_swap_migrates_first_then_replaces_the_web_tier_in_order(stack):
         _index(steps, "--scale backend=2 backend"),
         _index(steps, "--scale websocket=2 websocket"),
         _index(steps, "--scale frontend=2 frontend"),
-        _index(steps, "docker stop -t 30 old-frontend"),
+        _index(steps, "docker stop -t 5 old-frontend"),
         _index(steps, "docker stop -t 30 old-backend"),
         _index(steps, "docker exec new-frontend nginx -s reload"),
-        _index(steps, "docker stop -t 30 old-websocket"),
-        _index(steps, "up -d --no-deps queue-short scheduler"),
+        _index(steps, "docker stop -t 5 old-websocket"),
+        _index(steps, "--scale queue-short=2 queue-short"),
+        _index(steps, "docker kill --signal SIGTERM old-queue-short"),
+        _index(steps, "up -d --no-deps scheduler"),
+        _index(steps, "frappe.publish_realtime"),
     ]
     assert order == sorted(order)
-    assert not any("exec -T backend bench" in step for step in steps)
+    assert not any("exec -T backend bench" in step and "migrate" in step for step in steps)
 
 
 def test_hot_swap_checks_the_new_backend_itself(stack):
@@ -727,7 +746,7 @@ def test_an_unready_candidate_is_removed_and_the_old_stack_keeps_serving(stack, 
         reconcile.run(_hot_swap_descriptor())
 
     steps = [" ".join(command) for command in stack.run]
-    assert "docker rm -f new-backend" in steps
+    assert "docker rm -f -v new-backend" in steps
     assert not any(step.startswith("docker stop") for step in steps)
 
 
@@ -764,5 +783,468 @@ def test_hot_swap_quits_the_old_nginx_gracefully_before_stopping_it(stack):
 
     steps = [" ".join(command) for command in stack.run]
     assert _index(steps, "docker exec old-frontend nginx -s quit") < _index(
-        steps, "docker stop -t 30 old-frontend"
+        steps, "docker stop -t 5 old-frontend"
     )
+
+
+def test_hot_swap_drops_the_asset_map_once_the_old_backend_is_gone(stack):
+    """BR-DEPLOY-003: before that, the old backend could write its own bundle names back."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    drop = _index(steps, "frappe.client_cache.delete_value")
+    assert (
+        _index(steps, "docker rm -v old-backend")
+        < drop
+        < _index(steps, "docker stop -t 5 old-websocket")
+    )
+
+
+def test_recreate_drops_the_asset_map_after_migrating(converging, commands):
+    """BR-DEPLOY-003: a recreate keeps the Redis volume too, so it needs the same drop."""
+    reconcile.run(_descriptor())
+
+    steps = [" ".join(command) for command in commands.run]
+    assert _index(steps, "migrate") < _index(steps, "frappe.client_cache.delete_value")
+
+
+def test_hot_swap_skips_migrate_when_the_schema_files_match(stack):
+    """A code-only change needs no migrate. The cache migrate would clear is cleared instead."""
+    stack.schema["old-image"] = SAME_SCHEMA
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("migrate" in step for step in steps)
+    assert _index(steps, "bench --site erp.example.com clear-cache") > _index(
+        steps, "docker stop -t 30 old-backend"
+    )
+
+
+def test_hot_swap_migrates_when_the_schema_files_differ(stack):
+    stack.schema["old-image"] = OTHER_SCHEMA
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert any(
+        "run --rm --no-deps -T backend bench --site erp.example.com migrate" in s for s in steps
+    )
+    assert not any("clear-cache" in step for step in steps)
+
+
+def test_hot_swap_carries_old_assets_before_the_old_frontend_retires(stack):
+    """Tabs opened before the swap ask for bundles only the old image has."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    carry = _index(steps, "docker exec old-frontend sh -c")
+    assert "docker exec -i new-frontend" in steps[carry]
+    assert "--skip-old-files" in steps[carry]
+    assert carry < _index(steps, "docker stop -t 5 old-frontend")
+
+
+def test_old_workers_drain_instead_of_being_stopped(stack):
+    """docker stop would kill a long job when the grace ran out; SIGTERM lets it finish."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("old-queue-short" in step and step.startswith("docker stop") for step in steps)
+    assert _index(steps, "--scale queue-short=2 queue-short") < _index(
+        steps, "docker kill --signal SIGTERM old-queue-short"
+    )
+
+
+def test_a_draining_worker_is_never_signalled_twice(stack):
+    """A second SIGTERM is RQ's cold shutdown, which kills the job being finished."""
+    reconcile.DRAINED_PATH.write_text("old-queue-short")
+
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("SIGTERM old-queue-short" in step for step in steps)
+
+
+def test_new_frontends_are_pinned_to_the_new_backend_before_the_old_one_stops(stack):
+    """During a swap `backend` resolves to both containers. Once the old one stops, nginx
+    requests routed to its address hang, so the new frontend must stop using it first."""
+    reconcile.run(_hot_swap_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    pin = _index(steps, "docker exec new-frontend sh -c sed")
+    assert "s/server [^:;]*:/server erpnext-new-backend:/" in steps[pin]
+    assert "s/server [^:;]*:/server erpnext-new-websocket:/" in steps[pin]
+    assert steps[pin].endswith("nginx -s reload")
+    assert _index(steps, "docker stop -t 5 old-frontend") < pin
+    assert pin < _index(steps, "docker stop -t 30 old-backend")
+
+
+# --- the deploy record (BR-DEPLOY-026) --------------------------------------
+
+
+def _record_of(lines):
+    assert len(lines) == 1, lines
+    marker, _, payload = lines[0].partition(" {")
+    assert marker == "deploy record"
+    return json.loads("{" + payload)
+
+
+def test_a_hot_swap_that_migrates_records_its_path_migrate_and_tables(stack):
+    """BR-DEPLOY-026: one line, naming the path, the migrate and what it wrote."""
+    stack.schema["old-image"] = OTHER_SCHEMA
+    real_capture = stack.capture
+
+    def capture(command, *, env_overrides=None):
+        if "touched_tables.json" in " ".join(command):
+            stack.run.append(command)
+            return json.dumps(["tabItem", "tabBOM"])
+        return real_capture(command, env_overrides=env_overrides)
+
+    reconcile._capture = capture  # the fixture's monkeypatch restores the original
+    lines: list[str] = []
+
+    reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["outcome"] == "ok"
+    assert record["path"] == "hot-swap"
+    assert record["from"] == OTHER and record["to"] == DESIRED
+    assert record["migrate"]["ran"] is True
+    assert record["migrate"]["tables"] == ["tabBOM", "tabItem"]
+    assert record["migrate"]["tables_written"] == 2
+    assert {"pull", "configurator", "migrate", "web", "retire", "workers", "health"} <= set(
+        record["steps"]
+    )
+    assert "probe" not in record
+
+
+def test_a_hot_swap_that_skips_migrate_records_it(stack):
+    stack.schema["old-image"] = SAME_SCHEMA
+    lines: list[str] = []
+
+    reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["migrate"] == {"ran": False}
+    assert "migrate" not in record["steps"]
+    assert not any("touched_tables.json" in " ".join(command) for command in stack.run)
+
+
+def test_a_hot_swap_that_falls_back_records_why(stack):
+    stack.new_apps = "frappe\nerpnext\nhrms\n"
+    lines: list[str] = []
+
+    reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["path"] == "recreate"
+    assert "apps differ" in record["path_note"]
+    assert record["migrate"]["ran"] is True
+
+
+def test_a_failed_pass_still_prints_its_record(stack, monkeypatch):
+    """BR-DEPLOY-018 halts the pass; BR-DEPLOY-026 still reports what it saw."""
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+    lines: list[str] = []
+
+    with pytest.raises(ReconcileError):
+        reconcile.run(_hot_swap_descriptor(), on_record=lines.append)
+
+    record = _record_of(lines)
+    assert record["outcome"] == "failed"
+    assert "still serving the old code" in record["error"]
+    assert "\n" not in record["error"]
+
+
+def test_a_converged_pass_prints_no_record(monkeypatch, commands):
+    monkeypatch.setattr(registry, "digest_of", lambda ref: DESIRED)
+    monkeypatch.setattr(reconcile, "running_digest", lambda desc: DESIRED)
+    monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: True)
+    monkeypatch.setattr(reconcile, "_single_flight", _no_lock)
+    lines: list[str] = []
+
+    reconcile.run(_descriptor(), on_record=lines.append)
+
+    assert lines == []
+
+
+def test_a_dry_run_prints_no_record(converging, commands):
+    lines: list[str] = []
+
+    reconcile.run(_descriptor(), dry_run=True, on_record=lines.append)
+
+    assert lines == []
+
+
+def test_the_probe_summary_joins_the_record(stack, monkeypatch):
+    """BR-DEPLOY-026: with a probe URL, the record says what that URL answered."""
+    from cairn import deploy_record
+
+    monkeypatch.setattr(deploy_record, "_probe_once", lambda url: True)
+    lines: list[str] = []
+
+    reconcile.run(
+        _hot_swap_descriptor(
+            record=descriptor.DeployRecord(
+                probe_url="https://erp.example.com/api/method/ping", probe_interval_ms=100
+            )
+        ),
+        on_record=lines.append,
+    )
+
+    probe = _record_of(lines)["probe"]
+    assert probe["requests"] >= 1
+    assert probe["failed"] == 0
+
+
+def test_a_record_that_cannot_print_never_fails_the_pass(stack):
+    """BR-DEPLOY-026: observation only."""
+
+    def broken(line):
+        raise OSError("stdout closed")
+
+    outcome = reconcile.run(_hot_swap_descriptor(), on_record=broken)
+
+    assert outcome.converged is True
+
+
+# --- back-off after a failed converge (BR-DEPLOY-027) -----------------------
+
+
+def test_a_failed_converge_is_not_retried_on_the_next_pass(stack, monkeypatch):
+    """BR-DEPLOY-027: the next timer pass waits instead of migrating the same digest again."""
+    from cairn import backoff
+
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+    with pytest.raises(ReconcileError):
+        reconcile.run(_hot_swap_descriptor())
+    stack.run.clear()
+
+    outcome = reconcile.run(_hot_swap_descriptor())
+
+    assert outcome.waiting is True
+    assert outcome.converged is False
+    assert "--retry-now" in outcome.detail
+    assert stack.run == []  # not even a pull
+    assert backoff.read().attempts == 1
+
+
+def test_retry_now_tries_a_waiting_digest(stack):
+    from cairn import backoff
+
+    backoff.record(DESIRED, "migrate failed")
+
+    outcome = reconcile.run(_hot_swap_descriptor(), retry_now=True)
+
+    assert outcome.converged is True
+    assert backoff.read() is None  # success forgets the failure
+
+
+def test_a_new_digest_goes_ahead_while_an_old_one_waits(stack):
+    from cairn import backoff
+
+    backoff.record("sha256:" + "c" * 64, "migrate failed")
+
+    outcome = reconcile.run(_hot_swap_descriptor())
+
+    assert outcome.converged is True
+    assert outcome.waiting is False
+
+
+def test_a_dry_run_reports_the_wait(converging, commands):
+    from cairn import backoff
+
+    backoff.record(DESIRED, "migrate failed")
+
+    outcome = reconcile.run(_descriptor(), dry_run=True)
+
+    assert outcome.waiting is True
+    assert "Waiting" in outcome.detail
+
+
+def test_a_converged_stack_forgets_an_old_failure(monkeypatch, commands):
+    from cairn import backoff
+
+    monkeypatch.setattr(registry, "digest_of", lambda ref: DESIRED)
+    monkeypatch.setattr(reconcile, "running_digest", lambda desc: DESIRED)
+    monkeypatch.setattr(reconcile, "stack_is_up", lambda desc: True)
+    monkeypatch.setattr(reconcile, "_single_flight", _no_lock)
+    backoff.record(DESIRED, "migrate failed")
+
+    reconcile.run(_descriptor())
+
+    assert backoff.read() is None
+
+
+def test_an_interrupt_is_not_a_failure_to_back_off_from(stack, monkeypatch):
+    """Stopping a pass by hand is the operator's act, not a failed deploy."""
+    from cairn import backoff
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(reconcile, "hot_swap", interrupted)
+
+    with pytest.raises(KeyboardInterrupt):
+        reconcile.run(_hot_swap_descriptor())
+
+    assert backoff.read() is None
+
+
+# --- migrating only what changed (BR-DEPLOY-028) ----------------------------
+
+PRINT_FORMAT = "app/app/app/print_format/invoice/invoice.json"
+DOCTYPE = "app/app/app/doctype/thing/thing.json"
+
+
+def _content_descriptor():
+    return _descriptor(
+        deploy=descriptor.Deploy(
+            strategy="hot-swap",
+            content_paths=("app/*/print_format/*",),
+            content_sync="app.deploy.sync_content",
+        ),
+        health=descriptor.Health(url="http://localhost:8000/api/method/ping"),
+    )
+
+
+def _manifest(**files):
+    return "\n".join(f"{digest * 64}  {path}" for path, digest in files.items())
+
+
+def test_the_decision_compares_file_by_file():
+    deploy = descriptor.Deploy(
+        strategy="hot-swap", content_paths=("app/*/print_format/*",), content_sync="app.x.y"
+    )
+    old = {DOCTYPE: "a", PRINT_FORMAT: "b"}
+    decide = reconcile.migrate_decision
+
+    assert decide(old, dict(old), deploy) == (reconcile.NO_MIGRATE, [])
+    assert decide(old, {DOCTYPE: "a", PRINT_FORMAT: "c"}, deploy) == (
+        reconcile.SYNC_CONTENT,
+        [PRINT_FORMAT],
+    )
+    assert decide(old, {DOCTYPE: "z", PRINT_FORMAT: "c"}, deploy)[0] == reconcile.MIGRATE
+    # a new print format is content; a deleted one is not, since only migrate removes records
+    assert decide(old, {**old, "app/app/app/print_format/new/new.json": "d"}, deploy)[0] == (
+        reconcile.SYNC_CONTENT
+    )
+    assert decide(old, {DOCTYPE: "a"}, deploy)[0] == reconcile.MIGRATE
+    # either side unreadable means migrate
+    assert decide(None, old, deploy)[0] == reconcile.MIGRATE
+    assert decide(old, None, deploy)[0] == reconcile.MIGRATE
+
+
+def test_without_content_settings_any_change_migrates():
+    old = {PRINT_FORMAT: "b"}
+
+    assert reconcile.migrate_decision(old, {PRINT_FORMAT: "c"}, descriptor.Deploy())[0] == (
+        reconcile.MIGRATE
+    )
+
+
+def test_a_content_only_change_syncs_after_the_old_backend_retires(stack):
+    """BR-DEPLOY-028: content that may need new code loads once the new code serves."""
+    stack.schema["old-image"] = _manifest(**{DOCTYPE: "a", PRINT_FORMAT: "b"})
+    stack.schema[_content_descriptor().reference] = _manifest(**{DOCTYPE: "a", PRINT_FORMAT: "c"})
+    lines: list[str] = []
+
+    reconcile.run(_content_descriptor(), on_record=lines.append)
+
+    steps = [" ".join(command) for command in stack.run]
+    assert not any("migrate" in step for step in steps)
+    sync = _index(steps, "execute app.deploy.sync_content")
+    assert sync > _index(steps, "docker stop -t 30 old-backend")
+    assert PRINT_FORMAT in steps[sync]
+    assert _record_of(lines)["migrate"] == {"ran": False, "content_files": 1}
+
+
+def test_a_failed_content_sync_falls_back_to_migrate(stack):
+    """BR-DEPLOY-028: the content must not be left unloaded once the stack is converged."""
+    stack.schema["old-image"] = _manifest(**{PRINT_FORMAT: "b"})
+    stack.schema[_content_descriptor().reference] = _manifest(**{PRINT_FORMAT: "c"})
+    real_try = stack.try_
+
+    def try_(command, timeout, *, env_overrides=None):
+        if "app.deploy.sync_content" in " ".join(command):
+            stack.run.append(command)
+            return subprocess.CompletedProcess(command, 1)
+        return real_try(command, timeout, env_overrides=env_overrides)
+
+    reconcile._try = try_
+    lines: list[str] = []
+
+    reconcile.run(_content_descriptor(), on_record=lines.append)
+
+    steps = [" ".join(command) for command in stack.run]
+    assert _index(steps, "exec -T backend bench --site erp.example.com migrate") > _index(
+        steps, "execute app.deploy.sync_content"
+    )
+    migrate = _record_of(lines)["migrate"]
+    assert migrate["ran"] is True and migrate["content_failed"] is True
+
+
+def test_a_doctype_change_still_migrates_before_the_swap(stack):
+    stack.schema["old-image"] = _manifest(**{DOCTYPE: "a", PRINT_FORMAT: "b"})
+    stack.schema[_content_descriptor().reference] = _manifest(**{DOCTYPE: "z", PRINT_FORMAT: "c"})
+
+    reconcile.run(_content_descriptor())
+
+    steps = [" ".join(command) for command in stack.run]
+    assert _index(steps, "run --rm --no-deps -T backend bench --site erp.example.com migrate") < (
+        _index(steps, "--scale backend=2 backend")
+    )
+    assert not any("sync_content" in step for step in steps)
+
+
+def test_a_malformed_manifest_means_migrate(monkeypatch, commands):
+    commands.captures = {"--entrypoint sh": "not a manifest line"}
+
+    assert reconcile.schema_manifest("some-image") is None
+
+
+def test_the_manifest_lists_each_file():
+    """The script prints `sha256  path`, one line per file (BR-DEPLOY-028)."""
+    assert "| sha256sum" not in reconcile.SCHEMA_MANIFEST_SCRIPT
+    assert "xargs -r -d" in reconcile.SCHEMA_MANIFEST_SCRIPT
+
+
+# --- no leftover volumes (BR-DEPLOY-025) ------------------------------------
+
+
+def test_every_container_a_swap_removes_takes_its_anonymous_volumes(stack, monkeypatch):
+    """Each container's anonymous `logs` volume would otherwise stay on disk for good.
+
+    Found on Life Scientific's staging target, whose disk reached 99%: a plain `docker rm`
+    leaves the volume, and a hot swap replaces every image container on every deploy.
+    """
+    reconcile.run(_hot_swap_descriptor())
+    stack.containers["queue-short"] = ["drained-queue-short"]
+
+    def exited(command, *, env_overrides=None):
+        if "--status" in command:
+            stack.run.append(command)
+            return "drained-queue-short"
+        return Stack.capture(stack, command, env_overrides=env_overrides)
+
+    reconcile._capture = exited
+    reconcile.remove_drained_workers(
+        _hot_swap_descriptor(), reconcile.SwapPlan(("backend",), ("queue-short",))
+    )
+
+    removals = [command for command in stack.run if command[:2] == ["docker", "rm"]]
+    assert removals
+    assert all("-v" in command for command in removals)
+    assert ["docker", "rm", "-v", "drained-queue-short"] in removals
+
+
+def test_a_failed_candidate_is_removed_with_its_volumes(stack, monkeypatch):
+    stack.ready = False
+    monkeypatch.setattr(reconcile.time, "monotonic", iter(range(0, 10_000, 100)).__next__)
+
+    with pytest.raises(ReconcileError):
+        reconcile.run(_hot_swap_descriptor())
+
+    assert ["docker", "rm", "-f", "-v", "new-backend"] in stack.run
