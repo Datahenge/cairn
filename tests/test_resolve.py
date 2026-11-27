@@ -169,7 +169,7 @@ def test_a_github_token_authenticates_the_ls_remote_url(monkeypatch):
     monkeypatch.setattr(resolve.subprocess, "run", _capture)
     resolve.resolve_ref("btu", "https://github.com/clientorg/btu", "main")
 
-    assert "https://ghp_secret@github.com/clientorg/btu" in captured["command"]
+    assert "https://x-access-token:ghp_secret@github.com/clientorg/btu" in captured["command"]
 
 
 def test_a_github_token_is_not_sent_to_an_unrelated_host(monkeypatch):
@@ -207,7 +207,7 @@ def test_a_failed_authenticated_lookup_does_not_leak_the_token(monkeypatch):
         "run",
         lambda *a, **k: _completed(
             returncode=128,
-            stderr="fatal: could not read from 'https://ghp_secret@github.com/clientorg/btu'\n",
+            stderr="fatal: could not read from 'https://x-access-token:ghp_secret@github.com/clientorg/btu'\n",
         ),
     )
 

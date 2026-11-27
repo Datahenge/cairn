@@ -21,6 +21,9 @@ here is approved yet.
 - **`BR-BUILD-002`, `BR-BUILD-007`** amended to name the key and hash it. A manifest without it
   renders the same `apps.json`, cache bust, and tags as before.
 - **Recipe**: a new staging script and a changed builder step. Images rebuild once.
+- **`BR-BUILD-016`** amended: the token goes in the URL's password slot under `x-access-token`,
+  as the builder stage's credential helper already sends it. GitHub Actions' `GITHUB_TOKEN`
+  failed ref resolution before, because an installation token cannot be the username.
 - Two questions for Brian: whether to hash the folder's tree instead of the whole commit
   (`OQ-007`), and the key's name (`OQ-008`). Live build tracked as `W-045`.
 

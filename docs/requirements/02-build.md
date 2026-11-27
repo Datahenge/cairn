@@ -174,6 +174,9 @@ load-bearing:
    output (`BR-BUILD-012`), and every error message MUST show the untouched URL. Where a
    tool's own output might quote a credentialed URL back (e.g. git's error text on a failed
    `ls-remote`), cairn MUST redact the token first.
+   The token goes in a URL's password slot under the username `x-access-token`, the same
+   way the builder stage's credential helper sends it, so a GitHub App installation token
+   (such as GitHub Actions' `GITHUB_TOKEN`) authenticates as well as a personal token.
 4. **One token per build, not one token per host.** One `$CAIRN_GITHUB_TOKEN` covers every
    private app in a single build; per-app/per-org credentials stay a non-goal. A build host
    MAY serve several clients (`BR-CLI-022`) whose tokens MUST NOT be assumed interchangeable;

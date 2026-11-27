@@ -72,7 +72,9 @@ def authenticated(url: str, token: str | None) -> str:
         return url
 
     parts = urlsplit(url)
-    netloc = f"{token}@{parts.hostname}"
+    # The token is the password, as the builder stage's credential helper sends it, so a GitHub
+    # App installation token (Actions' GITHUB_TOKEN) works as well as a personal token.
+    netloc = f"x-access-token:{token}@{parts.hostname}"
     if parts.port:
         netloc += f":{parts.port}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
