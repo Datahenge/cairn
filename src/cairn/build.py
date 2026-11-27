@@ -302,6 +302,7 @@ def provenance_labels(
         f"{LABEL_NAMESPACE}.apps": json.dumps(
             [
                 {"name": app.name, "url": app.url, "ref": app.ref, "commit": app.commit}
+                | ({"subdir": app.subdir} if app.subdir else {})
                 for app in resolution.apps
             ],
             separators=(",", ":"),

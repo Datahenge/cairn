@@ -91,3 +91,23 @@ def test_secret_file_is_outside_the_project(tmp_path, monkeypatch):
 
     with appsjson.secret_file(_manifest()) as path:
         assert tmp_path not in path.parents
+
+
+def test_subdir_is_carried_only_where_declared():
+    """BR-BUILD-020: an app without a subfolder renders exactly as before the key existed."""
+    manifest = _manifest(
+        apps=(
+            App("erpnext", "https://github.com/frappe/erpnext", "version-16"),
+            App("ls", "https://github.com/acme/ERP", "main", subdir="apps/ls"),
+        )
+    )
+
+    assert appsjson.entries(manifest) == [
+        {"url": "https://github.com/frappe/erpnext", "branch": "version-16"},
+        {"url": "https://github.com/acme/ERP", "branch": "main", "subdir": "apps/ls"},
+    ]
+    assert appsjson.render(_manifest()) == (
+        '[\n  {\n    "url": "https://github.com/frappe/erpnext",\n    "branch": "version-16"\n'
+        '  },\n  {\n    "url": "https://github.com/Datahenge/btu",\n    "branch": "version-16"\n'
+        "  }\n]\n"
+    )

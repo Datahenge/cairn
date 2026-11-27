@@ -151,8 +151,15 @@ def _commit_lines(resolution: Resolution) -> list[str]:
 
     Order is fixed by the manifest (`BR-BUILD-003`), and the name is included so that
     swapping two apps' URLs changes the hash even when the commit set is unchanged.
+
+    An app's ``subdir`` (`BR-BUILD-020`) is appended after a colon, which a hex commit never
+    contains, so the line stays unambiguous; moving an app to another folder of the same
+    commit is a different image. An app without one hashes exactly as before.
     """
-    return [f"{ref.name}={ref.commit}" for ref in resolution.all_refs]
+    return [
+        f"{ref.name}={ref.commit}" + (f":{ref.subdir}" if ref.subdir else "")
+        for ref in resolution.all_refs
+    ]
 
 
 def _build_arg_lines(build_args: dict[str, Any]) -> list[str]:
