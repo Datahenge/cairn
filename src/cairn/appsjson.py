@@ -16,6 +16,11 @@ Two contents decisions are load-bearing:
 
 Manifest order is preserved verbatim into the file, because it is the install sequence
 (`BR-BUILD-003`).
+
+One key is cairn's own, not upstream's: an app that sits in a repository subfolder carries
+``"subdir"`` (`BR-BUILD-020`). The owned Containerfile stages that folder as a local git
+repository and rewrites the entry before ``bench init`` reads the file, so bench never sees
+the key. An app without it renders exactly as it did before the key existed.
 """
 
 from __future__ import annotations
@@ -34,8 +39,14 @@ SECRET_ID = "apps_json"
 
 
 def entries(manifest: Manifest) -> list[dict[str, str]]:
-    """Return the ``apps.json`` payload — apps in manifest order (BR-BUILD-003/004)."""
-    return [{"url": app.url, "branch": app.ref} for app in manifest.apps]
+    """Return the ``apps.json`` payload — apps in manifest order (BR-BUILD-003/004/020)."""
+    rendered = []
+    for app in manifest.apps:
+        entry = {"url": app.url, "branch": app.ref}
+        if app.subdir:
+            entry["subdir"] = app.subdir
+        rendered.append(entry)
+    return rendered
 
 
 def render(manifest: Manifest) -> str:

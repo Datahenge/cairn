@@ -17,7 +17,9 @@ Requirement IDs are unchanged and never renumbered by a move.
 **`BR-BUILD-007`** — cairn MUST set `CACHE_BUST` from a hash of **all** resolved commits
 (Frappe **and** every app); a correct build MUST NOT require `--no-cache`. Frappe is
 included because `FRAPPE_BRANCH` enters the cache key by **name**, so a branch that moves
-would otherwise reuse a stale `bench init` layer. *(ADR-015)*
+would otherwise reuse a stale `bench init` layer. An app's `subdir` (`BR-BUILD-020`) is hashed
+beside its commit, in both this value and the input hash; an app without one hashes exactly as
+before. *(ADR-015)*
 
 **`BR-BUILD-008`** — cairn MUST tag the image with a **deterministic primary tag**
 `<legible>-<inputhash>` — `<inputhash>` a short hash of *all* resolved inputs (Frappe + app

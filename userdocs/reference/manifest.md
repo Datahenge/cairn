@@ -69,6 +69,25 @@ dependencies, so an app must be listed after every app it depends on. Each entry
 listed twice is rejected — the list is an ordered install sequence, and a repeat would
 make "install order" ambiguous.
 
+**An app in a repository subfolder:** if your app sits in a folder of a larger repository
+instead of at its root, add `subdir` with the folder's path from the repository root.
+
+```toml
+[[cairn.apps]]
+name = "your_custom_app"
+url = "https://github.com/your-org/erp"
+ref = "v1.2.3"
+subdir = "apps/your_custom_app"
+```
+
+Write the path with `/` separators and no leading or trailing slash. A path with a `.` or `..`
+part is rejected. The build clones the repository at `ref` and installs only that folder.
+
+`ref` still resolves to a commit of the whole repository. A commit that changes only other
+folders is a new input, so your next build produces a new image.
+
+*`subdir` has not yet been used in a build on a real builder.*
+
 An empty list is technically valid — nothing stops a Frappe-only image — but ERPNext is
 almost never omitted in practice.
 

@@ -100,6 +100,9 @@ class App:
     name: str
     url: str
     ref: str
+    #: Repository-relative folder holding the app, for an app that is not at its repository's
+    #: root (`BR-BUILD-020`). ``None`` means the root, which is every app before this key.
+    subdir: str | None = None
 
 
 @dataclass(frozen=True)
@@ -483,7 +486,7 @@ def _apps(path: Path, root: dict) -> tuple[App, ...]:
         where = f"[[cairn.apps]] #{index + 1}"
         if not isinstance(entry, dict):
             raise ManifestInvalidError(f"{path}: {where} must be a table.")
-        _reject_unknown(path, where, entry, {"name", "url", "ref"})
+        _reject_unknown(path, where, entry, {"name", "url", "ref", "subdir"})
         name = _required_string(path, where, entry, "name")
         ref = _required_string(path, where, entry, "ref")
         _reject_commit_sha(path, where, ref)
@@ -493,8 +496,36 @@ def _apps(path: Path, root: dict) -> tuple[App, ...]:
                 f"exactly once — the list is an ordered install sequence."
             )
         seen.add(name)
-        apps.append(App(name=name, url=_required_string(path, where, entry, "url"), ref=ref))
+        apps.append(
+            App(
+                name=name,
+                url=_required_string(path, where, entry, "url"),
+                ref=ref,
+                subdir=_subdir(path, where, entry),
+            )
+        )
     return tuple(apps)
+
+
+def _subdir(path: Path, where: str, entry: dict) -> str | None:
+    """Validate the optional app ``subdir`` (`BR-BUILD-020`).
+
+    The build copies this folder out of a clone, so it must name a folder *inside* the
+    repository: relative, no ``..``, and spelled one way only (no empty or ``.`` segments),
+    because the spelling enters the input hash and two spellings of one folder must not
+    become two images.
+    """
+    if "subdir" not in entry:
+        return None
+    value = _required_string(path, where, entry, "subdir")
+    segments = value.split("/")
+    if "\\" in value or any(s in ("", ".", "..") for s in segments):
+        raise ManifestInvalidError(
+            f"{path}: {where} subdir '{value}' must be a folder inside the repository, "
+            f'written relative to its root, e.g. subdir = "apps/your_custom_app" — no '
+            f"leading or trailing slash, and no '.' or '..' parts."
+        )
+    return value
 
 
 def _series(path: Path, root: dict) -> str | None:

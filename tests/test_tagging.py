@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -249,3 +251,28 @@ def test_the_environment_is_not_recoverable_by_reading_the_id():
 
     assert "production" not in identity
     assert len(identity) == tagging.DIGEST_LENGTH
+
+
+# --- app subfolder (BR-BUILD-020) -------------------------------------------
+
+
+def _with_btu_subdir(subdir):
+    base = _resolution()
+    return Resolution(frappe=base.frappe, apps=(base.apps[0], replace(base.apps[1], subdir=subdir)))
+
+
+def test_subdir_is_a_build_input():
+    """Building another folder of the same commit is another image, and must re-clone."""
+    assert tagging.input_hash(_with_btu_subdir("apps/btu"), BUILD_ARGS) != tagging.input_hash(
+        _resolution(), BUILD_ARGS
+    )
+    assert tagging.cache_bust(_with_btu_subdir("apps/btu")) != tagging.cache_bust(
+        _with_btu_subdir("apps/other")
+    )
+
+
+def test_no_subdir_hashes_exactly_as_before():
+    """Adding the key must not rename or rebuild any image whose manifest does not use it."""
+    lines = f"frappe={'a' * 40}\nerpnext={'b' * 40}\nbtu={'c' * 40}\n"
+
+    assert tagging.cache_bust(_resolution()) == hashlib.sha256(lines.encode()).hexdigest()[:12]

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 from . import github_auth
@@ -62,6 +62,8 @@ class ResolvedRef:
     ref: str
     commit: str
     kind: RefKind
+    #: The app's repository subfolder, if any (`BR-BUILD-020`) — an input, so it is hashed.
+    subdir: str | None = None
 
     @property
     def is_moving(self) -> bool:
@@ -99,8 +101,14 @@ def resolve_manifest(manifest: Manifest) -> Resolution:
 
 
 def resolve_app(app: App) -> ResolvedRef:
-    """Resolve one ``[[cairn.apps]]`` entry."""
-    return resolve_ref(app.name, app.url, app.ref)
+    """Resolve one ``[[cairn.apps]]`` entry.
+
+    A ``subdir`` app resolves to the commit of the **whole repository** (`BR-BUILD-020`):
+    ``ls-remote`` cannot see a folder, so a commit touching only other folders still changes
+    the hash and rebuilds the image.
+    """
+    resolved = resolve_ref(app.name, app.url, app.ref)
+    return replace(resolved, subdir=app.subdir) if app.subdir else resolved
 
 
 def resolve_ref(name: str, url: str, ref: str) -> ResolvedRef:

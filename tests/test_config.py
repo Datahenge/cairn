@@ -562,3 +562,42 @@ def test_an_invalid_retention_value_is_an_error_not_a_silent_default(
 
     with pytest.raises(config.BuildConfigInvalidError, match=message):
         config.load_build_config(None)
+
+
+# --- app subfolder (BR-BUILD-020) -------------------------------------------
+
+
+def _with_subdir(value: str) -> str:
+    return VALID.replace(
+        'url = "https://github.com/Datahenge/btu"\n',
+        f'url = "https://github.com/Datahenge/btu"\nsubdir = {value}\n',
+    )
+
+
+def test_subdir_is_optional_and_read(tmp_path):
+    """BR-BUILD-020: an app may name the repository folder it lives in."""
+    plain = config.load_manifest(_manifest(tmp_path))
+    nested = config.load_manifest(_manifest(tmp_path, _with_subdir('"apps/btu"')))
+
+    assert [app.subdir for app in plain.apps] == [None, None]
+    assert [app.subdir for app in nested.apps] == [None, "apps/btu"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '""',
+        '"/apps/btu"',
+        '"apps/btu/"',
+        '"../btu"',
+        '"apps/../btu"',
+        '"./apps"',
+        '"a//b"',
+        '"apps\\\\btu"',
+        "3",
+    ],
+)
+def test_subdir_must_stay_inside_the_repository(tmp_path, value):
+    """BR-BUILD-020: relative, no '..', one spelling per folder."""
+    with pytest.raises(ManifestInvalidError, match="subdir"):
+        config.load_manifest(_manifest(tmp_path, _with_subdir(value)))

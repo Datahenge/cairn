@@ -19,8 +19,8 @@ Do not infer answers to these from general knowledge or unstated preference. Ask
 
 | ID | Status | Question | Context | Answer |
 |---|---|---|---|---|
-
-None open currently.
+| `OQ-007` | `open` | Should a `subdir` app's cache bust and input hash track only the folder's content, so a commit elsewhere in the repository does not rebuild the image? | `BR-BUILD-020` hashes the whole repository's commit, because `git ls-remote` cannot see a folder. Scoping it needs a fetch on the build host: a tree-only fetch (`git fetch --depth 1 --filter=tree:0`) and `git rev-parse <commit>:<subdir>` give the folder's tree id, which would replace the commit in the hash lines. That adds a network fetch per build and per `assign-tag` resolution. Raised by Life Scientific 2026-11-27, whose ERP monorepo holds other projects beside the app. Lean: ship whole-commit hashing now; add the tree id if rebuild churn proves costly | |
+| `OQ-008` | `open` | Is `subdir` the right key name, and is the last part of the path the right folder name for the app? | `subdir` was chosen because no cairn document names this concept. Alternatives: `path`, `subdirectory`. bench names the app folder after the last part of `subdir`; the manifest `name` is the other candidate. They agree for Life Scientific's `apps/lifescientific`. Raised 2026-11-27 with `BR-BUILD-020` | |
 
 `OQ-004`, `OQ-005`, and `OQ-006` were resolved and removed 2026-09-29, the day they were raised.
 All three concerned build-machine retention, and their answers are authoritative elsewhere:

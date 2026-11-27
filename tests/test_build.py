@@ -287,7 +287,7 @@ def test_apps_json_secret_authenticates_a_github_app(monkeypatch):
     monkeypatch.setenv(github_auth.GITHUB_TOKEN_ENV_VAR, "ghp_secret")
     plan = _plan(apps_json='[{"url": "https://github.com/clientorg/btu", "branch": "main"}]\n')
 
-    assert "ghp_secret@github.com" in plan.apps_json_secret
+    assert "x-access-token:ghp_secret@github.com" in plan.apps_json_secret
     assert "ghp_secret" not in plan.apps_json, "the plain field must never carry the token"
 
 
@@ -321,7 +321,7 @@ def test_run_writes_the_authenticated_apps_json_to_the_real_secret_file(monkeypa
     plan = _plan(apps_json='[{"url": "https://github.com/clientorg/btu", "branch": "main"}]\n')
     build.run(plan)
 
-    assert "ghp_secret@github.com" in contents["apps_json"]
+    assert "x-access-token:ghp_secret@github.com" in contents["apps_json"]
 
 
 # --- the frappe clone's credential (BR-BUILD-016, BR-BUILD-019, ADR-077) -----

@@ -120,6 +120,8 @@ RUN apt-get update \
     libbz2-dev \
     && rm -rf /var/lib/apt/lists/*
 
+COPY resources/stage_subdir_apps.py /usr/local/lib/cairn/stage_subdir_apps.py
+
 USER frappe
 
 ARG FRAPPE_BRANCH=version-16
@@ -131,6 +133,11 @@ ARG CACHE_BUST=""
 # is present, a credential helper reads it from the mount on demand — the helper stores only
 # the *path* in .gitconfig, so no file cairn writes ever contains the token, and nothing has
 # to be scrubbed before the layer commits. The mount itself vanishes when this RUN ends.
+#
+# An app declared with a repository subfolder is staged as a local git repository first, and
+# bench reads a rewritten copy of apps.json. That copy can hold token-bearing URLs, so the
+# staging directory is deleted before this RUN ends. Without subfolder apps the copy matches
+# the secret entry for entry.
 RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \
     --mount=type=secret,id=github_token,target=/opt/frappe/github-token,uid=1000,gid=1000 \
   : "${CACHE_BUST}" && \
@@ -140,7 +147,8 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
   fi && \
   export APP_INSTALL_ARGS="" && \
   if [ -f /opt/frappe/apps.json ] && [ -s /opt/frappe/apps.json ]; then \
-    export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
+    python3 /usr/local/lib/cairn/stage_subdir_apps.py /opt/frappe/apps.json /tmp/cairn-apps && \
+    export APP_INSTALL_ARGS="--apps_path=/tmp/cairn-apps/apps.json"; \
   fi && \
   bench init ${APP_INSTALL_ARGS}\
     --frappe-branch=${FRAPPE_BRANCH} \
@@ -152,7 +160,8 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr
+  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+  rm -rf /tmp/cairn-apps
 
 FROM base AS backend
 

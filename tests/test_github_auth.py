@@ -32,7 +32,7 @@ def test_a_github_url_is_authenticated():
 
     result = github_auth.authenticated(url, "ghp_secret")
 
-    assert result == "https://ghp_secret@github.com/clientorg/theirrepo.git"
+    assert result == "https://x-access-token:ghp_secret@github.com/clientorg/theirrepo.git"
 
 
 def test_a_port_is_preserved():
@@ -40,7 +40,7 @@ def test_a_port_is_preserved():
 
     result = github_auth.authenticated(url, "ghp_secret")
 
-    assert result == "https://ghp_secret@github.com:443/clientorg/theirrepo.git"
+    assert result == "https://x-access-token:ghp_secret@github.com:443/clientorg/theirrepo.git"
 
 
 @pytest.mark.parametrize(
@@ -58,7 +58,7 @@ def test_github_token_reads_the_env_var(monkeypatch, value, expected):
 
 
 def test_redacted_strips_the_token():
-    text = "fatal: could not read from 'https://ghp_secret@github.com/clientorg/theirrepo'"
+    text = "fatal: could not read from 'https://x-access-token:ghp_secret@github.com/clientorg/theirrepo'"
 
     assert "ghp_secret" not in github_auth.redacted(text, "ghp_secret")
 

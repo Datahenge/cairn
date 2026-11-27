@@ -6,7 +6,7 @@ purpose: BR-BUILD requirements — building a custom ERPNext image from a manife
 
 # BR-BUILD — Image Build Requirements
 
-_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-08-05_
+_Status: **approved** 2026-07-21 (living — may be revised via CHANGELOG) · Last updated: 2026-11-27_
 
 Requirements for building a custom ERPNext image from a manifest, using cairn's own owned
 `custom/Containerfile` recipe. Conventions: see `/CLAUDE.md`. Decisions cited:
@@ -21,7 +21,7 @@ declaring exactly one, environment-agnostic image. *(ADR-015)*
 
 **`BR-BUILD-002`** — The manifest MUST provide `[cairn] image_name`; a `[cairn.frappe]`
 section (`url`, `ref`) driving `FRAPPE_PATH`/`FRAPPE_BRANCH`; an **ordered** `[[cairn.apps]]`
-list (`name`, `url`, `ref`) for ERPNext + custom apps; and `[cairn.build]` knobs
+list (`name`, `url`, `ref`, and an optional `subdir`, `BR-BUILD-020`) for ERPNext + custom apps; and `[cairn.build]` knobs
 (`python_version`, `node_version`, `install_chromium`) with an optional passthrough for the
 long tail (`debian_base`, `wkhtmltopdf_*`). It MAY provide an optional `[cairn] environment`
 string — the manifest's single declared environment (`BR-DEPLOY-009`, `ADR-052`), which no
@@ -38,6 +38,28 @@ resolve dependencies. This rule MUST be documented in `README.md`, and every shi
 
 **`BR-BUILD-004`** — Frappe MUST be supplied via the `FRAPPE_*` build-args, never in
 `apps.json`; `apps.json` MUST contain only ERPNext + custom apps. *(frappe_docker interface)*
+
+**`BR-BUILD-020`** *(app in a repository subfolder; proposed 2026-11-27, awaiting Brian,
+`OQ-007`, `OQ-008`)* — An `[[cairn.apps]]` entry MAY carry `subdir`: the folder, relative to
+the repository root, that holds the app. It MUST use `/` separators and contain no empty, `.`,
+or `..` part, so it cannot leave the repository and each folder has one spelling. Anything else
+is rejected when the manifest loads.
+
+1. **`apps.json` stays a build secret** (`BR-BUILD-006`). An entry carries `"subdir"` only when
+   the manifest declares one; every other entry renders byte-identical to before.
+2. **The builder stage stages the folder before `bench init`.** It clones the repository at the
+   entry's `ref`, copies the folder out, commits it as a local git repository on a branch named
+   after the `ref`, and hands bench a rewritten `apps.json` that points at it. Manifest order
+   (`BR-BUILD-003`) is unchanged.
+3. **The token stays off disk and off git's command line** (`BR-BUILD-016`). The staging clone
+   strips credentials from the URL and relies on the build secret's credential helper. The
+   rewritten `apps.json` still carries other apps' token-bearing URLs, so the same build step
+   MUST delete it.
+4. **`subdir` is a build input.** It enters the cache bust (`BR-BUILD-007`) and the input hash
+   (`BR-BUILD-008`), and provenance records it (`BR-BUILD-011`).
+
+Known limit: `git ls-remote` resolves the whole repository's commit, not the folder's content.
+A commit that touches only other folders still yields a new input hash and a rebuild (`OQ-007`).
 
 ## Ref resolution (Option A — resolve-and-record)
 
@@ -152,6 +174,9 @@ load-bearing:
    output (`BR-BUILD-012`), and every error message MUST show the untouched URL. Where a
    tool's own output might quote a credentialed URL back (e.g. git's error text on a failed
    `ls-remote`), cairn MUST redact the token first.
+   The token goes in a URL's password slot under the username `x-access-token`, the same
+   way the builder stage's credential helper sends it, so a GitHub App installation token
+   (such as GitHub Actions' `GITHUB_TOKEN`) authenticates as well as a personal token.
 4. **One token per build, not one token per host.** One `$CAIRN_GITHUB_TOKEN` covers every
    private app in a single build; per-app/per-org credentials stay a non-goal. A build host
    MAY serve several clients (`BR-CLI-022`) whose tokens MUST NOT be assumed interchangeable;
